@@ -168,6 +168,28 @@ void test_live_cpp_syntax_check() {
     test_helpers::assert_true(result.diagnostics[0].line == 3 || result.diagnostics[0].line == 4, "Line of syntax error is 3 or 4");
 }
 
+void test_header_compile_command_fallback() {
+    std::cout << "\n--- Testing Header Compile Command Fallback & Syntax Check ---\n";
+    auto& tc_svc = rouen::helpers::ToolchainService::instance();
+    auto& checker = rouen::helpers::SyntaxChecker::instance();
+
+    std::string header_path = "src/cards/production/adlib.hpp";
+    if (std::filesystem::exists(header_path)) {
+        auto entry_opt = tc_svc.get_compile_command(header_path);
+        test_helpers::assert_true(entry_opt.has_value(), "Resolved compile command for header via matching source stem");
+        if (entry_opt.has_value()) {
+            std::cout << "Resolved directory: " << entry_opt->directory << "\n";
+            std::cout << "Resolved command: " << entry_opt->command.substr(0, 80) << "...\n";
+            test_helpers::assert_true(!entry_opt->directory.empty(), "Compile entry directory is populated");
+        }
+
+        auto result = checker.check_file(header_path);
+        std::cout << "Header syntax check result: success=" << (result.success ? "true" : "false") 
+                  << ", errors=" << result.error_count << "\n";
+        test_helpers::assert_true(result.error_count == 0, "Clean header has 0 syntax errors (no false imgui.h / module errors)");
+    }
+}
+
 int main() {
     std::cout << "========================================\n";
     std::cout << "Starting Syntax Checker & Toolchain Tests\n";
@@ -179,6 +201,7 @@ int main() {
     test_python_diagnostic_parsing();
     test_live_syntax_check();
     test_live_cpp_syntax_check();
+    test_header_compile_command_fallback();
 
     std::cout << "\n🎉 ALL SYNTAX CHECKER & TOOLCHAIN TESTS PASSED!\n";
     return 0;

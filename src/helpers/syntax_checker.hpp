@@ -119,6 +119,15 @@ public:
                 diag.severity = sev;
                 diag.message = match[5].str();
 
+                // Ignore transient C++20 module lookup error when checking isolated header files
+                std::filesystem::path fp(diag.file.empty() ? fallback_file : diag.file);
+                std::string fext = fp.extension().string();
+                if ((fext == ".h" || fext == ".hpp" || fext == ".hxx") && 
+                    diag.message.find("module '") != std::string::npos && 
+                    diag.message.find("not found") != std::string::npos) {
+                    continue;
+                }
+
                 diagnostics.push_back(diag);
                 continue;
             }
@@ -165,16 +174,23 @@ public:
 
         // If no structured matches were found but output indicates an error, create a fallback diagnostic
         if (diagnostics.empty() && !output.empty()) {
+            std::filesystem::path fbp(fallback_file);
+            std::string fb_ext = fbp.extension().string();
             std::string lower = output;
             std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
             if (lower.find("error:") != std::string::npos || lower.find("syntaxerror") != std::string::npos) {
-                Diagnostic diag;
-                diag.file = fallback_file;
-                diag.line = 1;
-                diag.column = 1;
-                diag.severity = "error";
-                diag.message = output.substr(0, std::min<size_t>(output.size(), 200));
-                diagnostics.push_back(diag);
+                if ((fb_ext == ".h" || fb_ext == ".hpp" || fb_ext == ".hxx") && 
+                    lower.find("module '") != std::string::npos && lower.find("not found") != std::string::npos) {
+                    // Ignore module lookup error on isolated header
+                } else {
+                    Diagnostic diag;
+                    diag.file = fallback_file;
+                    diag.line = 1;
+                    diag.column = 1;
+                    diag.severity = "error";
+                    diag.message = output.substr(0, std::min<size_t>(output.size(), 200));
+                    diagnostics.push_back(diag);
+                }
             }
         }
 
@@ -234,7 +250,12 @@ public:
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
         std::string cmd;
+        std::string exec_dir = ws;
         if (ext == ".cpp" || ext == ".cc" || ext == ".cxx" || ext == ".c" || ext == ".h" || ext == ".hpp" || ext == ".cppm") {
+            auto entry_opt = ToolchainService::instance().get_compile_command(resolved_path, ws);
+            if (entry_opt.has_value() && !entry_opt->directory.empty()) {
+                exec_dir = entry_opt->directory;
+            }
             cmd = ToolchainService::instance().extract_syntax_command(resolved_path, ws);
             cmd = ToolchainService::instance().wrap_nix_if_needed(cmd, ws);
         } else if (ext == ".py") {
@@ -254,7 +275,7 @@ public:
 
         // Execute command redirecting stderr to stdout
         std::string full_cmd = cmd + " 2>&1";
-        std::string output = ProcessHelper::executeCommandInDirectory(ws, full_cmd);
+        std::string output = ProcessHelper::executeCommandInDirectory(exec_dir, full_cmd);
         result.raw_output = output;
 
         // Parse diagnostics

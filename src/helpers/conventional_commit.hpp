@@ -245,7 +245,9 @@ public:
                 http::fetch fetcher(10);
                 std::string url = std::format("https://generativelanguage.googleapis.com/v1beta/models?key={}", settings.api_key);
                 std::string resp_json = fetcher(url);
-                if (resp_json.find("gemini-3.1-flash-lite") != std::string::npos) {
+                if (resp_json.find("gemini-3.8-flash") != std::string::npos) {
+                    model_name = "gemini-3.8-flash";
+                } else if (resp_json.find("gemini-3.1-flash-lite") != std::string::npos) {
                     model_name = "gemini-3.1-flash-lite";
                 } else if (resp_json.find("gemini-flash-lite-latest") != std::string::npos) {
                     model_name = "gemini-flash-lite-latest";

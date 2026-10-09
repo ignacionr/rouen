@@ -19,6 +19,7 @@ struct CompileCommandEntry {
     std::string directory;
     std::string command;
     std::string file;
+    std::string output;
     std::vector<std::string> arguments;
 
     struct glaze {
@@ -27,6 +28,7 @@ struct CompileCommandEntry {
             "directory", &T::directory,
             "command", &T::command,
             "file", &T::file,
+            "output", &T::output,
             "arguments", &T::arguments
         );
     };
@@ -228,11 +230,45 @@ public:
             return it->second;
         }
 
-        // Fallback: match by filename if path differs
-        std::string filename = std::filesystem::path(file_path).filename().string();
+        // Fallback 1: match by stem (e.g. adlib.hpp -> adlib.cpp)
+        std::filesystem::path tp(file_path);
+        std::string stem = tp.stem().string();
+        for (const auto& [path, entry] : compile_commands_) {
+            std::filesystem::path p(path);
+            if (p.stem().string() == stem) {
+                std::string ext = tp.extension().string();
+                if (ext == ".h" || ext == ".hpp" || ext == ".hxx") {
+                    return entry;
+                }
+                CompileCommandEntry adapted = entry;
+                if (!adapted.command.empty()) {
+                    std::regex file_regex(R"(\s["']?[^\s"']+\.(?:cpp|cc|cxx|c)["']?)");
+                    adapted.command = std::regex_replace(adapted.command, file_regex, std::format(" \"{}\"", canonical_target));
+                }
+                adapted.file = canonical_target;
+                return adapted;
+            }
+        }
+
+        // Fallback 2: match by filename if path differs
+        std::string filename = tp.filename().string();
         for (const auto& [path, entry] : compile_commands_) {
             if (std::filesystem::path(path).filename().string() == filename) {
                 return entry;
+            }
+        }
+
+        // Fallback 3: for headers without same-stem .cpp, borrow compile command from same directory or project
+        std::string ext = tp.extension().string();
+        if (ext == ".h" || ext == ".hpp" || ext == ".hxx") {
+            std::string parent_dir = tp.parent_path().string();
+            for (const auto& [path, entry] : compile_commands_) {
+                if (std::filesystem::path(path).parent_path().string() == parent_dir) {
+                    return entry;
+                }
+            }
+            if (!compile_commands_.empty()) {
+                return compile_commands_.begin()->second;
             }
         }
 
@@ -347,7 +383,7 @@ private:
         if (content.empty()) return false;
 
         std::vector<CompileCommandEntry> entries;
-        auto err = glz::read_json(entries, content);
+        auto err = glz::read<glz::opts{.error_on_unknown_keys = false}>(entries, content);
         if (err) {
             return false;
         }

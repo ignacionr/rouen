@@ -581,7 +581,6 @@ namespace rouen::helpers {
             add_candidate("gemini-flash-lite-latest");
             add_candidate("gemini-2.5-flash-lite");
             add_candidate("gemini-3.6-flash");
-            add_candidate("gemini-3.5-flash");
             add_candidate("gemini-flash-latest");
             add_candidate("gemini-3-flash-preview");
 
@@ -716,7 +715,6 @@ namespace rouen::helpers {
             add_candidate("gemini-flash-lite-latest");
             add_candidate("gemini-2.5-flash-lite");
             add_candidate("gemini-3.6-flash");
-            add_candidate("gemini-3.5-flash");
             add_candidate("gemini-flash-latest");
             add_candidate("gemini-3-flash-preview");
 

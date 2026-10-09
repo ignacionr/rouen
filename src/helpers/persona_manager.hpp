@@ -289,7 +289,7 @@ namespace rouen::helpers {
                         if (f.is_open()) {
                             std::string meta_content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
                             PersonaActiveMeta meta{};
-                            if (!glz::read_json(meta, meta_content)) {
+                            if (!glz::read<glz::opts{.error_on_unknown_keys = false}>(meta, meta_content)) {
                                 active_persona_name = meta.active_persona;
                             }
                         }
@@ -300,7 +300,7 @@ namespace rouen::helpers {
                     if (!f.is_open()) continue;
                     std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
                     Persona p;
-                    auto err = glz::read_json(p, content);
+                    auto err = glz::read<glz::opts{.error_on_unknown_keys = false}>(p, content);
                     if (!err && !p.name.empty()) {
                         imported_personas.push_back(std::move(p));
                     }
@@ -409,7 +409,7 @@ namespace rouen::helpers {
             default_p.enable_search = false;
             default_p.temperature = 0.7f;
             default_p.thinking_level = "high";
-            default_p.max_tool_iterations = 25;
+            default_p.max_tool_iterations = 50;
             default_p.max_output_tokens = 8192;
             personas_.push_back(default_p);
 
@@ -422,7 +422,7 @@ namespace rouen::helpers {
             eng_p.enable_search = false;
             eng_p.temperature = 0.1f;
             eng_p.thinking_level = "high";
-            eng_p.max_tool_iterations = 50;
+            eng_p.max_tool_iterations = 100;
             eng_p.max_output_tokens = 16384;
             eng_p.system_prompt = 
                 "You are Autonomous Engineer, a staff-level software engineer inside Rouen.\n"
@@ -446,7 +446,8 @@ namespace rouen::helpers {
                 "6. Build targets adhering strictly to '-j2' with build_and_deploy.\n"
                 "7. Commit, push, and mark inbox entries done using update_inbox_item.\n"
                 "8. Always announce completion via announce_completion.\n"
-                "CRITICAL: Never fake or simulate test execution or inbox status. Always invoke the real tools and report factual results.";
+                "CRITICAL: Never fake or simulate test execution or inbox status. Always invoke the real tools and report factual results.\n"
+                "- Carry to Completion: When tasked with implementation, execute the entire lifecycle end-to-end (diagnose, test, edit, compile, verify, commit, and announce). Never halt prematurely to ask for permission or report an incomplete partial roadmap unless an insurmountable fatal error is encountered.";
             personas_.push_back(eng_p);
             
             Persona dev_arch;
@@ -466,7 +467,7 @@ namespace rouen::helpers {
             dev_arch.enable_search = false;
             dev_arch.temperature = 0.2f;
             dev_arch.thinking_level = "low";
-            dev_arch.max_tool_iterations = 50;
+            dev_arch.max_tool_iterations = 100;
             dev_arch.max_output_tokens = 16384;
             personas_.push_back(dev_arch);
 
@@ -633,7 +634,7 @@ namespace rouen::helpers {
                 file.close();
 
                 PersonaSaveModel model;
-                auto err = glz::read_json(model, content);
+                auto err = glz::read<glz::opts{.error_on_unknown_keys = false}>(model, content);
                 if (err) {
                     std::cerr << "[Persona] Failed to parse personas.json: " << glz::format_error(err, content) << std::endl;
                     return;
@@ -784,17 +785,21 @@ namespace rouen::helpers {
                                 "CRITICAL: Never fake or simulate test execution or inbox status. Always invoke the real tools and report factual results.";
                             modified = true;
                         }
+                        if (p.system_prompt.find("Carry to Completion") == std::string::npos) {
+                            p.system_prompt += "\n- Carry to Completion: When tasked with implementation, execute the entire lifecycle end-to-end (diagnose, test, edit, compile, verify, commit, and announce). Never halt prematurely to ask for permission or report an incomplete partial roadmap unless an insurmountable fatal error is encountered.";
+                            modified = true;
+                        }
                     }
                     if (p.max_tool_iterations <= 0) {
-                        p.max_tool_iterations = (p.name == "Autonomous Engineer" || p.name == "Code & Git Architect") ? 50 : 10;
+                        p.max_tool_iterations = (p.name == "Autonomous Engineer" || p.name == "Code & Git Architect") ? 100 : 10;
                         modified = true;
                     }
                     if (p.max_output_tokens <= 0) {
                         p.max_output_tokens = (p.name == "Autonomous Engineer" || p.name == "Code & Git Architect") ? 16384 : 8192;
                         modified = true;
                     }
-                    if ((p.name == "Autonomous Engineer" || p.name == "Code & Git Architect") && p.max_tool_iterations < 50) {
-                        p.max_tool_iterations = 50;
+                    if ((p.name == "Autonomous Engineer" || p.name == "Code & Git Architect") && p.max_tool_iterations < 100) {
+                        p.max_tool_iterations = 100;
                         modified = true;
                     }
                     if ((p.name == "Autonomous Engineer" || p.name == "Code & Git Architect") && p.max_output_tokens < 16384) {
@@ -806,8 +811,8 @@ namespace rouen::helpers {
                         modified = true;
                     }
                     if (p.name == "Rouen Assistant") {
-                        if (p.max_tool_iterations < 25) {
-                            p.max_tool_iterations = 25;
+                        if (p.max_tool_iterations < 50) {
+                            p.max_tool_iterations = 50;
                             modified = true;
                         }
                         if (p.system_prompt.find("NEVER reply with generic placeholder phrases") == std::string::npos) {
@@ -818,9 +823,12 @@ namespace rouen::helpers {
                             p.system_prompt += "\n- Action & Task Execution: When the user instructs to carry out, proceed with, execute, or implement a plan or task (such as 'go ahead with it', 'proceed', 'carry this out', or 'implement this'), NEVER stop at providing a summary or roadmap. You must actively take action: either execute the required tools directly or immediately delegate the implementation to `call_persona_autonomous_engineer`.\n";
                             modified = true;
                         }
-                        if (std::find(p.allowed_personas.begin(), p.allowed_personas.end(), "Autonomous Engineer") == p.allowed_personas.end()) {
-                            p.allowed_personas.insert(p.allowed_personas.begin(), "Autonomous Engineer");
-                            modified = true;
+                        std::vector<std::string> default_subs = {"Autonomous Engineer", "Code & Git Architect", "Personal Productivity Lead", "Media & Knowledge Director", "Financial Analyst", "System Health & Metrics"};
+                        for (const auto& sub : default_subs) {
+                            if (std::find(p.allowed_personas.begin(), p.allowed_personas.end(), sub) == p.allowed_personas.end()) {
+                                p.allowed_personas.push_back(sub);
+                                modified = true;
+                            }
                         }
                         if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), "contacts") == p.allowed_mcps.end()) {
                             p.allowed_mcps.push_back("contacts");

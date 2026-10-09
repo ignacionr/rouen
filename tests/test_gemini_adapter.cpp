@@ -835,13 +835,14 @@ TEST(PersonaManagerTest, AutonomousEngineerExtendedIterationsAndTokens) {
     ASSERT_NE(arch_p, nullptr);
     ASSERT_NE(def_p, nullptr);
 
-    EXPECT_EQ(eng_p->max_tool_iterations, 50);
+    EXPECT_EQ(eng_p->max_tool_iterations, 100);
     EXPECT_EQ(eng_p->max_output_tokens, 16384);
+    EXPECT_NE(eng_p->system_prompt.find("Carry to Completion"), std::string::npos);
 
-    EXPECT_EQ(arch_p->max_tool_iterations, 50);
+    EXPECT_EQ(arch_p->max_tool_iterations, 100);
     EXPECT_EQ(arch_p->max_output_tokens, 16384);
 
-    EXPECT_EQ(def_p->max_tool_iterations, 25);
+    EXPECT_EQ(def_p->max_tool_iterations, 50);
     EXPECT_EQ(def_p->max_output_tokens, 8192);
 }
 
@@ -857,6 +858,33 @@ TEST(PersonaManagerTest, RouenAssistantTaskExecutionDelegationRule) {
     ASSERT_NE(def_p, nullptr);
     EXPECT_NE(def_p->system_prompt.find("Action & Task Execution"), std::string::npos);
     EXPECT_NE(def_p->system_prompt.find("call_persona_autonomous_engineer"), std::string::npos);
+    EXPECT_NE(std::find(def_p->allowed_personas.begin(), def_p->allowed_personas.end(), "Autonomous Engineer"), def_p->allowed_personas.end());
+    EXPECT_NE(std::find(def_p->allowed_personas.begin(), def_p->allowed_personas.end(), "Code & Git Architect"), def_p->allowed_personas.end());
+    EXPECT_NE(std::find(def_p->allowed_personas.begin(), def_p->allowed_personas.end(), "Financial Analyst"), def_p->allowed_personas.end());
+}
+
+TEST(GeminiAdapterTest, ConfiguresGemini38AndExcludes35) {
+    GeminiAdapter adapter("dummy_key");
+    EXPECT_EQ(adapter.model_, "gemini-3.8-flash");
+
+    std::vector<std::string> requested_urls;
+    auto mock_post = [&](const std::string& url, const std::string&, auto) -> std::string {
+        requested_urls.push_back(url);
+        // Force fallback through candidates by rejecting initial
+        if (requested_urls.size() < 3) {
+            throw std::runtime_error("HTTP error 429: rate limit");
+        }
+        return R"({"candidates":[{"content":{"parts":[{"text":"Candidate success"}]}}]})";
+    };
+
+    auto resp = adapter.sendMessage("Hi", mock_post);
+    EXPECT_FALSE(resp.choices.empty());
+
+    // Verify all requested candidate URLs use valid models and none use 3.5
+    for (const auto& u : requested_urls) {
+        EXPECT_EQ(u.find("gemini-3.5"), std::string::npos) << "URL contained invalid gemini-3.5: " << u;
+    }
+    EXPECT_NE(requested_urls[0].find("gemini-3.8-flash"), std::string::npos);
 }
 
 TEST(GeminiAdapterTest, DirectGlazeParsingWithEscapedQuotesAndCandidateFallback) {
