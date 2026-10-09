@@ -11,6 +11,7 @@
 #include "../src/helpers/fetch.hpp"
 #include "../src/helpers/syntax_checker.hpp"
 #include "../src/cards/information/ai_chat.hpp"
+#include "../src/helpers/persona_manager.hpp"
 #include "../src/registrar.hpp"
 
 // Forward declarations to avoid including weather.hpp with its icon dependencies
@@ -844,6 +845,88 @@ TEST(MCPTest, ThemeToolsRegisteredAndCallable) {
     EXPECT_NE(sel_res.result.find("Amber"), std::string::npos);
 }
 
+TEST(MCPTest, PersonaToolsRegisteredAndCallable) {
+    mcp_service mcp;
+    EXPECT_TRUE(mcp.has_function("list_personas"));
+    EXPECT_TRUE(mcp.has_function("get_active_persona"));
+    EXPECT_TRUE(mcp.has_function("enable_persona"));
+    EXPECT_TRUE(mcp.has_function("create_persona"));
+    EXPECT_TRUE(mcp.has_function("update_persona"));
+    EXPECT_TRUE(mcp.has_function("delete_persona"));
+
+    // 1. List personas and inspect active persona
+    auto list_res = mcp.execute_function("list_personas", "{}");
+    EXPECT_TRUE(list_res.success);
+    EXPECT_NE(list_res.result.find("Rouen Assistant"), std::string::npos);
+    EXPECT_NE(list_res.result.find("Persona Architect"), std::string::npos);
+
+    auto active_res = mcp.execute_function("get_active_persona", "{}");
+    EXPECT_TRUE(active_res.success);
+    EXPECT_NE(active_res.result.find("persona"), std::string::npos);
+
+    // 2. Create a new custom persona on demand
+    std::string const create_json = R"({
+        "name": "Database DBA Specialist",
+        "description": "Expert in PostgreSQL and SQLite query optimization",
+        "system_prompt": "You optimize database indexes and inspect queries.",
+        "allowed_mcps": ["terminal", "editor", "persona"],
+        "allowed_personas": ["Autonomous Engineer"],
+        "temperature": 0.15,
+        "thinking_level": "high",
+        "max_tool_iterations": 45,
+        "max_output_tokens": 4096
+    })";
+    auto create_res = mcp.execute_function("create_persona", create_json);
+    EXPECT_TRUE(create_res.success);
+    EXPECT_NE(create_res.result.find("Database DBA Specialist"), std::string::npos);
+    EXPECT_NE(create_res.result.find("created successfully"), std::string::npos);
+
+    // Verify it is now registered in PersonaManager
+    auto& pm = rouen::helpers::PersonaManager::instance();
+    const auto* dba_p = pm.get_persona_by_name("Database DBA Specialist");
+    ASSERT_NE(dba_p, nullptr);
+    EXPECT_EQ(dba_p->description, "Expert in PostgreSQL and SQLite query optimization");
+    EXPECT_FLOAT_EQ(dba_p->temperature, 0.15f);
+    EXPECT_EQ(dba_p->max_tool_iterations, 45);
+    EXPECT_EQ(dba_p->max_output_tokens, 4096);
+    EXPECT_NE(std::find(dba_p->allowed_mcps.begin(), dba_p->allowed_mcps.end(), "terminal"), dba_p->allowed_mcps.end());
+    EXPECT_NE(std::find(dba_p->allowed_personas.begin(), dba_p->allowed_personas.end(), "Autonomous Engineer"), dba_p->allowed_personas.end());
+
+    // 3. Reconfigure (update) the persona on demand
+    std::string const update_json = R"({
+        "name": "Database DBA Specialist",
+        "temperature": 0.05,
+        "max_tool_iterations": 80,
+        "system_prompt": "Updated: strictly enforce explain analyze on all queries."
+    })";
+    auto update_res = mcp.execute_function("update_persona", update_json);
+    EXPECT_TRUE(update_res.success);
+    EXPECT_NE(update_res.result.find("updated successfully"), std::string::npos);
+
+    dba_p = pm.get_persona_by_name("Database DBA Specialist");
+    ASSERT_NE(dba_p, nullptr);
+    EXPECT_FLOAT_EQ(dba_p->temperature, 0.05f);
+    EXPECT_EQ(dba_p->max_tool_iterations, 80);
+    EXPECT_NE(dba_p->system_prompt.find("explain analyze"), std::string::npos);
+
+    // 4. Test duplicate prevention on create
+    auto dup_res = mcp.execute_function("create_persona", create_json);
+    EXPECT_TRUE(dup_res.success);
+    EXPECT_NE(dup_res.result.find("already exists"), std::string::npos);
+
+    // 5. Test protection: cannot delete Rouen Assistant
+    auto del_protect_res = mcp.execute_function("delete_persona", R"({"name":"Rouen Assistant"})");
+    EXPECT_TRUE(del_protect_res.success);
+    EXPECT_NE(del_protect_res.result.find("protected core orchestrator"), std::string::npos);
+
+    // 6. Delete the custom persona on demand
+    auto del_res = mcp.execute_function("delete_persona", R"({"name":"Database DBA Specialist"})");
+    EXPECT_TRUE(del_res.success);
+    EXPECT_NE(del_res.result.find("deleted successfully"), std::string::npos);
+
+    EXPECT_EQ(pm.get_persona_by_name("Database DBA Specialist"), nullptr);
+}
+
 TEST(MCPTest, RealAIFixWithAIDispatchLoop) {
     CONFIG_SERVICE()->load_env_file();
 
@@ -1051,6 +1134,65 @@ TEST(MCPTest, LiveToolActivityTracking) {
     act.duration_ms = 45;
     EXPECT_FALSE(act.is_running);
     EXPECT_EQ(act.duration_ms, 45);
+}
+
+TEST(MCPTest, AdaptiveProcessCreationAndPersonaSupport) {
+    mcp_service mcp;
+    
+    // 1. Tool availability
+    EXPECT_TRUE(mcp.has_function("create_adaptive_process_card"));
+
+    // 2. PersonaManager capabilities for Adaptive Card Architect
+    auto& pm = rouen::helpers::PersonaManager::instance();
+    const auto* aca = pm.get_persona_by_name("Adaptive Card Architect");
+    ASSERT_NE(aca, nullptr);
+    EXPECT_NE(std::find(aca->allowed_mcps.begin(), aca->allowed_mcps.end(), "terminal"), aca->allowed_mcps.end());
+    EXPECT_NE(std::find(aca->allowed_mcps.begin(), aca->allowed_mcps.end(), "editor"), aca->allowed_mcps.end());
+    EXPECT_NE(std::find(aca->allowed_mcps.begin(), aca->allowed_mcps.end(), "deck"), aca->allowed_mcps.end());
+    EXPECT_NE(std::find(aca->allowed_mcps.begin(), aca->allowed_mcps.end(), "adaptive_card"), aca->allowed_mcps.end());
+    EXPECT_GE(aca->max_tool_iterations, 50);
+    EXPECT_GE(aca->max_output_tokens, 8192);
+    EXPECT_EQ(aca->thinking_level, "high");
+    EXPECT_NE(aca->system_prompt.find("adaptive-process"), std::string::npos);
+    EXPECT_NE(aca->system_prompt.find("zsh"), std::string::npos);
+    EXPECT_NE(aca->system_prompt.find("PowerShell"), std::string::npos);
+
+    // 3. Rouen Assistant allows delegation to Adaptive Card Architect
+    const auto* ra = pm.get_persona_by_name("Rouen Assistant");
+    ASSERT_NE(ra, nullptr);
+    EXPECT_NE(std::find(ra->allowed_personas.begin(), ra->allowed_personas.end(), "Adaptive Card Architect"), ra->allowed_personas.end());
+    EXPECT_NE(ra->system_prompt.find("Adaptive Process"), std::string::npos);
+
+    // 4. Test create_adaptive_process_card tool execution
+    std::string captured_card_uri;
+    registrar::add<std::function<void(std::string const&)>>(
+        "create_card",
+        std::make_shared<std::function<void(std::string const&)>>(
+            [&captured_card_uri](std::string const& uri) {
+                captured_card_uri = uri;
+            }
+        )
+    );
+
+    auto temp_dir = std::filesystem::temp_directory_path() / "test_rouen_adaptive_process";
+    std::filesystem::create_directories(temp_dir);
+    auto script_file = temp_dir / "inbox_status.zsh";
+
+    std::string params = std::format(
+        R"({{"script_path":"{}","script_content":"#!/usr/bin/env zsh\necho '{{\"type\":\"AdaptiveCard\",\"body\":[{{\"type\":\"TextBlock\",\"text\":\"Inbox Status\"}}]}}'\n"}})",
+        script_file.string()
+    );
+
+    auto res = mcp.execute_function("create_adaptive_process_card", params);
+    EXPECT_TRUE(res.success) << "create_adaptive_process_card failed: " << res.error_message;
+    EXPECT_TRUE(std::filesystem::exists(script_file));
+#if !defined(_WIN32)
+    auto perms = std::filesystem::status(script_file).permissions();
+    EXPECT_TRUE((perms & std::filesystem::perms::owner_exec) != std::filesystem::perms::none);
+#endif
+    EXPECT_EQ(captured_card_uri, std::format("adaptive-process:zsh {}", script_file.string()));
+
+    std::filesystem::remove_all(temp_dir);
 }
 
 

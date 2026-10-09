@@ -76,6 +76,9 @@ struct Persona {
     bool enable_search{false};                 // Grounding / Google Web Search toggle
     std::vector<std::string> allowed_personas; // Sub-personas authorized for delegation
     float temperature{0.7f};                   // Model sampling temperature (0.0 - 1.0)
+    std::string thinking_level{"default"};     // Thinking level ("none", "low", "medium", "high", "default")
+    int max_tool_iterations{30};               // Maximum iterative tool calling turns per prompt
+    int max_output_tokens{8192};               // Output token budget ceiling
 };
 ```
 
@@ -119,10 +122,14 @@ The local configuration file (`~/Library/Application Support/Rouen/personas.json
 * **`Rouen Assistant`** (Active default persona, index 6):
   - **Role**: Coordinates top-level user requests.
   - **Temperature**: `0.7` for natural conversational flexibility.
-  - **Authorized Sub-Personas**: `Code & Git Architect`, `Personal Productivity Lead`, `Media & Knowledge Director`, `Financial Analyst`, `System Health & Metrics`.
-  - **Allowed MCPs**: Deck management, mesh querying, and general utilities.
+  - **Authorized Sub-Personas**: `Code & Git Architect`, `Personal Productivity Lead`, `Media & Knowledge Director`, `Financial Analyst`, `System Health & Metrics`, `Persona Architect`.
+  - **Allowed MCPs**: Deck management, persona reconfiguration, mesh querying, and general utilities.
 
 ### 2. Tier 2: Domain Group Leads
+* **`Persona Architect`**:
+  - Focuses on persona engineering, prompt architecture, tool gating policies, and runtime persona reconfiguration (`create_persona`, `update_persona`, `delete_persona`).
+  - Gated to: `persona`, `deck`, `notes`.
+  - Runs with `high` thinking level and `0.3` temperature for precise and robust persona design.
 * **`Code & Git Architect`**:
   - Focuses on technical operations, code review, file edits, and system command orchestration.
   - Delegates to: `Terminal Specialist`, `Git & GitHub Specialist`, `Adaptive Card Architect`.
@@ -142,7 +149,7 @@ Leaf specialists have empty `allowed_personas` lists and strictly minimal `allow
 * **`Terminal Specialist`** (`allowed_mcps: ["terminal"]`, temp: `0.1`): Only allowed to run shell commands.
 * **`Editor Specialist`** (`allowed_mcps: ["editor"]`, temp: `0.1`): Dedicated strictly to file inspection and editing.
 * **`Git & GitHub Specialist`** (`allowed_mcps: ["git", "github"]`, temp: `0.2`): Manages repositories, branches, and commits.
-* **`Adaptive Card Architect`** (`allowed_mcps: ["deck", "adaptive_card"]`, temp: `0.3`): Designs and presents rich JSON Adaptive Cards (flight passes, invoices, dashboards).
+* **`Adaptive Card Architect`** (`allowed_mcps: ["deck", "adaptive_card", "terminal", "editor", "notes"]`, temp: `0.2`): Designs and presents rich JSON Adaptive Cards (flight passes, invoices, dashboards) and creates live Adaptive Process scripts (`zsh` on macOS, `powershell` on Windows) on demand.
 * **`Archiver of all data`** (`allowed_mcps: ["notes"]`, temp: `0.0`): Precision librarian persona safeguarding notes across sessions.
 * **`Schedule & Timekeeper`** (`allowed_mcps: ["calendar", "alarm", "pomodoro"]`, temp: `0.2`): Event scheduling and timer management.
 * **`Directory & Address Book`** (`allowed_mcps: ["contacts", "directory"]`, temp: `0.2`): Address book and contacts integration.
@@ -169,7 +176,8 @@ Leaf specialists have empty `allowed_personas` lists and strictly minimal `allow
             "Personal Productivity Lead",
             "Media & Knowledge Director",
             "Financial Analyst",
-            "System Health & Metrics"
+            "System Health & Metrics",
+            "Persona Architect"
          ],
          "temperature": 0.7
       },
@@ -201,6 +209,10 @@ In [`ai_chat.cpp`](file:///Users/ignaciorodriguez/src/rouen/src/cards/informatio
 ### 2. Modular Prompt Injection (`get_modular_mcp_instructions`)
 Depending on the active persona's `allowed_mcps`, Rouen automatically appends strict behavioral guidelines to the system prompt:
 
+* **Persona Reconfiguration & Management (`persona`)**:
+  - Directs agents to inspect existing persona structures (`list_personas`) before making modifications.
+  - Instructs agents to use `create_persona` when introducing specialized domain agents and `update_persona` when adjusting system prompts, allowed tools, thinking level, or execution limits on demand.
+  - Strictly forbids deleting or unseating core orchestrators like `Rouen Assistant`.
 * **Terminal (`terminal`)**:
   - Instructs the AI to execute commands using `run_local_command` rather than instructing the user how to run shell commands manually.
 * **Deck & Adaptive Cards (`deck`, `adaptive_card`)**:
@@ -230,6 +242,7 @@ mcp_host Tool Registry
 │   ├── create_card                 (Open standard cards by URI, e.g. 'weather:London')
 │   ├── create_time_series_card     (Spawn line/bar chart visualization cards)
 │   ├── create_adaptive_card        (Render interactive native Adaptive Cards)
+│   ├── create_adaptive_process_card (Launch live Adaptive Process Card from script/cmd)
 │   ├── list_adaptive_cards         (List active Adaptive Cards)
 │   ├── get_adaptive_card           (Inspect specific Adaptive Card state/JSON)
 │   ├── execute_card_action         (Trigger button/submit actions on cards)
@@ -298,7 +311,10 @@ mcp_host Tool Registry
 ├── Persona Management
 │   ├── list_personas               (List configured AI personas)
 │   ├── enable_persona              (Switch active persona)
-│   └── get_active_persona          (Query currently active persona metadata)
+│   ├── get_active_persona          (Query currently active persona metadata)
+│   ├── create_persona              (Create new AI persona with prompt, tools, thinking level, and limits)
+│   ├── update_persona              (Reconfigure an existing persona's parameters on demand)
+│   └── delete_persona              (Safely remove persona by name or index; core orchestrators protected)
 └── Notifications
     └── notify_operator_telegram   (Send high-priority alert or message to Telegram operator)
 ```

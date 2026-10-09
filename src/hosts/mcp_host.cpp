@@ -900,6 +900,23 @@ struct mcp_create_adaptive_card_params {
     };
 };
 
+struct mcp_create_adaptive_process_card_params {
+    std::string command_line;
+    std::string script_path;
+    std::string script_content;
+    bool overwrite{true};
+
+    struct glaze {
+        using T = mcp_create_adaptive_process_card_params;
+        static constexpr auto value = glz::object(
+            "command_line", &T::command_line,
+            "script_path", &T::script_path,
+            "script_content", &T::script_content,
+            "overwrite", &T::overwrite
+        );
+    };
+};
+
 struct mcp_get_adaptive_card_params {
     std::string name;
 
@@ -916,6 +933,85 @@ struct mcp_enable_persona_params {
     int index{-1};
     struct glaze {
         using T = mcp_enable_persona_params;
+        static constexpr auto value = glz::object(
+            "name", &T::name,
+            "index", &T::index
+        );
+    };
+};
+
+struct mcp_create_persona_params {
+    std::string name;
+    std::string description;
+    std::string system_prompt;
+    std::vector<std::string> allowed_mcps;
+    std::vector<std::string> allowed_personas;
+    std::string llm_config_name{"Gemini Flash"};
+    bool enable_search{false};
+    float temperature{0.7f};
+    std::string thinking_level{"high"};
+    int max_tool_iterations{50};
+    int max_output_tokens{8192};
+
+    struct glaze {
+        using T = mcp_create_persona_params;
+        static constexpr auto value = glz::object(
+            "name", &T::name,
+            "description", &T::description,
+            "system_prompt", &T::system_prompt,
+            "allowed_mcps", &T::allowed_mcps,
+            "allowed_personas", &T::allowed_personas,
+            "llm_config_name", &T::llm_config_name,
+            "enable_search", &T::enable_search,
+            "temperature", &T::temperature,
+            "thinking_level", &T::thinking_level,
+            "max_tool_iterations", &T::max_tool_iterations,
+            "max_output_tokens", &T::max_output_tokens
+        );
+    };
+};
+
+struct mcp_update_persona_params {
+    std::string name;
+    int index{-1};
+    std::optional<std::string> new_name;
+    std::optional<std::string> description;
+    std::optional<std::string> system_prompt;
+    std::optional<std::vector<std::string>> allowed_mcps;
+    std::optional<std::vector<std::string>> allowed_personas;
+    std::optional<std::string> llm_config_name;
+    std::optional<bool> enable_search;
+    std::optional<float> temperature;
+    std::optional<std::string> thinking_level;
+    std::optional<int> max_tool_iterations;
+    std::optional<int> max_output_tokens;
+
+    struct glaze {
+        using T = mcp_update_persona_params;
+        static constexpr auto value = glz::object(
+            "name", &T::name,
+            "index", &T::index,
+            "new_name", &T::new_name,
+            "description", &T::description,
+            "system_prompt", &T::system_prompt,
+            "allowed_mcps", &T::allowed_mcps,
+            "allowed_personas", &T::allowed_personas,
+            "llm_config_name", &T::llm_config_name,
+            "enable_search", &T::enable_search,
+            "temperature", &T::temperature,
+            "thinking_level", &T::thinking_level,
+            "max_tool_iterations", &T::max_tool_iterations,
+            "max_output_tokens", &T::max_output_tokens
+        );
+    };
+};
+
+struct mcp_delete_persona_params {
+    std::string name;
+    int index{-1};
+
+    struct glaze {
+        using T = mcp_delete_persona_params;
         static constexpr auto value = glz::object(
             "name", &T::name,
             "index", &T::index
@@ -1358,6 +1454,108 @@ mcp_host::mcp_host() {
     
     register_function("adaptive_card", create_adaptive_card_def);
     register_function("deck", create_adaptive_card_def);
+
+    // Register global create_adaptive_process_card function
+    function_definition const create_adaptive_process_card_def(
+        "create_adaptive_process_card",
+        "Create, persist, and launch an Adaptive Process Card on Rouen's deck. Can either launch an existing command line or automatically write a script to disk and launch it (zsh on macOS/Linux, PowerShell on Windows). The process communicates by emitting compact single-line Adaptive Card JSON documents to stdout and reading action submissions from stdin.",
+        R"mcp({"type":"object","properties":{"command_line":{"type":"string","description":"Command line to launch (e.g. 'zsh /path/to/script.zsh' or 'powershell -ExecutionPolicy Bypass -File C:/path/to/script.ps1'). If script_path is provided and command_line is omitted, command_line is inferred automatically."},"script_path":{"type":"string","description":"Optional file path to write script before launching (e.g. '~/.config/rouen/scripts/inbox_status.zsh')"},"script_content":{"type":"string","description":"Optional script content to write to script_path"},"overwrite":{"type":"boolean","description":"Allow overwriting existing script_path (default: true)"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return R"({"status":"error","message":"Missing params"})";
+            }
+
+            mcp_create_adaptive_process_card_params request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result) {
+                return R"({"status":"error","message":"Invalid JSON parameters for create_adaptive_process_card"})";
+            }
+
+            std::string resolved_script_path;
+            if (!request.script_path.empty()) {
+                std::string s = request.script_path;
+                if (s.starts_with("$HOME/") || s.starts_with("$HOME\\")) {
+                    const char* home = std::getenv("HOME");
+                    if (home) s = std::string(home) + s.substr(5);
+                } else if (s.starts_with("${HOME}/") || s.starts_with("${HOME}\\")) {
+                    const char* home = std::getenv("HOME");
+                    if (home) s = std::string(home) + s.substr(7);
+                } else {
+                    s = ProcessHelper::expandTilde(s);
+                }
+                resolved_script_path = s;
+
+                if (!request.script_content.empty()) {
+                    try {
+                        std::filesystem::path p(resolved_script_path);
+                        if (p.has_parent_path()) {
+                            std::filesystem::create_directories(p.parent_path());
+                        }
+                        if (!request.overwrite && std::filesystem::exists(p)) {
+                            return std::format(R"({{"status":"error","message":"File already exists at '{}' and overwrite is false"}})", resolved_script_path);
+                        }
+                        std::ofstream f(p, std::ios::out | std::ios::trunc);
+                        if (!f.is_open()) {
+                            return std::format(R"({{"status":"error","message":"Failed to open script file for writing: {}"}})", resolved_script_path);
+                        }
+                        f << request.script_content;
+                        f.close();
+
+#if !defined(_WIN32)
+                        std::error_code ec;
+                        std::filesystem::permissions(p,
+                            std::filesystem::perms::owner_all |
+                            std::filesystem::perms::group_read | std::filesystem::perms::group_exec |
+                            std::filesystem::perms::others_read | std::filesystem::perms::others_exec,
+                            std::filesystem::perm_options::add, ec);
+#endif
+                    } catch (const std::exception& e) {
+                        return std::format(R"({{"status":"error","message":"Failed to write script: {}"}})", e.what());
+                    }
+                }
+            }
+
+            if (request.command_line.empty() && !resolved_script_path.empty()) {
+                std::filesystem::path p(resolved_script_path);
+                auto ext = p.extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+#if defined(_WIN32)
+                if (ext == ".ps1") {
+                    request.command_line = "powershell -ExecutionPolicy Bypass -File \"" + resolved_script_path + "\"";
+                } else {
+                    request.command_line = "\"" + resolved_script_path + "\"";
+                }
+#else
+                if (ext == ".ps1") {
+                    request.command_line = "pwsh -File " + resolved_script_path;
+                } else if (ext == ".py") {
+                    request.command_line = "python3 " + resolved_script_path;
+                } else {
+                    request.command_line = "zsh " + resolved_script_path;
+                }
+#endif
+            }
+
+            if (request.command_line.empty()) {
+                return R"({"status":"error","message":"Missing required command_line or script_path parameter."})";
+            }
+
+            try {
+                auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
+                std::string const card_uri = std::format("adaptive-process:{}", request.command_line);
+                (*create_card_fn)(card_uri);
+
+                return std::format(R"({{"status":"success","message":"Adaptive process card opened on deck successfully","uri":"{}","command_line":"{}","script_path":"{}"}})",
+                    card_uri, request.command_line, resolved_script_path);
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"Failed to open adaptive process card: {}"}})", e.what());
+            }
+        },
+        "adaptive_card"
+    );
+
+    register_function("adaptive_card", create_adaptive_process_card_def);
+    register_function("deck", create_adaptive_process_card_def);
 
     // Register list_adaptive_cards function
     function_definition const list_adaptive_cards_def(
@@ -2931,10 +3129,10 @@ mcp_host::mcp_host() {
                 return std::format(R"({{"status":"error","message":"{}"}})", e.what());
             }
         },
-        "deck"
+        "persona"
     );
-    register_function("deck", list_personas_def);
     register_function("persona", list_personas_def);
+    register_function("deck", list_personas_def);
 
     function_definition const enable_persona_def(
         "enable_persona",
@@ -2952,12 +3150,9 @@ mcp_host::mcp_host() {
 
                 int target_idx = -1;
                 if (!req.name.empty()) {
-                    std::string const target_name = ::helpers::StringHelper::to_lower(req.name);
-                    for (size_t i = 0; i < personas.size(); ++i) {
-                        if (::helpers::StringHelper::to_lower(personas[i].name) == target_name) {
-                            target_idx = static_cast<int>(i);
-                            break;
-                        }
+                    auto opt_idx = pm.find_persona_index(req.name);
+                    if (opt_idx.has_value()) {
+                        target_idx = static_cast<int>(*opt_idx);
                     }
                 }
                 if (target_idx < 0 && req.index >= 0 && req.index < static_cast<int>(personas.size())) {
@@ -2979,10 +3174,10 @@ mcp_host::mcp_host() {
                 return std::format(R"({{"status":"error","message":"{}"}})", e.what());
             }
         },
-        "deck"
+        "persona"
     );
-    register_function("deck", enable_persona_def);
     register_function("persona", enable_persona_def);
+    register_function("deck", enable_persona_def);
 
     function_definition const get_active_persona_def(
         "get_active_persona",
@@ -3005,10 +3200,193 @@ mcp_host::mcp_host() {
                 return std::format(R"({{"status":"error","message":"{}"}})", e.what());
             }
         },
-        "deck"
+        "persona"
     );
-    register_function("deck", get_active_persona_def);
     register_function("persona", get_active_persona_def);
+    register_function("deck", get_active_persona_def);
+
+    function_definition const create_persona_def(
+        "create_persona",
+        "Create a new AI persona in Rouen with custom system prompts, allowed MCP capabilities, delegation targets, and LLM execution parameters.",
+        R"mcp({"type":"object","properties":{"name":{"type":"string","description":"Unique name of the persona (e.g. 'Security Auditor', 'SQL Wizard')"},"description":{"type":"string","description":"Brief description of the persona's role and specialties"},"system_prompt":{"type":"string","description":"System instructions and operational guidelines for this persona"},"allowed_mcps":{"type":"array","items":{"type":"string"},"description":"List of allowed MCP capabilities (e.g. ['terminal', 'editor', 'git', 'deck', 'notes', 'contacts', 'mesh', 'youtube', 'wikipedia', 'alarm', 'pomodoro', 'bybit', 'metrics', 'persona'])"},"allowed_personas":{"type":"array","items":{"type":"string"},"description":"List of sub-persona names this persona is allowed to delegate to"},"llm_config_name":{"type":"string","description":"LLM configuration name (default: 'Gemini Flash')"},"enable_search":{"type":"boolean","description":"Whether live web search is enabled (default: false)"},"temperature":{"type":"number","description":"Sampling temperature between 0.0 and 1.0 (default: 0.7)"},"thinking_level":{"type":"string","description":"Thinking level ('minimal', 'low', 'medium', 'high', default: 'high')"},"max_tool_iterations":{"type":"integer","description":"Maximum agent tool iterations per request (default: 50)"},"max_output_tokens":{"type":"integer","description":"Maximum tokens for responses (default: 8192)"}},"required":["name","system_prompt"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_create_persona_params req{};
+                if (!params.empty()) {
+                    auto err = glz::read<glz::opts{.error_on_unknown_keys = false}>(req, params);
+                    if (err) {
+                        return std::format(R"({{"status":"error","message":"Invalid JSON arguments: {}"}})", glz::format_error(err, params));
+                    }
+                }
+
+                if (req.name.empty()) {
+                    return R"({"status":"error","message":"'name' parameter cannot be empty"})";
+                }
+                if (req.system_prompt.empty()) {
+                    return R"({"status":"error","message":"'system_prompt' parameter cannot be empty"})";
+                }
+
+                auto& pm = helpers::PersonaManager::instance();
+                if (pm.find_persona_index(req.name).has_value()) {
+                    return std::format(R"({{"status":"error","message":"A persona named '{}' already exists. Use update_persona to modify it."}})", req.name);
+                }
+
+                helpers::Persona p;
+                p.name = req.name;
+                p.description = req.description.empty() ? ("Custom AI persona: " + req.name) : req.description;
+                p.system_prompt = req.system_prompt;
+                p.allowed_mcps = req.allowed_mcps.empty() ? std::vector<std::string>{"deck", "persona"} : req.allowed_mcps;
+                p.allowed_personas = req.allowed_personas;
+                p.llm_config_name = req.llm_config_name.empty() ? "Gemini Flash" : req.llm_config_name;
+                p.enable_search = req.enable_search;
+                p.temperature = (req.temperature >= 0.0f && req.temperature <= 2.0f) ? req.temperature : 0.7f;
+                p.thinking_level = req.thinking_level.empty() ? "high" : req.thinking_level;
+                p.max_tool_iterations = req.max_tool_iterations > 0 ? req.max_tool_iterations : 50;
+                p.max_output_tokens = req.max_output_tokens > 0 ? req.max_output_tokens : 8192;
+
+                pm.add_persona(p);
+
+                std::string p_json;
+                (void)glz::write_json(p, p_json);
+
+                return std::format(
+                    R"({{"status":"success","message":"Persona '{}' created successfully","persona":{}}})",
+                    p.name, p_json
+                );
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "persona"
+    );
+    register_function("persona", create_persona_def);
+    register_function("deck", create_persona_def);
+
+    function_definition const update_persona_def(
+        "update_persona",
+        "Reconfigure an existing AI persona in Rouen on demand by updating its prompt, allowed capabilities, delegation targets, or execution parameters.",
+        R"mcp({"type":"object","properties":{"name":{"type":"string","description":"Name of the persona to update (e.g. 'Autonomous Engineer', 'Code & Git Architect')"},"index":{"type":"integer","description":"Optional 0-based index of the persona to update"},"new_name":{"type":"string","description":"Optional new name if renaming the persona"},"description":{"type":"string","description":"Updated description of the persona's role"},"system_prompt":{"type":"string","description":"Updated system instructions and guidelines for this persona"},"allowed_mcps":{"type":"array","items":{"type":"string"},"description":"Updated list of allowed MCP capability categories (e.g. ['terminal', 'editor', 'git', 'deck', 'notes', 'contacts', 'mesh', 'youtube', 'wikipedia', 'alarm', 'pomodoro', 'bybit', 'metrics', 'persona'])"},"allowed_personas":{"type":"array","items":{"type":"string"},"description":"Updated list of sub-persona names this persona is allowed to delegate to"},"llm_config_name":{"type":"string","description":"Updated LLM configuration name"},"enable_search":{"type":"boolean","description":"Updated web search setting"},"temperature":{"type":"number","description":"Updated sampling temperature between 0.0 and 1.0"},"thinking_level":{"type":"string","description":"Updated thinking level ('minimal', 'low', 'medium', 'high')"},"max_tool_iterations":{"type":"integer","description":"Updated maximum tool iterations"},"max_output_tokens":{"type":"integer","description":"Updated maximum output tokens"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_update_persona_params req{};
+                if (!params.empty()) {
+                    auto err = glz::read<glz::opts{.error_on_unknown_keys = false}>(req, params);
+                    if (err) {
+                        return std::format(R"({{"status":"error","message":"Invalid JSON arguments: {}"}})", glz::format_error(err, params));
+                    }
+                }
+
+                auto& pm = helpers::PersonaManager::instance();
+                const auto& personas = pm.get_personas();
+
+                int target_idx = -1;
+                if (!req.name.empty()) {
+                    auto opt_idx = pm.find_persona_index(req.name);
+                    if (opt_idx.has_value()) {
+                        target_idx = static_cast<int>(*opt_idx);
+                    }
+                }
+                if (target_idx < 0 && req.index >= 0 && req.index < static_cast<int>(personas.size())) {
+                    target_idx = req.index;
+                }
+
+                if (target_idx < 0) {
+                    return R"({"status":"error","message":"Persona not found by given name or index"})";
+                }
+
+                helpers::Persona p = personas[static_cast<size_t>(target_idx)];
+
+                if (req.new_name.has_value() && !req.new_name->empty()) {
+                    auto existing = pm.find_persona_index(*req.new_name);
+                    if (existing.has_value() && *existing != static_cast<size_t>(target_idx)) {
+                        return std::format(R"({{"status":"error","message":"Cannot rename: persona named '{}' already exists."}})", *req.new_name);
+                    }
+                    p.name = *req.new_name;
+                }
+                if (req.description.has_value()) p.description = *req.description;
+                if (req.system_prompt.has_value()) p.system_prompt = *req.system_prompt;
+                if (req.allowed_mcps.has_value()) p.allowed_mcps = *req.allowed_mcps;
+                if (req.allowed_personas.has_value()) p.allowed_personas = *req.allowed_personas;
+                if (req.llm_config_name.has_value()) p.llm_config_name = *req.llm_config_name;
+                if (req.enable_search.has_value()) p.enable_search = *req.enable_search;
+                if (req.temperature.has_value()) p.temperature = *req.temperature;
+                if (req.thinking_level.has_value()) p.thinking_level = *req.thinking_level;
+                if (req.max_tool_iterations.has_value()) p.max_tool_iterations = *req.max_tool_iterations;
+                if (req.max_output_tokens.has_value()) p.max_output_tokens = *req.max_output_tokens;
+
+                pm.update_persona(static_cast<size_t>(target_idx), p);
+
+                std::string p_json;
+                (void)glz::write_json(p, p_json);
+
+                return std::format(
+                    R"({{"status":"success","message":"Persona '{}' updated successfully","persona":{}}})",
+                    p.name, p_json
+                );
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "persona"
+    );
+    register_function("persona", update_persona_def);
+    register_function("deck", update_persona_def);
+
+    function_definition const delete_persona_def(
+        "delete_persona",
+        "Delete an AI persona in Rouen by name or 0-based index. Core orchestrator personas like 'Rouen Assistant' are protected and cannot be deleted.",
+        R"mcp({"type":"object","properties":{"name":{"type":"string","description":"Name of the persona to delete"},"index":{"type":"integer","description":"Optional 0-based index of the persona to delete"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_delete_persona_params req{};
+                if (!params.empty()) {
+                    auto err = glz::read<glz::opts{.error_on_unknown_keys = false}>(req, params);
+                    if (err) {
+                        return std::format(R"({{"status":"error","message":"Invalid JSON arguments: {}"}})", glz::format_error(err, params));
+                    }
+                }
+
+                auto& pm = helpers::PersonaManager::instance();
+                const auto& personas = pm.get_personas();
+
+                int target_idx = -1;
+                if (!req.name.empty()) {
+                    auto opt_idx = pm.find_persona_index(req.name);
+                    if (opt_idx.has_value()) {
+                        target_idx = static_cast<int>(*opt_idx);
+                    }
+                }
+                if (target_idx < 0 && req.index >= 0 && req.index < static_cast<int>(personas.size())) {
+                    target_idx = req.index;
+                }
+
+                if (target_idx < 0) {
+                    return R"({"status":"error","message":"Persona not found by given name or index"})";
+                }
+
+                if (personas.size() <= 1) {
+                    return R"({"status":"error","message":"Cannot delete the only remaining persona in Rouen."})";
+                }
+
+                std::string target_name = personas[static_cast<size_t>(target_idx)].name;
+                if (target_name == "Rouen Assistant") {
+                    return R"({"status":"error","message":"'Rouen Assistant' is a protected core orchestrator and cannot be deleted."})";
+                }
+
+                pm.delete_persona(static_cast<size_t>(target_idx));
+
+                return std::format(
+                    R"({{"status":"success","message":"Persona '{}' deleted successfully"}})",
+                    target_name
+                );
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "persona"
+    );
+    register_function("persona", delete_persona_def);
+    register_function("deck", delete_persona_def);
 
     // Theme Management Functions
     function_definition const list_themes_def(

@@ -139,3 +139,14 @@ trust model - the Terminal card, the CMake card, and the Process
 Orchestration panel already run arbitrary local commands - but it is
 worth remembering before wiring a persisted layout or the REST API up to
 something that accepts untrusted input.
+
+---
+
+## AI Persona On-Demand Generation
+
+Rouen's **Adaptive Card Architect** persona (and **Rouen Assistant** via delegation) is capable of writing and launching local shell scripts (`zsh` on macOS/Linux, `PowerShell` on Windows) on demand.
+
+For example, asking:
+> *"check out $HOME/rouen/inbox and create an adaptive process that will show each item organized by status"*
+
+will inspect the directory, generate a script emitting single-line Adaptive Card JSON to stdout, set permissions (`chmod +x`), and launch it on Rouen's deck using `create_adaptive_process_card` or `create_card("adaptive-process:<command line>")`.

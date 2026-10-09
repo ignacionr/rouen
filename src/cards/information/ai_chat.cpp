@@ -104,6 +104,10 @@ namespace rouen::cards {
     std::string get_modular_mcp_instructions(const std::vector<std::string>& allowed_mcps) {
         std::string instr;
         auto has_mcp = [&](const std::string& name) {
+            if (name == "persona") {
+                return std::find(allowed_mcps.begin(), allowed_mcps.end(), "persona") != allowed_mcps.end() ||
+                       std::find(allowed_mcps.begin(), allowed_mcps.end(), "deck") != allowed_mcps.end();
+            }
             if (name == "adaptive_card" || name == "deck") {
                 return std::find(allowed_mcps.begin(), allowed_mcps.end(), "deck") != allowed_mcps.end() ||
                        std::find(allowed_mcps.begin(), allowed_mcps.end(), "adaptive_card") != allowed_mcps.end();
@@ -120,11 +124,22 @@ namespace rouen::cards {
             return std::find(allowed_mcps.begin(), allowed_mcps.end(), name) != allowed_mcps.end();
         };
 
+        if (has_mcp("persona")) {
+            instr += "\nPERSONA RECONFIGURATION & MANAGEMENT INSTRUCTIONS:\n"
+                     "You have access to tools that can inspect, reconfigure, create, and manage AI personas in Rouen on demand:\n"
+                     "- `list_personas`: List all available personas, their active status, allowed tools, system prompts, and parameters.\n"
+                     "- `get_active_persona`: Retrieve the full configuration of the currently active persona.\n"
+                     "- `enable_persona`: Switch the active persona in Rouen by name or 0-based index.\n"
+                     "- `create_persona`: Create a new AI persona on demand with a custom role, system prompt, allowed MCP tools, delegation targets, and execution parameters.\n"
+                     "- `update_persona`: Reconfigure an existing persona on demand (update prompt, allowed tools, delegation targets, temperature, thinking level, token or iteration limits).\n"
+                     "- `delete_persona`: Safely remove a custom or obsolete persona (core personas like 'Rouen Assistant' are protected).\n"
+                     "When asked to reconfigure, tune, adjust, or create personas, invoke these tools directly and confirm the updated settings.\n";
+        }
         if (has_mcp("terminal")) {
             instr += "\nTERMINAL INSTRUCTIONS:\nYou have access to tools that can run local commands (e.g. bash commands). If the user asks you to check repository status, files, find the current date/time, or execute any shell command (including curl), use the provided `run_local_command` tool to execute them instead of giving them instructions on how to run it themselves.\n";
         }
         if (has_mcp("deck") || has_mcp("adaptive_card")) {
-            instr += "\nDECK & ADAPTIVE CARD INSTRUCTIONS:\nWhen users ask you to 'open', 'show', 'create', 'design', or 'display' something, use the appropriate tool:\n- To create and present interactive, structured Adaptive Cards (such as flight passes, invoices, user profiles, status dashboards, forms, polls, or rich UI components), call `create_adaptive_card`. Provide a descriptive `title` and a valid Adaptive Card JSON structure for `card_json` (plus optional `context_json`).\n- To visualize numerical data or category comparisons, call `create_number_series_card`.\n- To open standard built-in cards, call `create_card` (e.g. 'pomodoro', 'terminal', 'git', 'calendar').\n- To inspect or change the visual appearance or color scheme of Rouen (e.g. Amber, Dark, Light, Cyberpunk, Nord), call `list_themes` or `select_theme`.\nCRITICAL INSTRUCTIONS ON DATA RETRIEVAL AND VISUALIZATION:\n1. If the user asks you to build, show, or create a card using data that can be retrieved via other tools (such as weather forecasts, git metrics, calendar events, or notes), you MUST follow a two-step process:\n- Step 1: Call the appropriate retrieval tool first to obtain real data.\n- Step 2: Call `create_adaptive_card` or `create_number_series_card` with the retrieved data.\n2. Never use placeholder data for visualization cards if there is a retrieval tool available to fetch actual data.\n";
+            instr += "\nDECK & ADAPTIVE CARD INSTRUCTIONS:\nWhen users ask you to 'open', 'show', 'create', 'design', or 'display' something, use the appropriate tool:\n- To create and present interactive, structured Adaptive Cards (such as flight passes, invoices, user profiles, status dashboards, forms, polls, or rich UI components), call `create_adaptive_card`. Provide a descriptive `title` and a valid Adaptive Card JSON structure for `card_json` (plus optional `context_json`).\n- To create a dynamic, live, or process-driven card from a local script or executable, use the Adaptive Process feature. Write a local shell script (zsh on macOS/Linux, PowerShell on Windows) that prints single-line compact Adaptive Card JSON documents to stdout (and optionally reads Action.Submit JSON payloads from stdin). Then open the card on the deck using `create_adaptive_process_card` (or `create_card` with URI `adaptive-process:<command line>`).\n- To visualize numerical data or category comparisons, call `create_number_series_card`.\n- To open standard built-in cards, call `create_card` (e.g. 'pomodoro', 'terminal', 'git', 'calendar').\n- To inspect or change the visual appearance or color scheme of Rouen (e.g. Amber, Dark, Light, Cyberpunk, Nord), call `list_themes` or `select_theme`.\nCRITICAL INSTRUCTIONS ON DATA RETRIEVAL AND VISUALIZATION:\n1. If the user asks you to build, show, or create a card using data that can be retrieved via other tools (such as weather forecasts, git metrics, calendar events, or notes), you MUST follow a two-step process:\n- Step 1: Call the appropriate retrieval tool first to obtain real data.\n- Step 2: Call `create_adaptive_card` or `create_number_series_card` with the retrieved data.\n2. Never use placeholder data for visualization cards if there is a retrieval tool available to fetch actual data.\n";
         }
         if (has_mcp("wikipedia")) {
             instr += "\nWIKIPEDIA INSTRUCTIONS:\nCRITICAL INSTRUCTIONS ON WIKIPEDIA TOOL USAGE:\n1. If the user asks you to read, summarize, explain, or answer questions about a Wikipedia article or concept (for example: \"summarize 'The Garden of Forking Paths' by Borges\"), you MUST use retrieval tools: first search using wikipedia_search_concepts if needed to find the exact title, and then retrieve the full article using wikipedia_get_article_text. You must then summarize or answer directly in your chat response. DO NOT call wikipedia_create_card or create_card for this purpose!\n2. ONLY call wikipedia_create_card (or create_card) when the user explicitly requests to \"open\", \"show\", \"display\", or \"create\" a card/view on their screen (for example: \"open the wikipedia card for quantum computing\" or \"show the wikipedia card\").\n";
@@ -172,7 +187,8 @@ namespace rouen::cards {
             if (func.name == "code_generate_conventional_commit") return "git";
             return "editor";
         }
-        if (func.name == "create_card" || func.name == "create_number_series_card" || func.name == "create_adaptive_card" || func.name == "list_adaptive_cards" || func.name == "get_adaptive_card" || func.name == "list_themes" || func.name == "select_theme") return "deck";
+        if (func.name == "create_card" || func.name == "create_number_series_card" || func.name == "create_adaptive_card" || func.name == "create_adaptive_process_card" || func.name == "list_adaptive_cards" || func.name == "get_adaptive_card" || func.name == "list_themes" || func.name == "select_theme") return "deck";
+        if (func.name == "list_personas" || func.name == "enable_persona" || func.name == "get_active_persona" || func.name == "create_persona" || func.name == "update_persona" || func.name == "delete_persona") return "persona";
         if (func.name.starts_with("wikipedia_")) return "wikipedia";
         if (func.name.starts_with("youtube_")) return "youtube";
         if (func.name.starts_with("contacts_")) return "contacts";
@@ -1461,6 +1477,10 @@ namespace rouen::cards {
         if (mcp_service_) {
             try {
                 auto has_mcp = [&](const std::string& cat) {
+                    if (cat == "persona") {
+                        return std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "persona") != target_persona->allowed_mcps.end() ||
+                               std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "deck") != target_persona->allowed_mcps.end();
+                    }
                     if (cat == "adaptive_card" || cat == "deck") {
                         return std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "deck") != target_persona->allowed_mcps.end() ||
                                std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "adaptive_card") != target_persona->allowed_mcps.end();
@@ -1640,6 +1660,10 @@ namespace rouen::cards {
             try {
                 auto& active_persona = helpers::PersonaManager::instance().get_active_persona();
                 auto has_mcp = [&](const std::string& cat) {
+                    if (cat == "persona") {
+                        return std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "persona") != active_persona.allowed_mcps.end() ||
+                               std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "deck") != active_persona.allowed_mcps.end();
+                    }
                     if (cat == "adaptive_card" || cat == "deck") {
                         return std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "deck") != active_persona.allowed_mcps.end() ||
                                std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "adaptive_card") != active_persona.allowed_mcps.end();

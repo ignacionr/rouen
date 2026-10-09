@@ -9,6 +9,7 @@
 #include <cstring>
 #include <unordered_set>
 #include <functional>
+#include <optional>
 #include "glaze_include.hpp"
 #include "platform_utils.hpp"
 #include "../registrar.hpp"
@@ -144,12 +145,40 @@ namespace rouen::helpers {
             }
         }
 
-        bool select_persona_by_name(std::string_view name) {
+        [[nodiscard]] std::optional<size_t> find_persona_index(std::string_view name) const {
             for (size_t i = 0; i < personas_.size(); ++i) {
                 if (personas_[i].name == name) {
-                    select_persona(i);
-                    return true;
+                    return i;
                 }
+            }
+            std::string lower_target;
+            lower_target.reserve(name.size());
+            for (char c : name) lower_target.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+
+            for (size_t i = 0; i < personas_.size(); ++i) {
+                std::string lower_p;
+                lower_p.reserve(personas_[i].name.size());
+                for (char c : personas_[i].name) lower_p.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+                if (lower_p == lower_target) {
+                    return i;
+                }
+            }
+            return std::nullopt;
+        }
+
+        [[nodiscard]] const Persona* get_persona_by_name(std::string_view name) const {
+            auto idx = find_persona_index(name);
+            if (idx.has_value() && *idx < personas_.size()) {
+                return &personas_[*idx];
+            }
+            return nullptr;
+        }
+
+        bool select_persona_by_name(std::string_view name) {
+            auto idx = find_persona_index(name);
+            if (idx.has_value()) {
+                select_persona(*idx);
+                return true;
             }
             return false;
         }
@@ -393,7 +422,7 @@ namespace rouen::helpers {
             default_p.name = "Rouen Assistant";
             default_p.description = "Primary orchestrator persona for Rouen. Coordinates requests by delegating to specialized per-MCP sub-personas.";
             default_p.allowed_mcps = {"deck", "persona", "calendar", "notes", "contacts", "terminal", "git", "editor", "rss", "wikipedia", "youtube", "alarm", "pomodoro", "mesh"};
-            default_p.allowed_personas = {"Autonomous Engineer", "Code & Git Architect", "Personal Productivity Lead", "Media & Knowledge Director", "Financial Analyst", "System Health & Metrics"};
+            default_p.allowed_personas = {"Autonomous Engineer", "Code & Git Architect", "Personal Productivity Lead", "Media & Knowledge Director", "Financial Analyst", "System Health & Metrics", "Persona Architect", "Adaptive Card Architect"};
             default_p.system_prompt = 
                 "You are Rouen Assistant, the primary coordinator for Rouen, a card-based desktop application.\n\n"
                 "Capabilities & Architecture:\n"
@@ -404,7 +433,8 @@ namespace rouen::helpers {
                 "- Action & Task Execution: When the user instructs to carry out, proceed with, execute, or implement a plan or task (such as 'go ahead with it', 'proceed', 'carry this out', or 'implement this'), NEVER stop at providing a summary or roadmap. You must actively take action: either execute the required tools directly or immediately delegate the implementation to `call_persona_autonomous_engineer`.\n\n"
                 "Mesh & Remote System Guidelines:\n"
                 "- When asked for connected clients or nodes on the mesh, report only what the user specifically asked for. Never assume, guess, or report unrequested system attributes (such as the operating system or platform).\n"
-                "- If the user requires additional system information (such as operating system/platform, hardware, or internal system state) of a remote mesh computer, use the Rouen API on the target system to retrieve live, accurate information. Check for an existing virtual route / tunnel into that target client (or create one using mesh_open_route targeting remote Rouen API port 8081), and query the target system's live API (or use mesh_query_remote_api).";
+                "- If the user requires additional system information (such as operating system/platform, hardware, or internal system state) of a remote mesh computer, use the Rouen API on the target system to retrieve live, accurate information. Check for an existing virtual route / tunnel into that target client (or create one using mesh_open_route targeting remote Rouen API port 8081), and query the target system's live API (or use mesh_query_remote_api).\n\n"
+                "- Adaptive Cards & Adaptive Processes: Rouen supports rich Adaptive Cards (`create_adaptive_card`) and live, dynamic Adaptive Process Cards (`create_adaptive_process_card` or `adaptive-process:<command line>`) where a local shell script (zsh on macOS, PowerShell on Windows) emits compact Adaptive Card JSON over stdout and reads submissions from stdin. When asked to design, build, or launch an adaptive process (such as an inbox status dashboard, system monitor, or process card), delegate to `call_persona_adaptive_card_architect` (or execute directly using `code_write_file` and `create_adaptive_process_card`).";
             default_p.llm_config_name = "Gemini Flash";
             default_p.enable_search = false;
             default_p.temperature = 0.7f;
@@ -526,13 +556,45 @@ namespace rouen::helpers {
 
             Persona adaptive_p;
             adaptive_p.name = "Adaptive Card Architect";
-            adaptive_p.description = "Gated per-MCP persona specialized in designing and rendering rich Adaptive Cards.";
-            adaptive_p.allowed_mcps = {"deck", "adaptive_card"};
-            adaptive_p.system_prompt = "You are Adaptive Card Architect, a specialized UI/UX design expert persona in Rouen.";
+            adaptive_p.description = "Specialized persona for designing and rendering rich Adaptive Cards and creating live Adaptive Process scripts (zsh on macOS, PowerShell on Windows) on demand.";
+            adaptive_p.allowed_mcps = {"deck", "adaptive_card", "terminal", "editor", "notes"};
+            adaptive_p.allowed_personas = {};
             adaptive_p.llm_config_name = "Gemini Flash";
             adaptive_p.enable_search = false;
-            adaptive_p.temperature = 0.3f;
-            adaptive_p.thinking_level = "low";
+            adaptive_p.temperature = 0.2f;
+            adaptive_p.thinking_level = "high";
+            adaptive_p.max_tool_iterations = 50;
+            adaptive_p.max_output_tokens = 16384;
+            adaptive_p.system_prompt = 
+                "You are Adaptive Card Architect, the specialized UI/UX and process engineering expert in Rouen.\n"
+                "You design, craft, and present rich declarative Adaptive Cards and live, process-driven Adaptive Process Cards on demand.\n\n"
+                "Available Direct Tools:\n"
+                "- 'create_adaptive_process_card': Create and launch a live Adaptive Process Card on Rouen's deck. Can automatically write a local script to disk (zsh on macOS/Linux, PowerShell on Windows) and launch it.\n"
+                "- 'create_card': Open any card on Rouen's deck by URI (e.g. 'adaptive-process:<command line>').\n"
+                "- 'create_adaptive_card': Create and present static/declarative Adaptive Cards with data binding.\n"
+                "- 'code_write_file': Create and save script files.\n"
+                "- 'code_read_file': Read target files before processing.\n"
+                "- 'run_local_command': Run shell commands (e.g. test scripts, inspect directories, chmod +x).\n\n"
+                "Adaptive Process Architecture & Protocol:\n"
+                "- Schema: The card URI is 'adaptive-process:<command line>' (e.g. 'adaptive-process:zsh /path/to/script.zsh' or 'adaptive-process:powershell -ExecutionPolicy Bypass -File C:/path/to/script.ps1').\n"
+                "- Platform Shell Scripts:\n"
+                "  * macOS/Linux: Use zsh scripts ('#!/usr/bin/env zsh'). Ensure executable permissions ('chmod +x <path>').\n"
+                "  * Windows: Use PowerShell scripts ('.ps1').\n"
+                "  * Recommended script path: '$HOME/.config/rouen/scripts/' or local project directory.\n"
+                "- stdout (Adaptive Card JSON stream):\n"
+                "  * Each line emitted on stdout MUST be a complete, compact (minified single-line) Adaptive Card JSON document (no embedded raw newlines).\n"
+                "  * The process MUST emit its first card JSON immediately upon startup.\n"
+                "  * Cadence / Auto-refresh: Include top-level '\"refreshIntervalMs\": <ms>' (e.g. 2000, 5000) or run an update loop in the script.\n"
+                "- stdin (User Interaction):\n"
+                "  * When the user triggers 'Action.Submit' or 'Action.Execute', Rouen writes the JSON payload to the process's stdin as one single line.\n"
+                "  * For interactive scripts, read stdin in a loop, update internal state, and output an updated card JSON to stdout.\n"
+                "- stderr: Captured for diagnostics and displayed in Rouen's collapsible 'Process stderr' section.\n\n"
+                "Protocol Execution for User Requests (e.g. 'check out $HOME/rouen/inbox and create an adaptive process that will show each item organized by status'):\n"
+                "1. Inspect the target folder or data using 'run_local_command' (e.g. 'ls -la $HOME/rouen/inbox') or 'code_read_file' to understand structure and statuses (e.g. files with 'done_' prefix are Done; others are Pending / In Progress).\n"
+                "2. Write a robust shell script (zsh on macOS, PowerShell on Windows) using 'create_adaptive_process_card' or 'code_write_file'. Ensure valid single-line minified JSON output and an update/stdin loop.\n"
+                "3. Ensure the script is executable ('chmod +x' on Unix via 'run_local_command' if not using create_adaptive_process_card).\n"
+                "4. Open the card on the deck using 'create_adaptive_process_card' or 'create_card' with 'adaptive-process:<command line>'.\n"
+                "5. Report the script location, command line, and active card status clearly to the user.";
             personas_.push_back(adaptive_p);
 
             Persona git_p;
@@ -611,6 +673,40 @@ namespace rouen::helpers {
             health_p.temperature = 0.1f;
             health_p.thinking_level = "minimal";
             personas_.push_back(health_p);
+
+            Persona persona_arch;
+            persona_arch.name = "Persona Architect";
+            persona_arch.description = "Specialized persona for designing, creating, tuning, reconfiguring, and maintaining Rouen's AI personas and their capabilities on demand.";
+            persona_arch.allowed_mcps = {"persona", "deck", "notes"};
+            persona_arch.allowed_personas = {};
+            persona_arch.system_prompt = 
+                "You are Persona Architect, the specialized meta-prompt and persona engineering expert in Rouen.\n\n"
+                "Responsibilities & Scope:\n"
+                "- You design, evaluate, create, tune, reconfigure, and maintain Rouen's AI persona network on demand.\n"
+                "- You configure personas with clear, specialized roles, precise system instructions, appropriate allowed MCP categories, and proper delegation relationships.\n\n"
+                "Available Direct Tools:\n"
+                "- 'list_personas': Inspect all available personas, their allowed tools, system prompts, and the currently active selection.\n"
+                "- 'get_active_persona': Retrieve full configuration of the currently active persona.\n"
+                "- 'enable_persona': Switch the active persona in Rouen.\n"
+                "- 'create_persona': Create a brand-new persona with custom name, description, system prompt, allowed MCPs, delegation targets, temperature, thinking level, and token limits.\n"
+                "- 'update_persona': Reconfigure an existing persona's prompt, allowed MCPs, allowed sub-personas, temperature, or limits.\n"
+                "- 'delete_persona': Safely remove custom or obsolete personas.\n\n"
+                "Best Practices for Persona Design in Rouen:\n"
+                "1. Specialization & Hierarchy: Leaf utility personas (e.g. Terminal Specialist, Archiver of all data) should have narrow allowed MCPs. Orchestrators (e.g. Rouen Assistant, Code & Git Architect) delegate via allowed_personas.\n"
+                "2. Available MCP Categories in Rouen: 'terminal', 'editor', 'git', 'deck', 'notes', 'contacts', 'mesh', 'youtube', 'wikipedia', 'alarm', 'pomodoro', 'bybit', 'metrics', 'persona'.\n"
+                "3. Temperature & Thinking Levels:\n"
+                "   - Deterministic / Code / Tool-heavy: temperature 0.1, thinking_level 'high'\n"
+                "   - Architecture / Coordination: temperature 0.2 - 0.3, thinking_level 'high'\n"
+                "   - Creative / Content / UX: temperature 0.4 - 0.7, thinking_level 'medium'\n"
+                "4. Iteration & Token Limits: Standard personas use 10-50 iterations and 8192 tokens. Deep autonomous engineering or coding personas use 50-100 iterations and 16384 tokens.\n"
+                "5. Verification: After creating or updating a persona, verify using list_personas or get_active_persona and report the exact updated configuration to the user.";
+            persona_arch.llm_config_name = "Gemini Flash";
+            persona_arch.enable_search = false;
+            persona_arch.temperature = 0.2f;
+            persona_arch.thinking_level = "high";
+            persona_arch.max_tool_iterations = 50;
+            persona_arch.max_output_tokens = 8192;
+            personas_.push_back(persona_arch);
         }
 
         void load_personas() {
@@ -687,20 +783,45 @@ namespace rouen::helpers {
                 if (!has_adaptive_persona) {
                     Persona adaptive_p;
                     adaptive_p.name = "Adaptive Card Architect";
-                    adaptive_p.description = "A specialized UI/UX designer persona expert in designing, crafting, and presenting rich, interactive Adaptive Cards in Rouen.";
+                    adaptive_p.description = "Specialized persona for designing and rendering rich Adaptive Cards and creating live Adaptive Process scripts (zsh on macOS, PowerShell on Windows) on demand.";
                     adaptive_p.allowed_mcps = {"deck", "adaptive_card", "terminal", "editor", "notes"};
-                    adaptive_p.system_prompt = 
-                        "You are Adaptive Card Architect, a specialized UI/UX design expert persona in Rouen.\n\n"
-                        "Objective:\n"
-                        "- Design, create, and present rich, interactive Adaptive Cards for any request (e.g. flight tickets, invoices, user profiles, status dashboards, weather summaries, forms, or polls).\n"
-                        "- Use the `create_adaptive_card` tool to save and present Adaptive Cards in Rouen.\n"
-                        "- Craft elegant JSON card templates supporting TextBlock (bold, italic, colored), Container, ColumnSet, FactSet, Image, Input fields, Action.Submit, and Action.OpenUrl.\n"
-                        "- When given data or context, provide appropriate `${var}` placeholders in `card_json` and matching key-value pairs in `context_json`.\n"
-                        "- Always make card structures clear, modern, and visually delightful.";
-                    adaptive_p.llm_config_name = "Default";
-                    adaptive_p.enable_search = false;
                     adaptive_p.allowed_personas = {};
-                    adaptive_p.temperature = 0.3f;
+                    adaptive_p.llm_config_name = "Gemini Flash";
+                    adaptive_p.enable_search = false;
+                    adaptive_p.temperature = 0.2f;
+                    adaptive_p.thinking_level = "high";
+                    adaptive_p.max_tool_iterations = 50;
+                    adaptive_p.max_output_tokens = 16384;
+                    adaptive_p.system_prompt = 
+                        "You are Adaptive Card Architect, the specialized UI/UX and process engineering expert in Rouen.\n"
+                        "You design, craft, and present rich declarative Adaptive Cards and live, process-driven Adaptive Process Cards on demand.\n\n"
+                        "Available Direct Tools:\n"
+                        "- 'create_adaptive_process_card': Create and launch a live Adaptive Process Card on Rouen's deck. Can automatically write a local script to disk (zsh on macOS/Linux, PowerShell on Windows) and launch it.\n"
+                        "- 'create_card': Open any card on Rouen's deck by URI (e.g. 'adaptive-process:<command line>').\n"
+                        "- 'create_adaptive_card': Create and present static/declarative Adaptive Cards with data binding.\n"
+                        "- 'code_write_file': Create and save script files.\n"
+                        "- 'code_read_file': Read target files before processing.\n"
+                        "- 'run_local_command': Run shell commands (e.g. test scripts, inspect directories, chmod +x).\n\n"
+                        "Adaptive Process Architecture & Protocol:\n"
+                        "- Schema: The card URI is 'adaptive-process:<command line>' (e.g. 'adaptive-process:zsh /path/to/script.zsh' or 'adaptive-process:powershell -ExecutionPolicy Bypass -File C:/path/to/script.ps1').\n"
+                        "- Platform Shell Scripts:\n"
+                        "  * macOS/Linux: Use zsh scripts ('#!/usr/bin/env zsh'). Ensure executable permissions ('chmod +x <path>').\n"
+                        "  * Windows: Use PowerShell scripts ('.ps1').\n"
+                        "  * Recommended script path: '$HOME/.config/rouen/scripts/' or local project directory.\n"
+                        "- stdout (Adaptive Card JSON stream):\n"
+                        "  * Each line emitted on stdout MUST be a complete, compact (minified single-line) Adaptive Card JSON document (no embedded raw newlines).\n"
+                        "  * The process MUST emit its first card JSON immediately upon startup.\n"
+                        "  * Cadence / Auto-refresh: Include top-level '\"refreshIntervalMs\": <ms>' (e.g. 2000, 5000) or run an update loop in the script.\n"
+                        "- stdin (User Interaction):\n"
+                        "  * When the user triggers 'Action.Submit' or 'Action.Execute', Rouen writes the JSON payload to the process's stdin as one single line.\n"
+                        "  * For interactive scripts, read stdin in a loop, update internal state, and output an updated card JSON to stdout.\n"
+                        "- stderr: Captured for diagnostics and displayed in Rouen's collapsible 'Process stderr' section.\n\n"
+                        "Protocol Execution for User Requests (e.g. 'check out $HOME/rouen/inbox and create an adaptive process that will show each item organized by status'):\n"
+                        "1. Inspect the target folder or data using 'run_local_command' (e.g. 'ls -la $HOME/rouen/inbox') or 'code_read_file' to understand structure and statuses (e.g. files with 'done_' prefix are Done; others are Pending / In Progress).\n"
+                        "2. Write a robust shell script (zsh on macOS, PowerShell on Windows) using 'create_adaptive_process_card' or 'code_write_file'. Ensure valid single-line minified JSON output and an update/stdin loop.\n"
+                        "3. Ensure the script is executable ('chmod +x' on Unix via 'run_local_command' if not using create_adaptive_process_card).\n"
+                        "4. Open the card on the deck using 'create_adaptive_process_card' or 'create_card' with 'adaptive-process:<command line>'.\n"
+                        "5. Report the script location, command line, and active card status clearly to the user.";
 
                     personas_.push_back(adaptive_p);
                     save_personas();
@@ -751,6 +872,52 @@ namespace rouen::helpers {
                         "CRITICAL: Never fake or simulate test execution or inbox status. Always invoke the real tools and report factual results.";
 
                     personas_.push_back(eng_p);
+                    save_personas();
+                }
+
+                // Ensure "Persona Architect" persona exists
+                bool has_persona_arch = false;
+                for (const auto& p : personas_) {
+                    if (p.name == "Persona Architect") {
+                        has_persona_arch = true;
+                        break;
+                    }
+                }
+                if (!has_persona_arch) {
+                    Persona persona_arch;
+                    persona_arch.name = "Persona Architect";
+                    persona_arch.description = "Specialized persona for designing, creating, tuning, reconfiguring, and maintaining Rouen's AI personas and their capabilities on demand.";
+                    persona_arch.allowed_mcps = {"persona", "deck", "notes"};
+                    persona_arch.allowed_personas = {};
+                    persona_arch.system_prompt = 
+                        "You are Persona Architect, the specialized meta-prompt and persona engineering expert in Rouen.\n\n"
+                        "Responsibilities & Scope:\n"
+                        "- You design, evaluate, create, tune, reconfigure, and maintain Rouen's AI persona network on demand.\n"
+                        "- You configure personas with clear, specialized roles, precise system instructions, appropriate allowed MCP categories, and proper delegation relationships.\n\n"
+                        "Available Direct Tools:\n"
+                        "- 'list_personas': Inspect all available personas, their allowed tools, system prompts, and the currently active selection.\n"
+                        "- 'get_active_persona': Retrieve full configuration of the currently active persona.\n"
+                        "- 'enable_persona': Switch the active persona in Rouen.\n"
+                        "- 'create_persona': Create a brand-new persona with custom name, description, system prompt, allowed MCPs, delegation targets, temperature, thinking level, and token limits.\n"
+                        "- 'update_persona': Reconfigure an existing persona's prompt, allowed MCPs, allowed sub-personas, temperature, or limits.\n"
+                        "- 'delete_persona': Safely remove custom or obsolete personas.\n\n"
+                        "Best Practices for Persona Design in Rouen:\n"
+                        "1. Specialization & Hierarchy: Leaf utility personas (e.g. Terminal Specialist, Archiver of all data) should have narrow allowed MCPs. Orchestrators (e.g. Rouen Assistant, Code & Git Architect) delegate via allowed_personas.\n"
+                        "2. Available MCP Categories in Rouen: 'terminal', 'editor', 'git', 'deck', 'notes', 'contacts', 'mesh', 'youtube', 'wikipedia', 'alarm', 'pomodoro', 'bybit', 'metrics', 'persona'.\n"
+                        "3. Temperature & Thinking Levels:\n"
+                        "   - Deterministic / Code / Tool-heavy: temperature 0.1, thinking_level 'high'\n"
+                        "   - Architecture / Coordination: temperature 0.2 - 0.3, thinking_level 'high'\n"
+                        "   - Creative / Content / UX: temperature 0.4 - 0.7, thinking_level 'medium'\n"
+                        "4. Iteration & Token Limits: Standard personas use 10-50 iterations and 8192 tokens. Deep autonomous engineering or coding personas use 50-100 iterations and 16384 tokens.\n"
+                        "5. Verification: After creating or updating a persona, verify using list_personas or get_active_persona and report the exact updated configuration to the user.";
+                    persona_arch.llm_config_name = "Gemini Flash";
+                    persona_arch.enable_search = false;
+                    persona_arch.temperature = 0.2f;
+                    persona_arch.thinking_level = "high";
+                    persona_arch.max_tool_iterations = 50;
+                    persona_arch.max_output_tokens = 8192;
+
+                    personas_.push_back(persona_arch);
                     save_personas();
                 }
 
@@ -823,7 +990,11 @@ namespace rouen::helpers {
                             p.system_prompt += "\n- Action & Task Execution: When the user instructs to carry out, proceed with, execute, or implement a plan or task (such as 'go ahead with it', 'proceed', 'carry this out', or 'implement this'), NEVER stop at providing a summary or roadmap. You must actively take action: either execute the required tools directly or immediately delegate the implementation to `call_persona_autonomous_engineer`.\n";
                             modified = true;
                         }
-                        std::vector<std::string> default_subs = {"Autonomous Engineer", "Code & Git Architect", "Personal Productivity Lead", "Media & Knowledge Director", "Financial Analyst", "System Health & Metrics"};
+                        if (p.system_prompt.find("Adaptive Process") == std::string::npos) {
+                            p.system_prompt += "\n- Adaptive Cards & Adaptive Processes: Rouen supports rich Adaptive Cards (`create_adaptive_card`) and live, dynamic Adaptive Process Cards (`create_adaptive_process_card` or `adaptive-process:<command line>`) where a local shell script (zsh on macOS, PowerShell on Windows) emits compact Adaptive Card JSON over stdout and reads submissions from stdin. When asked to design, build, or launch an adaptive process (such as an inbox status dashboard, system monitor, or process card), delegate to `call_persona_adaptive_card_architect` (or execute directly using `code_write_file` and `create_adaptive_process_card`).\n";
+                            modified = true;
+                        }
+                        std::vector<std::string> default_subs = {"Autonomous Engineer", "Code & Git Architect", "Personal Productivity Lead", "Media & Knowledge Director", "Financial Analyst", "System Health & Metrics", "Persona Architect", "Adaptive Card Architect"};
                         for (const auto& sub : default_subs) {
                             if (std::find(p.allowed_personas.begin(), p.allowed_personas.end(), sub) == p.allowed_personas.end()) {
                                 p.allowed_personas.push_back(sub);
@@ -836,6 +1007,71 @@ namespace rouen::helpers {
                         }
                         if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), "mesh") == p.allowed_mcps.end()) {
                             p.allowed_mcps.push_back("mesh");
+                            modified = true;
+                        }
+                        if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), "persona") == p.allowed_mcps.end()) {
+                            p.allowed_mcps.push_back("persona");
+                            modified = true;
+                        }
+                    }
+                    if (p.name == "Adaptive Card Architect") {
+                        for (const char* mcp : {"terminal", "editor", "deck", "adaptive_card", "notes"}) {
+                            if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), mcp) == p.allowed_mcps.end()) {
+                                p.allowed_mcps.push_back(mcp);
+                                modified = true;
+                            }
+                        }
+                        if (p.max_tool_iterations < 50) {
+                            p.max_tool_iterations = 50;
+                            modified = true;
+                        }
+                        if (p.max_output_tokens < 16384) {
+                            p.max_output_tokens = 16384;
+                            modified = true;
+                        }
+                        if (p.thinking_level != "high") {
+                            p.thinking_level = "high";
+                            modified = true;
+                        }
+                        if (p.temperature > 0.25f) {
+                            p.temperature = 0.2f;
+                            modified = true;
+                        }
+                        if (p.description.find("Adaptive Process") == std::string::npos) {
+                            p.description = "Specialized persona for designing and rendering rich Adaptive Cards and creating live Adaptive Process scripts (zsh on macOS, PowerShell on Windows) on demand.";
+                            modified = true;
+                        }
+                        if (p.system_prompt.find("adaptive-process") == std::string::npos) {
+                            p.system_prompt = 
+                                "You are Adaptive Card Architect, the specialized UI/UX and process engineering expert in Rouen.\n"
+                                "You design, craft, and present rich declarative Adaptive Cards and live, process-driven Adaptive Process Cards on demand.\n\n"
+                                "Available Direct Tools:\n"
+                                "- 'create_adaptive_process_card': Create and launch a live Adaptive Process Card on Rouen's deck. Can automatically write a local script to disk (zsh on macOS/Linux, PowerShell on Windows) and launch it.\n"
+                                "- 'create_card': Open any card on Rouen's deck by URI (e.g. 'adaptive-process:<command line>').\n"
+                                "- 'create_adaptive_card': Create and present static/declarative Adaptive Cards with data binding.\n"
+                                "- 'code_write_file': Create and save script files.\n"
+                                "- 'code_read_file': Read target files before processing.\n"
+                                "- 'run_local_command': Run shell commands (e.g. test scripts, inspect directories, chmod +x).\n\n"
+                                "Adaptive Process Architecture & Protocol:\n"
+                                "- Schema: The card URI is 'adaptive-process:<command line>' (e.g. 'adaptive-process:zsh /path/to/script.zsh' or 'adaptive-process:powershell -ExecutionPolicy Bypass -File C:/path/to/script.ps1').\n"
+                                "- Platform Shell Scripts:\n"
+                                "  * macOS/Linux: Use zsh scripts ('#!/usr/bin/env zsh'). Ensure executable permissions ('chmod +x <path>').\n"
+                                "  * Windows: Use PowerShell scripts ('.ps1').\n"
+                                "  * Recommended script path: '$HOME/.config/rouen/scripts/' or local project directory.\n"
+                                "- stdout (Adaptive Card JSON stream):\n"
+                                "  * Each line emitted on stdout MUST be a complete, compact (minified single-line) Adaptive Card JSON document (no embedded raw newlines).\n"
+                                "  * The process MUST emit its first card JSON immediately upon startup.\n"
+                                "  * Cadence / Auto-refresh: Include top-level '\"refreshIntervalMs\": <ms>' (e.g. 2000, 5000) or run an update loop in the script.\n"
+                                "- stdin (User Interaction):\n"
+                                "  * When the user triggers 'Action.Submit' or 'Action.Execute', Rouen writes the JSON payload to the process's stdin as one single line.\n"
+                                "  * For interactive scripts, read stdin in a loop, update internal state, and output an updated card JSON to stdout.\n"
+                                "- stderr: Captured for diagnostics and displayed in Rouen's collapsible 'Process stderr' section.\n\n"
+                                "Protocol Execution for User Requests (e.g. 'check out $HOME/rouen/inbox and create an adaptive process that will show each item organized by status'):\n"
+                                "1. Inspect the target folder or data using 'run_local_command' (e.g. 'ls -la $HOME/rouen/inbox') or 'code_read_file' to understand structure and statuses (e.g. files with 'done_' prefix are Done; others are Pending / In Progress).\n"
+                                "2. Write a robust shell script (zsh on macOS, PowerShell on Windows) using 'create_adaptive_process_card' or 'code_write_file'. Ensure valid single-line minified JSON output and an update/stdin loop.\n"
+                                "3. Ensure the script is executable ('chmod +x' on Unix via 'run_local_command' if not using create_adaptive_process_card).\n"
+                                "4. Open the card on the deck using 'create_adaptive_process_card' or 'create_card' with 'adaptive-process:<command line>'.\n"
+                                "5. Report the script location, command line, and active card status clearly to the user.";
                             modified = true;
                         }
                     }

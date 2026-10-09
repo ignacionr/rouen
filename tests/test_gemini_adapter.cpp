@@ -934,6 +934,50 @@ TEST(PersonaManagerTest, RouenAssistantTaskExecutionDelegationRule) {
     EXPECT_NE(std::find(def_p->allowed_personas.begin(), def_p->allowed_personas.end(), "Autonomous Engineer"), def_p->allowed_personas.end());
     EXPECT_NE(std::find(def_p->allowed_personas.begin(), def_p->allowed_personas.end(), "Code & Git Architect"), def_p->allowed_personas.end());
     EXPECT_NE(std::find(def_p->allowed_personas.begin(), def_p->allowed_personas.end(), "Financial Analyst"), def_p->allowed_personas.end());
+    EXPECT_NE(std::find(def_p->allowed_personas.begin(), def_p->allowed_personas.end(), "Persona Architect"), def_p->allowed_personas.end());
+    EXPECT_NE(std::find(def_p->allowed_personas.begin(), def_p->allowed_personas.end(), "Adaptive Card Architect"), def_p->allowed_personas.end());
+}
+
+TEST(PersonaManagerTest, AdaptiveCardArchitectCapabilities) {
+    auto& pm = PersonaManager::instance();
+    const Persona* aca_p = pm.get_persona_by_name("Adaptive Card Architect");
+    ASSERT_NE(aca_p, nullptr) << "Adaptive Card Architect must be registered in PersonaManager";
+    EXPECT_EQ(aca_p->get_effective_thinking_level(), "high");
+    EXPECT_FLOAT_EQ(aca_p->temperature, 0.2f);
+    EXPECT_EQ(aca_p->max_tool_iterations, 50);
+    EXPECT_EQ(aca_p->max_output_tokens, 16384);
+
+    // Verify allowed MCPs include deck, adaptive_card, terminal, editor, notes
+    EXPECT_NE(std::find(aca_p->allowed_mcps.begin(), aca_p->allowed_mcps.end(), "deck"), aca_p->allowed_mcps.end());
+    EXPECT_NE(std::find(aca_p->allowed_mcps.begin(), aca_p->allowed_mcps.end(), "adaptive_card"), aca_p->allowed_mcps.end());
+    EXPECT_NE(std::find(aca_p->allowed_mcps.begin(), aca_p->allowed_mcps.end(), "terminal"), aca_p->allowed_mcps.end());
+    EXPECT_NE(std::find(aca_p->allowed_mcps.begin(), aca_p->allowed_mcps.end(), "editor"), aca_p->allowed_mcps.end());
+    EXPECT_NE(std::find(aca_p->allowed_mcps.begin(), aca_p->allowed_mcps.end(), "notes"), aca_p->allowed_mcps.end());
+
+    // Verify system prompt explains adaptive process creation
+    EXPECT_NE(aca_p->system_prompt.find("create_adaptive_process_card"), std::string::npos);
+    EXPECT_NE(aca_p->system_prompt.find("zsh"), std::string::npos);
+    EXPECT_NE(aca_p->system_prompt.find("PowerShell"), std::string::npos);
+}
+
+TEST(PersonaManagerTest, PersonaArchitectRegistrationAndCapabilities) {
+    auto& pm = PersonaManager::instance();
+    const Persona* arch_p = pm.get_persona_by_name("Persona Architect");
+    ASSERT_NE(arch_p, nullptr) << "Persona Architect must be registered in PersonaManager";
+    EXPECT_EQ(arch_p->get_effective_thinking_level(), "high");
+    EXPECT_FLOAT_EQ(arch_p->temperature, 0.2f);
+    EXPECT_EQ(arch_p->max_tool_iterations, 50);
+
+    // Verify allowed MCPs include persona, deck, notes
+    EXPECT_NE(std::find(arch_p->allowed_mcps.begin(), arch_p->allowed_mcps.end(), "persona"), arch_p->allowed_mcps.end());
+    EXPECT_NE(std::find(arch_p->allowed_mcps.begin(), arch_p->allowed_mcps.end(), "deck"), arch_p->allowed_mcps.end());
+    EXPECT_NE(std::find(arch_p->allowed_mcps.begin(), arch_p->allowed_mcps.end(), "notes"), arch_p->allowed_mcps.end());
+
+    // Verify system prompt explains persona reconfiguration tools
+    EXPECT_NE(arch_p->system_prompt.find("create_persona"), std::string::npos);
+    EXPECT_NE(arch_p->system_prompt.find("update_persona"), std::string::npos);
+    EXPECT_NE(arch_p->system_prompt.find("list_personas"), std::string::npos);
+    EXPECT_NE(arch_p->system_prompt.find("delete_persona"), std::string::npos);
 }
 
 TEST(GeminiAdapterTest, ConfiguresGemini38AndExcludes35) {
