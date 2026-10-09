@@ -289,13 +289,20 @@ namespace rouen::helpers {
                 for (const auto& fr : msg.function_responses) {
                     if (!first_part) json += ",";
                     std::string resp_json;
-                    if (!fr.response.empty() && fr.response.front() == '{') {
-                        resp_json = std::format("{{\"name\":\"{}\",\"response\":{}}}", fr.name, fr.response);
-                    } else if (!fr.response.empty() && fr.response.front() == '[') {
-                        resp_json = std::format("{{\"name\":\"{}\",\"response\":{{\"result\":{}}}}}", fr.name, fr.response);
+                    std::string_view resp_view(fr.response);
+                    auto first = resp_view.find_first_not_of(" \t\r\n");
+                    auto last = resp_view.find_last_not_of(" \t\r\n");
+                    std::string_view trimmed = (first != std::string_view::npos) 
+                        ? resp_view.substr(first, last - first + 1) 
+                        : std::string_view{};
+
+                    if (!trimmed.empty() && trimmed.front() == '{' && !glz::validate_json(trimmed)) {
+                        resp_json = std::format("{{\"name\":\"{}\",\"response\":{}}}", escape_json(fr.name), trimmed);
+                    } else if (!trimmed.empty() && trimmed.front() == '[' && !glz::validate_json(trimmed)) {
+                        resp_json = std::format("{{\"name\":\"{}\",\"response\":{{\"result\":{}}}}}", escape_json(fr.name), trimmed);
                     } else {
                         resp_json = std::format("{{\"name\":\"{}\",\"response\":{{\"result\":\"{}\"}}}}", 
-                                               fr.name, escape_json(fr.response));
+                                               escape_json(fr.name), escape_json(fr.response));
                     }
                     json += std::format("{{\"functionResponse\":{}}}", resp_json);
                     first_part = false;

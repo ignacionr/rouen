@@ -214,6 +214,79 @@ TEST(GeminiAdapterTest, SerializesRawFunctionResponseCorrectly) {
     EXPECT_EQ(func_resp["response"]["result"].get<std::string>(), "some raw non-json text response");
 }
 
+TEST(GeminiAdapterTest, SerializesBracketedNonJsonResponseCorrectly) {
+    GeminiAdapter adapter("dummy_api_key");
+    std::vector<GeminiAdapter::Message> conversation;
+    
+    GeminiAdapter::Message msg;
+    msg.role = "function";
+    msg.function_responses.push_back({"terminal", "[Command returned no output]"});
+    conversation.push_back(msg);
+    
+    std::string request = adapter.build_gemini_request(conversation, 0.5f, false);
+    
+    glz::json_t doc;
+    auto err = glz::read_json(doc, request);
+    ASSERT_FALSE(err) << glz::format_error(err, request);
+    
+    auto contents = doc["contents"];
+    auto first_msg = contents[0];
+    auto parts = first_msg["parts"];
+    auto func_resp = parts[0]["functionResponse"];
+    
+    EXPECT_EQ(func_resp["name"].get<std::string>(), "terminal");
+    EXPECT_EQ(func_resp["response"]["result"].get<std::string>(), "[Command returned no output]");
+}
+
+TEST(GeminiAdapterTest, SerializesBracedNonJsonResponseCorrectly) {
+    GeminiAdapter adapter("dummy_api_key");
+    std::vector<GeminiAdapter::Message> conversation;
+    
+    GeminiAdapter::Message msg;
+    msg.role = "function";
+    msg.function_responses.push_back({"code_read_file", "{\n  int x = 42;\n}"});
+    conversation.push_back(msg);
+    
+    std::string request = adapter.build_gemini_request(conversation, 0.5f, false);
+    
+    glz::json_t doc;
+    auto err = glz::read_json(doc, request);
+    ASSERT_FALSE(err) << glz::format_error(err, request);
+    
+    auto contents = doc["contents"];
+    auto first_msg = contents[0];
+    auto parts = first_msg["parts"];
+    auto func_resp = parts[0]["functionResponse"];
+    
+    EXPECT_EQ(func_resp["name"].get<std::string>(), "code_read_file");
+    EXPECT_EQ(func_resp["response"]["result"].get<std::string>(), "{\n  int x = 42;\n}");
+}
+
+TEST(GeminiAdapterTest, SerializesValidJsonArrayResponseCorrectly) {
+    GeminiAdapter adapter("dummy_api_key");
+    std::vector<GeminiAdapter::Message> conversation;
+    
+    GeminiAdapter::Message msg;
+    msg.role = "function";
+    msg.function_responses.push_back({"list_files", "[\"file1.txt\", \"file2.txt\"]"});
+    conversation.push_back(msg);
+    
+    std::string request = adapter.build_gemini_request(conversation, 0.5f, false);
+    
+    glz::json_t doc;
+    auto err = glz::read_json(doc, request);
+    ASSERT_FALSE(err) << glz::format_error(err, request);
+    
+    auto contents = doc["contents"];
+    auto first_msg = contents[0];
+    auto parts = first_msg["parts"];
+    auto func_resp = parts[0]["functionResponse"];
+    
+    EXPECT_EQ(func_resp["name"].get<std::string>(), "list_files");
+    ASSERT_TRUE(func_resp["response"]["result"].is_array());
+    EXPECT_EQ(func_resp["response"]["result"].get<glz::json_t::array_t>().size(), 2u);
+}
+
 #include "../src/helpers/cppgpt.hpp"
 
 TEST(CppGptTest, ParsesToolCallsCorrectly) {
