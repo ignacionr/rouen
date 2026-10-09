@@ -41,6 +41,11 @@ void test_workspace_rules_loader() {
     test_helpers::assert_true(step_rules.find("ZERO CHAT OVERHEAD") != std::string::npos, "Step query includes ZERO CHAT OVERHEAD rule");
     test_helpers::assert_true(step_rules.find("9-step") != std::string::npos || step_rules.find("9-STEP") != std::string::npos, "Step query includes 9-step workflow");
 
+    // Test 2c: Non-inbox query (e.g. "check calculator card") also receives critical execution directives
+    std::string card_rules = rouen::helpers::WorkspaceRulesLoader::load_workspace_rules(current_root, "check calculator card");
+    test_helpers::assert_true(card_rules.find("ZERO CHAT OVERHEAD") != std::string::npos, "Card query includes ZERO CHAT OVERHEAD rule");
+    test_helpers::assert_true(card_rules.find("NEVER ask for permission") != std::string::npos, "Card query forbids asking for permission");
+
     // Test 3: Fixture with no .agents returns empty string
     std::filesystem::path empty_fixture = std::filesystem::temp_directory_path() / "rouen_empty_ws_fixture";
     std::filesystem::create_directories(empty_fixture);

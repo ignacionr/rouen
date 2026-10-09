@@ -177,10 +177,14 @@ namespace rouen::cards {
                      "CRITICAL VERIFICATION RULE:\n"
                      "When asked to carry out an inbox item, process the inbox, run tests, or build the application, NEVER return generic conversational claims. You MUST execute the actual tools (`run_unit_tests`, `build_and_deploy`, `update_inbox_item`, `run_local_command`), inspect the results, and report detailed, factual execution outputs including exit codes and test names.\n"
                      "\nACTION EXECUTION & ZERO UNNECESSARY CHAT STEPS:\n"
-                     "- When asked to implement, carry out, or execute tasks or steps (such as 'carry out steps 3 and 4', 'process the next item in ./inbox', 'fix this bug', or 'write tests'), NEVER pause to provide an analysis, outline, or speculative plan in chat.\n"
-                     "- Immediately invoke the required tools (`code_read_file`, `code_write_file`, `code_apply_patch`, `run_unit_tests`, `build_and_deploy`, `run_local_command`, `update_inbox_item`) in this turn.\n"
-                     "- Execute the entire sequence autonomously without stopping to ask for user permission between steps.\n"
-                     "- Only provide a final chat message once the tools have completed execution, summarizing the factual actions taken and test results.\n";
+                     "- When asked to implement, carry out, execute, investigate, or verify tasks or features (such as 'check calculator card', 'carry out steps 3 and 4', 'process the next item in ./inbox', 'fix this bug', or 'write tests'):\n"
+                     "  * NEVER pause to provide an analysis, outline, or speculative plan in chat.\n"
+                     "  * NEVER offer documentation, roadmaps, or architectural overviews about 'what should be next' in place of implementing it.\n"
+                     "  * NEVER ask the user for assistance or confirmation whether you should proceed or continue. Assume full authorization.\n"
+                     "  * NEVER stop at diagnosis. After inspecting files and locating missing code or bugs, immediately carry out the fixes, write tests, run tests, and compile in the same turn.\n"
+                     "  * Immediately invoke the required tools (`code_read_file`, `code_write_file`, `code_apply_patch`, `run_unit_tests`, `build_and_deploy`, `run_local_command`, `update_inbox_item`) in this turn.\n"
+                     "  * Execute the entire sequence autonomously without stopping to ask for user permission between steps.\n"
+                     "  * Only provide a final chat message once the tools have completed execution, summarizing the factual actions taken and test results.\n";
         }
         return instr;
     }
@@ -1160,16 +1164,36 @@ namespace rouen::cards {
             body.push_back(std::move(config_block));
         }
 
-        // Chat messages
-        constexpr size_t max_messages = 20; // limit for reasonable payload size
-        size_t start_idx = 0;
-        if (chat_history_.size() > max_messages) {
-            start_idx = chat_history_.size() - max_messages;
-            // Indicate truncation
+        // Chat messages: ensure user and assistant conversation is preserved and not crowded out by tool executions
+        constexpr size_t max_conversation_messages = 50;
+        constexpr size_t max_debug_messages = 6;
+
+        std::vector<size_t> conversation_indices;
+        std::vector<size_t> debug_indices;
+        for (size_t i = 0; i < chat_history_.size(); ++i) {
+            if (chat_history_[i].first == "debug") {
+                debug_indices.push_back(i);
+            } else {
+                conversation_indices.push_back(i);
+            }
+        }
+
+        std::unordered_set<size_t> selected_indices;
+        size_t conv_start = conversation_indices.size() > max_conversation_messages 
+            ? conversation_indices.size() - max_conversation_messages : 0;
+        for (size_t i = conv_start; i < conversation_indices.size(); ++i) {
+            selected_indices.insert(conversation_indices[i]);
+        }
+        size_t debug_start = debug_indices.size() > max_debug_messages
+            ? debug_indices.size() - max_debug_messages : 0;
+        for (size_t i = debug_start; i < debug_indices.size(); ++i) {
+            selected_indices.insert(debug_indices[i]);
+        }
+
+        if (conv_start > 0) {
             glz::json_t trunc;
             trunc["type"] = "TextBlock";
-            trunc["text"] = std::format("... {} earlier messages not shown ...",
-                start_idx);
+            trunc["text"] = std::format("... {} earlier conversation messages not shown ...", conv_start);
             trunc["isSubtle"] = true;
             trunc["horizontalAlignment"] = "Center";
             trunc["size"] = "Small";
@@ -1177,7 +1201,9 @@ namespace rouen::cards {
         }
 
         std::string assistant_name = get_assistant_name();
-        for (size_t i = start_idx; i < chat_history_.size(); ++i) {
+        for (size_t i = 0; i < chat_history_.size(); ++i) {
+            if (selected_indices.find(i) == selected_indices.end()) continue;
+
             const auto& [role, text] = chat_history_[i];
             bool is_user = (role == "user");
             bool is_debug = (role == "debug");
@@ -1185,7 +1211,7 @@ namespace rouen::cards {
             // Container for each message bubble
             glz::json_t container;
             container["type"] = "Container";
-            container["separator"] = (i == start_idx); // separator before first message
+            container["separator"] = (body.size() > 2);
             container["spacing"] = "Small";
 
             std::vector<glz::json_t> items;
@@ -1201,11 +1227,11 @@ namespace rouen::cards {
                 items.push_back(std::move(sender));
             }
 
-            // Message text (truncate very long messages for JSON sanity)
+            // Message text (keep full content up to 64KB for JSON sanity)
             {
                 glz::json_t msg;
                 msg["type"] = "TextBlock";
-                constexpr size_t max_text_len = 2000;
+                constexpr size_t max_text_len = 65536;
                 if (text.size() > max_text_len) {
                     msg["text"] = text.substr(0, max_text_len) + "…";
                 } else {

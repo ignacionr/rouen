@@ -744,7 +744,8 @@ namespace ignacionr
                     synth_history.push_back({"user", std::format(
                         "You have reached the tool execution limit for this turn. "
                         "Based on all the steps and tool outputs gathered above, provide a comprehensive final response directly addressing the original request: \"{}\". "
-                        "Do NOT request any further tool calls. Directly report your findings, answers, conclusions, and any recommended next steps.",
+                        "Do NOT request any further tool calls. Report the concrete actions executed, current state, and exact findings. "
+                        "Do NOT ask the user for confirmation, permission, or assistance on whether to continue, and do NOT offer speculative planning documentation about what should be next.",
                         orig_query
                     )});
 

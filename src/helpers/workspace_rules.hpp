@@ -101,7 +101,7 @@ public:
     /**
      * Load project rules, inbox workflow rules, and skill summaries for injection into the system prompt.
      */
-    static std::string load_workspace_rules(const std::filesystem::path& workspace_root_candidate = "", const std::string& query = "") {
+    static std::string load_workspace_rules(const std::filesystem::path& workspace_root_candidate = "", [[maybe_unused]] const std::string& query = "") {
         std::filesystem::path ws_root = workspace_root_candidate;
         if (ws_root.empty()) {
             std::string def_ws = CodeEditorService::instance().get_default_workspace();
@@ -153,18 +153,15 @@ public:
             }
         }
 
-        std::string lower_query = query;
-        std::transform(lower_query.begin(), lower_query.end(), lower_query.begin(), ::tolower);
-        bool const mentions_inbox = query.empty() ||
-                                    lower_query.find("inbox") != std::string::npos ||
-                                    lower_query.find("issue") != std::string::npos ||
-                                    lower_query.find("ticket") != std::string::npos ||
-                                    lower_query.find("bug") != std::string::npos ||
-                                    lower_query.find("feat") != std::string::npos ||
-                                    lower_query.find("step") != std::string::npos ||
-                                    lower_query.find("task") != std::string::npos;
+        // Autonomous execution rule applies to ALL engineering & workspace interactions
+        out << "### CRITICAL EXECUTION RULE (ZERO CHAT OVERHEAD & IMMEDIATE ACTION)\n";
+        out << "- You are an autonomous software engineering agent with direct tool access (`code_read_file`, `code_write_file`, `code_apply_patch`, `run_unit_tests`, `run_local_command`, `build_and_deploy`, `update_inbox_item`).\n";
+        out << "- NEVER ask for permission, assistance, or confirmation from the user as to whether you should proceed, continue, or implement code/fixes. Assume full authorization and carry out the work directly.\n";
+        out << "- NEVER output documentation, architectural overviews, roadmaps, or speculative plans about 'what should be next' in place of actually carrying out the implementation.\n";
+        out << "- When investigating, diagnosing, or verifying a feature or bug (such as inspecting whether a card supports adaptive cards), DO NOT stop after diagnosis. Immediately proceed to implement the required code changes, write tests, run tests, and compile in the same turn.\n";
+        out << "- Carry all tasks through to completion end-to-end (diagnose -> test -> implement -> verify -> compile) before returning your response.\n\n";
 
-        if (has_inbox && mentions_inbox) {
+        if (has_inbox) {
             out << "### INBOX ISSUE LIFECYCLE (9-STEP WORKFLOW)\n";
             out << "When processing an item in `./inbox`, you MUST strictly adhere to this 9-step workflow:\n";
             out << "1. **Understand**: Read the filed report and trace the affected architecture and code paths.\n";
@@ -176,12 +173,7 @@ public:
             out << "7. **Commit**: Create a conventional commit (`fix(...)` or `feat(...)`).\n";
             out << "8. **Push**: Push commit to remote `origin`.\n";
             out << "9. **Rename Report**: Rename `inbox/<report>.md` to `inbox/done_<report>.md`.\n\n";
-
-            out << "### CRITICAL EXECUTION RULE (ZERO CHAT OVERHEAD & IMMEDIATE ACTION)\n";
-            out << "- Do NOT treat these steps as topics to explain, outline, or plan in chat. You are an autonomous agent with direct tool access.\n";
-            out << "- When asked to process an inbox item or carry out specific steps (e.g. 'carry out steps 3 and 4'), immediately invoke the necessary tools (`code_read_file`, `code_write_file`, `code_apply_patch`, `run_unit_tests`, `run_local_command`, `build_and_deploy`, `update_inbox_item`).\n";
-            out << "- NEVER output a speculative plan, conversational roadmap, or execution analysis in chat instead of executing the tools.\n";
-            out << "- Execute all requested steps through to completion before responding to the user.\n\n";
+            out << "Do NOT treat these steps as topics to explain, outline, or plan in chat. Immediately invoke the necessary tools (`code_read_file`, `code_write_file`, `code_apply_patch`, `run_unit_tests`, `run_local_command`, `build_and_deploy`, `update_inbox_item`). Execute all requested steps through to completion before responding to the user.\n\n";
         }
 
         if (!skills.empty()) {
