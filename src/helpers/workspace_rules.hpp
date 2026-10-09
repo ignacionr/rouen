@@ -160,7 +160,9 @@ public:
                                     lower_query.find("issue") != std::string::npos ||
                                     lower_query.find("ticket") != std::string::npos ||
                                     lower_query.find("bug") != std::string::npos ||
-                                    lower_query.find("feat") != std::string::npos;
+                                    lower_query.find("feat") != std::string::npos ||
+                                    lower_query.find("step") != std::string::npos ||
+                                    lower_query.find("task") != std::string::npos;
 
         if (has_inbox && mentions_inbox) {
             out << "### INBOX ISSUE LIFECYCLE (9-STEP WORKFLOW)\n";
@@ -174,6 +176,12 @@ public:
             out << "7. **Commit**: Create a conventional commit (`fix(...)` or `feat(...)`).\n";
             out << "8. **Push**: Push commit to remote `origin`.\n";
             out << "9. **Rename Report**: Rename `inbox/<report>.md` to `inbox/done_<report>.md`.\n\n";
+
+            out << "### CRITICAL EXECUTION RULE (ZERO CHAT OVERHEAD & IMMEDIATE ACTION)\n";
+            out << "- Do NOT treat these steps as topics to explain, outline, or plan in chat. You are an autonomous agent with direct tool access.\n";
+            out << "- When asked to process an inbox item or carry out specific steps (e.g. 'carry out steps 3 and 4'), immediately invoke the necessary tools (`code_read_file`, `code_write_file`, `code_apply_patch`, `run_unit_tests`, `run_local_command`, `build_and_deploy`, `update_inbox_item`).\n";
+            out << "- NEVER output a speculative plan, conversational roadmap, or execution analysis in chat instead of executing the tools.\n";
+            out << "- Execute all requested steps through to completion before responding to the user.\n\n";
         }
 
         if (!skills.empty()) {

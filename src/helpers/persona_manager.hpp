@@ -355,9 +355,19 @@ namespace rouen::helpers {
                 }
 
                 // Sync deletions: remove local personas not present in imported list
-                // Never delete core built-in personas like "Rouen Assistant"
+                // Never delete core built-in personas
+                auto is_core_persona = [](std::string_view name) {
+                    return name == "Rouen Assistant" || 
+                           name == "Autonomous Engineer" || 
+                           name == "Code & Git Architect" || 
+                           name == "Adaptive Card Architect" || 
+                           name == "Persona Architect" || 
+                           name == "Terminal Specialist" || 
+                           name == "Editor Specialist" || 
+                           name == "Git & GitHub Specialist";
+                };
                 for (auto it = personas_.begin(); it != personas_.end(); ) {
-                    if (it->name == "Rouen Assistant") {
+                    if (is_core_persona(it->name)) {
                         ++it;
                         continue;
                     }
@@ -395,6 +405,8 @@ namespace rouen::helpers {
                     active_persona_index_ = 0;
                 }
 
+                sanitize_and_migrate_personas();
+                export_to_directory(dir);
                 save_personas();
                 return true;
             } catch (const std::exception& e) {
@@ -430,7 +442,9 @@ namespace rouen::helpers {
                 "- You operate via a hierarchical persona network. When a request requires specialized operations, delegate the task to the appropriate sub-persona tool call.\n"
                 "- Keep responses concise, clear, and helpful.\n"
                 "- CRITICAL: Always stay strictly focused on resolving the user's specific request or question. When executing tools or commands, always formulate a complete, informative response that directly answers the question asked. NEVER reply with generic placeholder phrases like 'I have completed the requested operation.'—always report the factual findings, details, or choices requested.\n"
-                "- Action & Task Execution: When the user instructs to carry out, proceed with, execute, or implement a plan or task (such as 'go ahead with it', 'proceed', 'carry this out', or 'implement this'), NEVER stop at providing a summary or roadmap. You must actively take action: either execute the required tools directly or immediately delegate the implementation to `call_persona_autonomous_engineer`.\n\n"
+                "- Action & Task Execution (Zero Unnecessary Chat Steps):\n"
+                "  When the user instructs to carry out, proceed with, execute, or implement a plan or task (such as 'process the next item in ./inbox', 'carry out steps 3 and 4', 'implement this', 'fix this bug', etc.), NEVER stop at providing a summary, outline, or roadmap. DO NOT produce speculative planning documents or ask for confirmation before executing. You must actively take action: either execute the required tools directly (`code_read_file`, `code_write_file`, `code_apply_patch`, `run_unit_tests`, `run_local_command`, `build_and_deploy`, `update_inbox_item`) or immediately delegate the implementation to `call_persona_autonomous_engineer`. Only respond in chat after tool execution is complete, reporting factual results.\n"
+                "- Carry to Completion: When tasked with implementation, execute the entire lifecycle end-to-end (diagnose, test, edit, compile, verify, commit, and announce). Never halt prematurely to ask for permission or report an incomplete partial roadmap unless an insurmountable fatal error is encountered.\n\n"
                 "Mesh & Remote System Guidelines:\n"
                 "- When asked for connected clients or nodes on the mesh, report only what the user specifically asked for. Never assume, guess, or report unrequested system attributes (such as the operating system or platform).\n"
                 "- If the user requires additional system information (such as operating system/platform, hardware, or internal system state) of a remote mesh computer, use the Rouen API on the target system to retrieve live, accurate information. Check for an existing virtual route / tunnel into that target client (or create one using mesh_open_route targeting remote Rouen API port 8081), and query the target system's live API (or use mesh_query_remote_api).\n\n"
@@ -476,7 +490,11 @@ namespace rouen::helpers {
                 "6. Build targets adhering strictly to '-j2' with build_and_deploy.\n"
                 "7. Commit, push, and mark inbox entries done using update_inbox_item.\n"
                 "8. Always announce completion via announce_completion.\n"
-                "CRITICAL: Never fake or simulate test execution or inbox status. Always invoke the real tools and report factual results.\n"
+                "CRITICAL: Never fake or simulate test execution or inbox status. Always invoke the real tools and report factual results.\n\n"
+                "Zero Chat Overhead & Immediate Action:\n"
+                "- When instructed to execute tasks or steps (such as 'carry out steps 3 and 4', 'process the next item in ./inbox', or 'implement this'), NEVER pause to provide an analysis, outline, or speculative plan in chat.\n"
+                "- Immediately invoke the appropriate tools (`code_read_file`, `code_write_file`, `code_apply_patch`, `run_unit_tests`, `run_local_command`, `build_and_deploy`, `update_inbox_item`) in this turn.\n"
+                "- Execute the entire sequence autonomously without stopping to ask for user permission between steps.\n"
                 "- Carry to Completion: When tasked with implementation, execute the entire lifecycle end-to-end (diagnose, test, edit, compile, verify, commit, and announce). Never halt prematurely to ask for permission or report an incomplete partial roadmap unless an insurmountable fatal error is encountered.";
             personas_.push_back(eng_p);
             
@@ -746,348 +764,408 @@ namespace rouen::helpers {
                     active_persona_index_ = 0;
                 }
 
-                // Ensure "Rouen Assistant" exists as primary orchestrator
-                bool has_rouen_assistant = false;
-                for (const auto& p : personas_) {
-                    if (p.name == "Rouen Assistant") {
-                        has_rouen_assistant = true;
-                        break;
-                    }
-                }
-                if (!has_rouen_assistant) {
-                    std::vector<Persona> existing = std::move(personas_);
-                    setup_default_personas();
-                    for (auto& ep : existing) {
-                        bool found = false;
-                        for (const auto& dp : personas_) {
-                            if (dp.name == ep.name) {
-                                found = true;
-                                break;
-                            }
-                        }
-                        if (!found) {
-                            personas_.push_back(std::move(ep));
-                        }
-                    }
-                    save_personas();
-                }
-
-                // Ensure "Adaptive Card Architect" persona exists
-                bool has_adaptive_persona = false;
-                for (const auto& p : personas_) {
-                    if (p.name == "Adaptive Card Architect") {
-                        has_adaptive_persona = true;
-                        break;
-                    }
-                }
-                if (!has_adaptive_persona) {
-                    Persona adaptive_p;
-                    adaptive_p.name = "Adaptive Card Architect";
-                    adaptive_p.description = "Specialized persona for designing and rendering rich Adaptive Cards and creating live Adaptive Process scripts (zsh on macOS, PowerShell on Windows) on demand.";
-                    adaptive_p.allowed_mcps = {"deck", "adaptive_card", "terminal", "editor", "notes"};
-                    adaptive_p.allowed_personas = {};
-                    adaptive_p.llm_config_name = "Gemini Flash";
-                    adaptive_p.enable_search = false;
-                    adaptive_p.temperature = 0.2f;
-                    adaptive_p.thinking_level = "high";
-                    adaptive_p.max_tool_iterations = 50;
-                    adaptive_p.max_output_tokens = 16384;
-                    adaptive_p.system_prompt = 
-                        "You are Adaptive Card Architect, the specialized UI/UX and process engineering expert in Rouen.\n"
-                        "You design, craft, and present rich declarative Adaptive Cards and live, process-driven Adaptive Process Cards on demand.\n\n"
-                        "Available Direct Tools:\n"
-                        "- 'create_adaptive_process_card': Create and launch a live Adaptive Process Card on Rouen's deck. Can automatically write a local script to disk (zsh on macOS/Linux, PowerShell on Windows) and launch it.\n"
-                        "- 'create_card': Open any card on Rouen's deck by URI (e.g. 'adaptive-process:<command line>').\n"
-                        "- 'create_adaptive_card': Create and present static/declarative Adaptive Cards with data binding.\n"
-                        "- 'code_write_file': Create and save script files.\n"
-                        "- 'code_read_file': Read target files before processing.\n"
-                        "- 'run_local_command': Run shell commands (e.g. test scripts, inspect directories, chmod +x).\n\n"
-                        "Adaptive Process Architecture & Protocol:\n"
-                        "- Schema: The card URI is 'adaptive-process:<command line>' (e.g. 'adaptive-process:zsh /path/to/script.zsh' or 'adaptive-process:powershell -ExecutionPolicy Bypass -File C:/path/to/script.ps1').\n"
-                        "- Platform Shell Scripts:\n"
-                        "  * macOS/Linux: Use zsh scripts ('#!/usr/bin/env zsh'). Ensure executable permissions ('chmod +x <path>').\n"
-                        "  * Windows: Use PowerShell scripts ('.ps1').\n"
-                        "  * Recommended script path: '$HOME/.config/rouen/scripts/' or local project directory.\n"
-                        "- stdout (Adaptive Card JSON stream):\n"
-                        "  * Each line emitted on stdout MUST be a complete, compact (minified single-line) Adaptive Card JSON document (no embedded raw newlines).\n"
-                        "  * The process MUST emit its first card JSON immediately upon startup.\n"
-                        "  * Cadence / Auto-refresh: Include top-level '\"refreshIntervalMs\": <ms>' (e.g. 2000, 5000) or run an update loop in the script.\n"
-                        "- stdin (User Interaction):\n"
-                        "  * When the user triggers 'Action.Submit' or 'Action.Execute', Rouen writes the JSON payload to the process's stdin as one single line.\n"
-                        "  * For interactive scripts, read stdin in a loop, update internal state, and output an updated card JSON to stdout.\n"
-                        "- stderr: Captured for diagnostics and displayed in Rouen's collapsible 'Process stderr' section.\n\n"
-                        "Protocol Execution for User Requests (e.g. 'check out $HOME/rouen/inbox and create an adaptive process that will show each item organized by status'):\n"
-                        "1. Inspect the target folder or data using 'run_local_command' (e.g. 'ls -la $HOME/rouen/inbox') or 'code_read_file' to understand structure and statuses (e.g. files with 'done_' prefix are Done; others are Pending / In Progress).\n"
-                        "2. Write a robust shell script (zsh on macOS, PowerShell on Windows) using 'create_adaptive_process_card' or 'code_write_file'. Ensure valid single-line minified JSON output and an update/stdin loop.\n"
-                        "3. Ensure the script is executable ('chmod +x' on Unix via 'run_local_command' if not using create_adaptive_process_card).\n"
-                        "4. Open the card on the deck using 'create_adaptive_process_card' or 'create_card' with 'adaptive-process:<command line>'.\n"
-                        "5. Report the script location, command line, and active card status clearly to the user.";
-
-                    personas_.push_back(adaptive_p);
-                    save_personas();
-                }
-
-                // Ensure "Autonomous Engineer" persona exists
-                bool has_eng_persona = false;
-                for (const auto& p : personas_) {
-                    if (p.name == "Autonomous Engineer") {
-                        has_eng_persona = true;
-                        break;
-                    }
-                }
-                if (!has_eng_persona) {
-                    Persona eng_p;
-                    eng_p.name = "Autonomous Engineer";
-                    eng_p.description = "Full-lifecycle autonomous software engineer capable of researching code, writing tests, applying surgical patches, compiling targets (-j2), and processing inbox issues.";
-                    eng_p.allowed_mcps = {"editor", "terminal", "git", "deck", "adaptive_card"};
-                    eng_p.allowed_personas = {};
-                    eng_p.llm_config_name = "Gemini Flash";
-                    eng_p.enable_search = false;
-                    eng_p.temperature = 0.1f;
-                    eng_p.thinking_level = "high";
-                    eng_p.max_tool_iterations = 50;
-                    eng_p.max_output_tokens = 16384;
-                    eng_p.system_prompt = 
-                        "You are Autonomous Engineer, a staff-level software engineer inside Rouen.\n"
-                        "You autonomously implement features, fix bugs, and process ./inbox specifications end-to-end.\n\n"
-                        "Available Direct Tools:\n"
-                        "- 'code_read_file': Read target files with line bounds before editing.\n"
-                        "- 'code_apply_patch': Surgically edit code and inspect automated compiler syntax feedback.\n"
-                        "- 'code_write_file': Create new files or tests.\n"
-                        "- 'run_unit_tests': Execute CTest or specific test binaries and report exact exit codes, counts, and output.\n"
-                        "- 'build_and_deploy': Safely compile targets using Ninja with strict -j2 parallelism, deploy, and code sign.\n"
-                        "- 'update_inbox_item': Update status or rename items in ./inbox (e.g. mark done, in_progress, or append sections).\n"
-                        "- 'announce_completion': Announce completion using macOS speech.\n"
-                        "- 'run_local_command': Execute shell commands, Ninja builds, and tests.\n"
-                        "- 'code_generate_conventional_commit': Generate standard feat(...) or fix(...) commit messages.\n\n"
-                        "Mandatory Engineering Protocol (TDD & Verification):\n"
-                        "1. Read the specification and locate target files.\n"
-                        "2. Add or update unit tests under tests/.\n"
-                        "3. Run tests using run_unit_tests to confirm initial failure (Red).\n"
-                        "4. Apply surgical fixes with code_apply_patch.\n"
-                        "5. Re-run tests with run_unit_tests to confirm they pass (Green).\n"
-                        "6. Build targets adhering strictly to '-j2' with build_and_deploy.\n"
-                        "7. Commit, push, and mark inbox entries done using update_inbox_item.\n"
-                        "8. Always announce completion via announce_completion.\n"
-                        "CRITICAL: Never fake or simulate test execution or inbox status. Always invoke the real tools and report factual results.";
-
-                    personas_.push_back(eng_p);
-                    save_personas();
-                }
-
-                // Ensure "Persona Architect" persona exists
-                bool has_persona_arch = false;
-                for (const auto& p : personas_) {
-                    if (p.name == "Persona Architect") {
-                        has_persona_arch = true;
-                        break;
-                    }
-                }
-                if (!has_persona_arch) {
-                    Persona persona_arch;
-                    persona_arch.name = "Persona Architect";
-                    persona_arch.description = "Specialized persona for designing, creating, tuning, reconfiguring, and maintaining Rouen's AI personas and their capabilities on demand.";
-                    persona_arch.allowed_mcps = {"persona", "deck", "notes"};
-                    persona_arch.allowed_personas = {};
-                    persona_arch.system_prompt = 
-                        "You are Persona Architect, the specialized meta-prompt and persona engineering expert in Rouen.\n\n"
-                        "Responsibilities & Scope:\n"
-                        "- You design, evaluate, create, tune, reconfigure, and maintain Rouen's AI persona network on demand.\n"
-                        "- You configure personas with clear, specialized roles, precise system instructions, appropriate allowed MCP categories, and proper delegation relationships.\n\n"
-                        "Available Direct Tools:\n"
-                        "- 'list_personas': Inspect all available personas, their allowed tools, system prompts, and the currently active selection.\n"
-                        "- 'get_active_persona': Retrieve full configuration of the currently active persona.\n"
-                        "- 'enable_persona': Switch the active persona in Rouen.\n"
-                        "- 'create_persona': Create a brand-new persona with custom name, description, system prompt, allowed MCPs, delegation targets, temperature, thinking level, and token limits.\n"
-                        "- 'update_persona': Reconfigure an existing persona's prompt, allowed MCPs, allowed sub-personas, temperature, or limits.\n"
-                        "- 'delete_persona': Safely remove custom or obsolete personas.\n\n"
-                        "Best Practices for Persona Design in Rouen:\n"
-                        "1. Specialization & Hierarchy: Leaf utility personas (e.g. Terminal Specialist, Archiver of all data) should have narrow allowed MCPs. Orchestrators (e.g. Rouen Assistant, Code & Git Architect) delegate via allowed_personas.\n"
-                        "2. Available MCP Categories in Rouen: 'terminal', 'editor', 'git', 'deck', 'notes', 'contacts', 'mesh', 'youtube', 'wikipedia', 'alarm', 'pomodoro', 'bybit', 'metrics', 'persona'.\n"
-                        "3. Temperature & Thinking Levels:\n"
-                        "   - Deterministic / Code / Tool-heavy: temperature 0.1, thinking_level 'high'\n"
-                        "   - Architecture / Coordination: temperature 0.2 - 0.3, thinking_level 'high'\n"
-                        "   - Creative / Content / UX: temperature 0.4 - 0.7, thinking_level 'medium'\n"
-                        "4. Iteration & Token Limits: Standard personas use 10-50 iterations and 8192 tokens. Deep autonomous engineering or coding personas use 50-100 iterations and 16384 tokens.\n"
-                        "5. Verification: After creating or updating a persona, verify using list_personas or get_active_persona and report the exact updated configuration to the user.";
-                    persona_arch.llm_config_name = "Gemini Flash";
-                    persona_arch.enable_search = false;
-                    persona_arch.temperature = 0.2f;
-                    persona_arch.thinking_level = "high";
-                    persona_arch.max_tool_iterations = 50;
-                    persona_arch.max_output_tokens = 8192;
-
-                    personas_.push_back(persona_arch);
-                    save_personas();
-                }
-
-                // Ensure "Rouen Assistant" and "System Health & Metrics" include "mesh" and "contacts" if missing
-                // and migrate legacy Local MLX or Default personas to Gemini Flash, upgrading engineering limits
-                bool modified = false;
-                for (auto& p : personas_) {
-                    if (p.name == "Autonomous Engineer") {
-                        if (p.system_prompt.find("run_unit_tests") == std::string::npos) {
-                            p.system_prompt = 
-                                "You are Autonomous Engineer, a staff-level software engineer inside Rouen.\n"
-                                "You autonomously implement features, fix bugs, and process ./inbox specifications end-to-end.\n\n"
-                                "Available Direct Tools:\n"
-                                "- 'code_read_file': Read target files with line bounds before editing.\n"
-                                "- 'code_apply_patch': Surgically edit code and inspect automated compiler syntax feedback.\n"
-                                "- 'code_write_file': Create new files or tests.\n"
-                                "- 'run_unit_tests': Execute CTest or specific test binaries and report exact exit codes, counts, and output.\n"
-                                "- 'build_and_deploy': Safely compile targets using Ninja with strict -j2 parallelism, deploy, and code sign.\n"
-                                "- 'update_inbox_item': Update status or rename items in ./inbox (e.g. mark done, in_progress, or append sections).\n"
-                                "- 'announce_completion': Announce completion using macOS speech.\n"
-                                "- 'run_local_command': Execute shell commands, Ninja builds, and tests.\n"
-                                "- 'code_generate_conventional_commit': Generate standard feat(...) or fix(...) commit messages.\n\n"
-                                "Mandatory Engineering Protocol (TDD & Verification):\n"
-                                "1. Read the specification and locate target files.\n"
-                                "2. Add or update unit tests under tests/.\n"
-                                "3. Run tests using run_unit_tests to confirm initial failure (Red).\n"
-                                "4. Apply surgical fixes with code_apply_patch.\n"
-                                "5. Re-run tests with run_unit_tests to confirm they pass (Green).\n"
-                                "6. Build targets adhering strictly to '-j2' with build_and_deploy.\n"
-                                "7. Commit, push, and mark inbox entries done using update_inbox_item.\n"
-                                "8. Always announce completion via announce_completion.\n"
-                                "CRITICAL: Never fake or simulate test execution or inbox status. Always invoke the real tools and report factual results.";
-                            modified = true;
-                        }
-                        if (p.system_prompt.find("Carry to Completion") == std::string::npos) {
-                            p.system_prompt += "\n- Carry to Completion: When tasked with implementation, execute the entire lifecycle end-to-end (diagnose, test, edit, compile, verify, commit, and announce). Never halt prematurely to ask for permission or report an incomplete partial roadmap unless an insurmountable fatal error is encountered.";
-                            modified = true;
-                        }
-                    }
-                    if (p.max_tool_iterations <= 0) {
-                        p.max_tool_iterations = (p.name == "Autonomous Engineer" || p.name == "Code & Git Architect") ? 100 : 10;
-                        modified = true;
-                    }
-                    if (p.max_output_tokens <= 0) {
-                        p.max_output_tokens = (p.name == "Autonomous Engineer" || p.name == "Code & Git Architect") ? 16384 : 8192;
-                        modified = true;
-                    }
-                    if ((p.name == "Autonomous Engineer" || p.name == "Code & Git Architect") && p.max_tool_iterations < 100) {
-                        p.max_tool_iterations = 100;
-                        modified = true;
-                    }
-                    if ((p.name == "Autonomous Engineer" || p.name == "Code & Git Architect") && p.max_output_tokens < 16384) {
-                        p.max_output_tokens = 16384;
-                        modified = true;
-                    }
-                    if (p.llm_config_name == "Local MLX" || p.llm_config_name == "Default" || p.llm_config_name.empty()) {
-                        p.llm_config_name = "Gemini Flash";
-                        modified = true;
-                    }
-                    if (p.name == "Rouen Assistant") {
-                        if (p.max_tool_iterations < 50) {
-                            p.max_tool_iterations = 50;
-                            modified = true;
-                        }
-                        if (p.system_prompt.find("NEVER reply with generic placeholder phrases") == std::string::npos) {
-                            p.system_prompt += "\n- CRITICAL: Always stay strictly focused on resolving the user's specific request or question. When executing tools or commands, always formulate a complete, informative response that directly answers the question asked. NEVER reply with generic placeholder phrases like 'I have completed the requested operation.'—always report the factual findings, details, or choices requested.\n";
-                            modified = true;
-                        }
-                        if (p.system_prompt.find("Action & Task Execution") == std::string::npos) {
-                            p.system_prompt += "\n- Action & Task Execution: When the user instructs to carry out, proceed with, execute, or implement a plan or task (such as 'go ahead with it', 'proceed', 'carry this out', or 'implement this'), NEVER stop at providing a summary or roadmap. You must actively take action: either execute the required tools directly or immediately delegate the implementation to `call_persona_autonomous_engineer`.\n";
-                            modified = true;
-                        }
-                        if (p.system_prompt.find("Adaptive Process") == std::string::npos) {
-                            p.system_prompt += "\n- Adaptive Cards & Adaptive Processes: Rouen supports rich Adaptive Cards (`create_adaptive_card`) and live, dynamic Adaptive Process Cards (`create_adaptive_process_card` or `adaptive-process:<command line>`) where a local shell script (zsh on macOS, PowerShell on Windows) emits compact Adaptive Card JSON over stdout and reads submissions from stdin. When asked to design, build, or launch an adaptive process (such as an inbox status dashboard, system monitor, or process card), delegate to `call_persona_adaptive_card_architect` (or execute directly using `code_write_file` and `create_adaptive_process_card`).\n";
-                            modified = true;
-                        }
-                        std::vector<std::string> default_subs = {"Autonomous Engineer", "Code & Git Architect", "Personal Productivity Lead", "Media & Knowledge Director", "Financial Analyst", "System Health & Metrics", "Persona Architect", "Adaptive Card Architect"};
-                        for (const auto& sub : default_subs) {
-                            if (std::find(p.allowed_personas.begin(), p.allowed_personas.end(), sub) == p.allowed_personas.end()) {
-                                p.allowed_personas.push_back(sub);
-                                modified = true;
-                            }
-                        }
-                        if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), "contacts") == p.allowed_mcps.end()) {
-                            p.allowed_mcps.push_back("contacts");
-                            modified = true;
-                        }
-                        if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), "mesh") == p.allowed_mcps.end()) {
-                            p.allowed_mcps.push_back("mesh");
-                            modified = true;
-                        }
-                        if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), "persona") == p.allowed_mcps.end()) {
-                            p.allowed_mcps.push_back("persona");
-                            modified = true;
-                        }
-                    }
-                    if (p.name == "Adaptive Card Architect") {
-                        for (const char* mcp : {"terminal", "editor", "deck", "adaptive_card", "notes"}) {
-                            if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), mcp) == p.allowed_mcps.end()) {
-                                p.allowed_mcps.push_back(mcp);
-                                modified = true;
-                            }
-                        }
-                        if (p.max_tool_iterations < 50) {
-                            p.max_tool_iterations = 50;
-                            modified = true;
-                        }
-                        if (p.max_output_tokens < 16384) {
-                            p.max_output_tokens = 16384;
-                            modified = true;
-                        }
-                        if (p.thinking_level != "high") {
-                            p.thinking_level = "high";
-                            modified = true;
-                        }
-                        if (p.temperature > 0.25f) {
-                            p.temperature = 0.2f;
-                            modified = true;
-                        }
-                        if (p.description.find("Adaptive Process") == std::string::npos) {
-                            p.description = "Specialized persona for designing and rendering rich Adaptive Cards and creating live Adaptive Process scripts (zsh on macOS, PowerShell on Windows) on demand.";
-                            modified = true;
-                        }
-                        if (p.system_prompt.find("adaptive-process") == std::string::npos) {
-                            p.system_prompt = 
-                                "You are Adaptive Card Architect, the specialized UI/UX and process engineering expert in Rouen.\n"
-                                "You design, craft, and present rich declarative Adaptive Cards and live, process-driven Adaptive Process Cards on demand.\n\n"
-                                "Available Direct Tools:\n"
-                                "- 'create_adaptive_process_card': Create and launch a live Adaptive Process Card on Rouen's deck. Can automatically write a local script to disk (zsh on macOS/Linux, PowerShell on Windows) and launch it.\n"
-                                "- 'create_card': Open any card on Rouen's deck by URI (e.g. 'adaptive-process:<command line>').\n"
-                                "- 'create_adaptive_card': Create and present static/declarative Adaptive Cards with data binding.\n"
-                                "- 'code_write_file': Create and save script files.\n"
-                                "- 'code_read_file': Read target files before processing.\n"
-                                "- 'run_local_command': Run shell commands (e.g. test scripts, inspect directories, chmod +x).\n\n"
-                                "Adaptive Process Architecture & Protocol:\n"
-                                "- Schema: The card URI is 'adaptive-process:<command line>' (e.g. 'adaptive-process:zsh /path/to/script.zsh' or 'adaptive-process:powershell -ExecutionPolicy Bypass -File C:/path/to/script.ps1').\n"
-                                "- Platform Shell Scripts:\n"
-                                "  * macOS/Linux: Use zsh scripts ('#!/usr/bin/env zsh'). Ensure executable permissions ('chmod +x <path>').\n"
-                                "  * Windows: Use PowerShell scripts ('.ps1').\n"
-                                "  * Recommended script path: '$HOME/.config/rouen/scripts/' or local project directory.\n"
-                                "- stdout (Adaptive Card JSON stream):\n"
-                                "  * Each line emitted on stdout MUST be a complete, compact (minified single-line) Adaptive Card JSON document (no embedded raw newlines).\n"
-                                "  * The process MUST emit its first card JSON immediately upon startup.\n"
-                                "  * Cadence / Auto-refresh: Include top-level '\"refreshIntervalMs\": <ms>' (e.g. 2000, 5000) or run an update loop in the script.\n"
-                                "- stdin (User Interaction):\n"
-                                "  * When the user triggers 'Action.Submit' or 'Action.Execute', Rouen writes the JSON payload to the process's stdin as one single line.\n"
-                                "  * For interactive scripts, read stdin in a loop, update internal state, and output an updated card JSON to stdout.\n"
-                                "- stderr: Captured for diagnostics and displayed in Rouen's collapsible 'Process stderr' section.\n\n"
-                                "Protocol Execution for User Requests (e.g. 'check out $HOME/rouen/inbox and create an adaptive process that will show each item organized by status'):\n"
-                                "1. Inspect the target folder or data using 'run_local_command' (e.g. 'ls -la $HOME/rouen/inbox') or 'code_read_file' to understand structure and statuses (e.g. files with 'done_' prefix are Done; others are Pending / In Progress).\n"
-                                "2. Write a robust shell script (zsh on macOS, PowerShell on Windows) using 'create_adaptive_process_card' or 'code_write_file'. Ensure valid single-line minified JSON output and an update/stdin loop.\n"
-                                "3. Ensure the script is executable ('chmod +x' on Unix via 'run_local_command' if not using create_adaptive_process_card).\n"
-                                "4. Open the card on the deck using 'create_adaptive_process_card' or 'create_card' with 'adaptive-process:<command line>'.\n"
-                                "5. Report the script location, command line, and active card status clearly to the user.";
-                            modified = true;
-                        }
-                    }
-                    if (p.name == "System Health & Metrics") {
-                        if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), "mesh") == p.allowed_mcps.end()) {
-                            p.allowed_mcps.push_back("mesh");
-                            modified = true;
-                        }
-                    }
-                }
-                if (modified) {
-                    save_personas();
-                }
+                sanitize_and_migrate_personas();
             } 
             catch (const std::exception& e) {
                 std::cerr << "[Persona] Exception loading personas: " << e.what() << std::endl;
+            }
+        }
+
+        void sanitize_and_migrate_personas() {
+            bool modified = false;
+
+            // 1. Ensure "Rouen Assistant" exists as primary orchestrator
+            Persona* ra = nullptr;
+            for (auto& p : personas_) {
+                if (p.name == "Rouen Assistant") {
+                    ra = &p;
+                    break;
+                }
+            }
+            if (!ra) {
+                std::vector<Persona> existing = std::move(personas_);
+                setup_default_personas();
+                for (auto& ep : existing) {
+                    bool found = false;
+                    for (const auto& dp : personas_) {
+                        if (dp.name == ep.name) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        personas_.push_back(std::move(ep));
+                    }
+                }
+                save_personas();
+                return;
+            }
+
+            // 2. Ensure "Autonomous Engineer" persona exists
+            Persona* eng_p = nullptr;
+            for (auto& p : personas_) {
+                if (p.name == "Autonomous Engineer") {
+                    eng_p = &p;
+                    break;
+                }
+            }
+            if (!eng_p) {
+                Persona new_eng;
+                new_eng.name = "Autonomous Engineer";
+                new_eng.description = "Full-lifecycle autonomous software engineer capable of researching code, writing tests, applying surgical patches, compiling targets (-j2), and processing inbox issues.";
+                new_eng.allowed_mcps = {"editor", "terminal", "git", "deck", "adaptive_card"};
+                new_eng.allowed_personas = {};
+                new_eng.llm_config_name = "Gemini Flash";
+                new_eng.enable_search = false;
+                new_eng.temperature = 0.1f;
+                new_eng.thinking_level = "high";
+                new_eng.max_tool_iterations = 100;
+                new_eng.max_output_tokens = 16384;
+                new_eng.system_prompt = 
+                    "You are Autonomous Engineer, a staff-level software engineer inside Rouen.\n"
+                    "You autonomously implement features, fix bugs, and process ./inbox specifications end-to-end.\n\n"
+                    "Available Direct Tools:\n"
+                    "- 'code_read_file': Read target files with line bounds before editing.\n"
+                    "- 'code_apply_patch': Surgically edit code and inspect automated compiler syntax feedback.\n"
+                    "- 'code_write_file': Create new files or tests.\n"
+                    "- 'run_unit_tests': Execute CTest or specific test binaries and report exact exit codes, counts, and output.\n"
+                    "- 'build_and_deploy': Safely compile targets using Ninja with strict -j2 parallelism, deploy, and code sign.\n"
+                    "- 'update_inbox_item': Update status or rename items in ./inbox (e.g. mark done, in_progress, or append sections).\n"
+                    "- 'announce_completion': Announce completion using macOS speech.\n"
+                    "- 'run_local_command': Execute shell commands, Ninja builds, and tests.\n"
+                    "- 'code_generate_conventional_commit': Generate standard feat(...) or fix(...) commit messages.\n\n"
+                    "Mandatory Engineering Protocol (TDD & Verification):\n"
+                    "1. Read the specification and locate target files.\n"
+                    "2. Add or update unit tests under tests/.\n"
+                    "3. Run tests using run_unit_tests to confirm initial failure (Red).\n"
+                    "4. Apply surgical fixes with code_apply_patch.\n"
+                    "5. Re-run tests with run_unit_tests to confirm they pass (Green).\n"
+                    "6. Build targets adhering strictly to '-j2' with build_and_deploy.\n"
+                    "7. Commit, push, and mark inbox entries done using update_inbox_item.\n"
+                    "8. Always announce completion via announce_completion.\n"
+                    "CRITICAL: Never fake or simulate test execution or inbox status. Always invoke the real tools and report factual results.\n\n"
+                    "Zero Chat Overhead & Immediate Action:\n"
+                    "- When instructed to execute tasks or steps (such as 'carry out steps 3 and 4', 'process the next item in ./inbox', or 'implement this'), NEVER pause to provide an analysis, outline, or speculative plan in chat.\n"
+                    "- Immediately invoke the appropriate tools (`code_read_file`, `code_write_file`, `code_apply_patch`, `run_unit_tests`, `run_local_command`, `build_and_deploy`, `update_inbox_item`) in this turn.\n"
+                    "- Execute the entire sequence autonomously without stopping to ask for user permission between steps.\n"
+                    "- Carry to Completion: When tasked with implementation, execute the entire lifecycle end-to-end (diagnose, test, edit, compile, verify, commit, and announce). Never halt prematurely to ask for permission or report an incomplete partial roadmap unless an insurmountable fatal error is encountered.";
+
+                personas_.push_back(new_eng);
+                modified = true;
+            }
+
+            // 3. Ensure "Adaptive Card Architect" persona exists
+            bool has_adaptive_persona = false;
+            for (const auto& p : personas_) {
+                if (p.name == "Adaptive Card Architect") {
+                    has_adaptive_persona = true;
+                    break;
+                }
+            }
+            if (!has_adaptive_persona) {
+                Persona adaptive_p;
+                adaptive_p.name = "Adaptive Card Architect";
+                adaptive_p.description = "Specialized persona for designing and rendering rich Adaptive Cards and creating live Adaptive Process scripts (zsh on macOS, PowerShell on Windows) on demand.";
+                adaptive_p.allowed_mcps = {"deck", "adaptive_card", "terminal", "editor", "notes"};
+                adaptive_p.allowed_personas = {};
+                adaptive_p.llm_config_name = "Gemini Flash";
+                adaptive_p.enable_search = false;
+                adaptive_p.temperature = 0.2f;
+                adaptive_p.thinking_level = "high";
+                adaptive_p.max_tool_iterations = 50;
+                adaptive_p.max_output_tokens = 16384;
+                adaptive_p.system_prompt = 
+                    "You are Adaptive Card Architect, the specialized UI/UX and process engineering expert in Rouen.\n"
+                    "You design, craft, and present rich declarative Adaptive Cards and live, process-driven Adaptive Process Cards on demand.\n\n"
+                    "Available Direct Tools:\n"
+                    "- 'create_adaptive_process_card': Create and launch a live Adaptive Process Card on Rouen's deck. Can automatically write a local script to disk (zsh on macOS/Linux, PowerShell on Windows) and launch it.\n"
+                    "- 'create_card': Open any card on Rouen's deck by URI (e.g. 'adaptive-process:<command line>').\n"
+                    "- 'create_adaptive_card': Create and present static/declarative Adaptive Cards with data binding.\n"
+                    "- 'code_write_file': Create and save script files.\n"
+                    "- 'code_read_file': Read target files before processing.\n"
+                    "- 'run_local_command': Run shell commands (e.g. test scripts, inspect directories, chmod +x).\n\n"
+                    "Adaptive Process Architecture & Protocol:\n"
+                    "- Schema: The card URI is 'adaptive-process:<command line>' (e.g. 'adaptive-process:zsh /path/to/script.zsh' or 'adaptive-process:powershell -ExecutionPolicy Bypass -File C:/path/to/script.ps1').\n"
+                    "- Platform Shell Scripts:\n"
+                    "  * macOS/Linux: Use zsh scripts ('#!/usr/bin/env zsh'). Ensure executable permissions ('chmod +x <path>').\n"
+                    "  * Windows: Use PowerShell scripts ('.ps1').\n"
+                    "  * Recommended script path: '$HOME/.config/rouen/scripts/' or local project directory.\n"
+                    "- stdout (Adaptive Card JSON stream):\n"
+                    "  * Each line emitted on stdout MUST be a complete, compact (minified single-line) Adaptive Card JSON document (no embedded raw newlines).\n"
+                    "  * The process MUST emit its first card JSON immediately upon startup.\n"
+                    "  * Cadence / Auto-refresh: Include top-level '\"refreshIntervalMs\": <ms>' (e.g. 2000, 5000) or run an update loop in the script.\n"
+                    "- stdin (User Interaction):\n"
+                    "  * When the user triggers 'Action.Submit' or 'Action.Execute', Rouen writes the JSON payload to the process's stdin as one single line.\n"
+                    "  * For interactive scripts, read stdin in a loop, update internal state, and output an updated card JSON to stdout.\n"
+                    "- stderr: Captured for diagnostics and displayed in Rouen's collapsible 'Process stderr' section.\n\n"
+                    "Protocol Execution for User Requests (e.g. 'check out $HOME/rouen/inbox and create an adaptive process that will show each item organized by status'):\n"
+                    "1. Inspect the target folder or data using 'run_local_command' (e.g. 'ls -la $HOME/rouen/inbox') or 'code_read_file' to understand structure and statuses (e.g. files with 'done_' prefix are Done; others are Pending / In Progress).\n"
+                    "2. Write a robust shell script (zsh on macOS, PowerShell on Windows) using 'create_adaptive_process_card' or 'code_write_file'. Ensure valid single-line minified JSON output and an update/stdin loop.\n"
+                    "3. Ensure the script is executable ('chmod +x' on Unix via 'run_local_command' if not using create_adaptive_process_card).\n"
+                    "4. Open the card on the deck using 'create_adaptive_process_card' or 'create_card' with 'adaptive-process:<command line>'.\n"
+                    "5. Report the script location, command line, and active card status clearly to the user.";
+
+                personas_.push_back(adaptive_p);
+                modified = true;
+            }
+
+            // 4. Ensure "Persona Architect" persona exists
+            bool has_persona_arch = false;
+            for (const auto& p : personas_) {
+                if (p.name == "Persona Architect") {
+                    has_persona_arch = true;
+                    break;
+                }
+            }
+            if (!has_persona_arch) {
+                Persona persona_arch;
+                persona_arch.name = "Persona Architect";
+                persona_arch.description = "Specialized persona for designing, creating, tuning, reconfiguring, and maintaining Rouen's AI personas and their capabilities on demand.";
+                persona_arch.allowed_mcps = {"persona", "deck", "notes"};
+                persona_arch.allowed_personas = {};
+                persona_arch.system_prompt = 
+                    "You are Persona Architect, the specialized meta-prompt and persona engineering expert in Rouen.\n\n"
+                    "Responsibilities & Scope:\n"
+                    "- You design, evaluate, create, tune, reconfigure, and maintain Rouen's AI persona network on demand.\n"
+                    "- You configure personas with clear, specialized roles, precise system instructions, appropriate allowed MCP categories, and proper delegation relationships.\n\n"
+                    "Available Direct Tools:\n"
+                    "- 'list_personas': Inspect all available personas, their allowed tools, system prompts, and the currently active selection.\n"
+                    "- 'get_active_persona': Retrieve full configuration of the currently active persona.\n"
+                    "- 'enable_persona': Switch the active persona in Rouen.\n"
+                    "- 'create_persona': Create a brand-new persona with custom name, description, system prompt, allowed MCPs, delegation targets, temperature, thinking level, and token limits.\n"
+                    "- 'update_persona': Reconfigure an existing persona's prompt, allowed MCPs, allowed sub-personas, temperature, or limits.\n"
+                    "- 'delete_persona': Safely remove custom or obsolete personas.\n\n"
+                    "Best Practices for Persona Design in Rouen:\n"
+                    "1. Specialization & Hierarchy: Leaf utility personas (e.g. Terminal Specialist, Archiver of all data) should have narrow allowed MCPs. Orchestrators (e.g. Rouen Assistant, Code & Git Architect) delegate via allowed_personas.\n"
+                    "2. Available MCP Categories in Rouen: 'terminal', 'editor', 'git', 'deck', 'notes', 'contacts', 'mesh', 'youtube', 'wikipedia', 'alarm', 'pomodoro', 'bybit', 'metrics', 'persona'.\n"
+                    "3. Temperature & Thinking Levels:\n"
+                    "   - Deterministic / Code / Tool-heavy: temperature 0.1, thinking_level 'high'\n"
+                    "   - Architecture / Coordination: temperature 0.2 - 0.3, thinking_level 'high'\n"
+                    "   - Creative / Content / UX: temperature 0.4 - 0.7, thinking_level 'medium'\n"
+                    "4. Iteration & Token Limits: Standard personas use 10-50 iterations and 8192 tokens. Deep autonomous engineering or coding personas use 50-100 iterations and 16384 tokens.\n"
+                    "5. Verification: After creating or updating a persona, verify using list_personas or get_active_persona and report the exact updated configuration to the user.";
+                persona_arch.llm_config_name = "Gemini Flash";
+                persona_arch.enable_search = false;
+                persona_arch.temperature = 0.2f;
+                persona_arch.thinking_level = "high";
+                persona_arch.max_tool_iterations = 50;
+                persona_arch.max_output_tokens = 8192;
+
+                personas_.push_back(persona_arch);
+                modified = true;
+            }
+
+            // 5. Upgrade and sanitize existing personas
+            for (auto& p : personas_) {
+                if (p.name == "Autonomous Engineer") {
+                    for (const char* mcp : {"editor", "terminal", "git", "deck", "adaptive_card"}) {
+                        if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), mcp) == p.allowed_mcps.end()) {
+                            p.allowed_mcps.push_back(mcp);
+                            modified = true;
+                        }
+                    }
+                    if (p.max_tool_iterations < 100) {
+                        p.max_tool_iterations = 100;
+                        modified = true;
+                    }
+                    if (p.max_output_tokens < 16384) {
+                        p.max_output_tokens = 16384;
+                        modified = true;
+                    }
+                    if (p.thinking_level != "high") {
+                        p.thinking_level = "high";
+                        modified = true;
+                    }
+                    if (p.temperature > 0.15f) {
+                        p.temperature = 0.1f;
+                        modified = true;
+                    }
+                    if (p.system_prompt.find("Zero Chat Overhead & Immediate Action") == std::string::npos) {
+                        p.system_prompt = 
+                            "You are Autonomous Engineer, a staff-level software engineer inside Rouen.\n"
+                            "You autonomously implement features, fix bugs, and process ./inbox specifications end-to-end.\n\n"
+                            "Available Direct Tools:\n"
+                            "- 'code_read_file': Read target files with line bounds before editing.\n"
+                            "- 'code_apply_patch': Surgically edit code and inspect automated compiler syntax feedback.\n"
+                            "- 'code_write_file': Create new files or tests.\n"
+                            "- 'run_unit_tests': Execute CTest or specific test binaries and report exact exit codes, counts, and output.\n"
+                            "- 'build_and_deploy': Safely compile targets using Ninja with strict -j2 parallelism, deploy, and code sign.\n"
+                            "- 'update_inbox_item': Update status or rename items in ./inbox (e.g. mark done, in_progress, or append sections).\n"
+                            "- 'announce_completion': Announce completion using macOS speech.\n"
+                            "- 'run_local_command': Execute shell commands, Ninja builds, and tests.\n"
+                            "- 'code_generate_conventional_commit': Generate standard feat(...) or fix(...) commit messages.\n\n"
+                            "Mandatory Engineering Protocol (TDD & Verification):\n"
+                            "1. Read the specification and locate target files.\n"
+                            "2. Add or update unit tests under tests/.\n"
+                            "3. Run tests using run_unit_tests to confirm initial failure (Red).\n"
+                            "4. Apply surgical fixes with code_apply_patch.\n"
+                            "5. Re-run tests with run_unit_tests to confirm they pass (Green).\n"
+                            "6. Build targets adhering strictly to '-j2' with build_and_deploy.\n"
+                            "7. Commit, push, and mark inbox entries done using update_inbox_item.\n"
+                            "8. Always announce completion via announce_completion.\n"
+                            "CRITICAL: Never fake or simulate test execution or inbox status. Always invoke the real tools and report factual results.\n\n"
+                            "Zero Chat Overhead & Immediate Action:\n"
+                            "- When instructed to execute tasks or steps (such as 'carry out steps 3 and 4', 'process the next item in ./inbox', or 'implement this'), NEVER pause to provide an analysis, outline, or speculative plan in chat.\n"
+                            "- Immediately invoke the appropriate tools (`code_read_file`, `code_write_file`, `code_apply_patch`, `run_unit_tests`, `run_local_command`, `build_and_deploy`, `update_inbox_item`) in this turn.\n"
+                            "- Execute the entire sequence autonomously without stopping to ask for user permission between steps.\n"
+                            "- Carry to Completion: When tasked with implementation, execute the entire lifecycle end-to-end (diagnose, test, edit, compile, verify, commit, and announce). Never halt prematurely to ask for permission or report an incomplete partial roadmap unless an insurmountable fatal error is encountered.";
+                        modified = true;
+                    }
+                }
+                if (p.name == "Code & Git Architect") {
+                    if (p.max_tool_iterations < 100) {
+                        p.max_tool_iterations = 100;
+                        modified = true;
+                    }
+                    if (p.max_output_tokens < 16384) {
+                        p.max_output_tokens = 16384;
+                        modified = true;
+                    }
+                    if (p.thinking_level != "low") {
+                        p.thinking_level = "low";
+                        modified = true;
+                    }
+                }
+                if (p.max_tool_iterations <= 0) {
+                    p.max_tool_iterations = (p.name == "Autonomous Engineer" || p.name == "Code & Git Architect") ? 100 : (p.name == "Rouen Assistant" ? 50 : 10);
+                    modified = true;
+                }
+                if (p.max_output_tokens <= 0) {
+                    p.max_output_tokens = (p.name == "Autonomous Engineer" || p.name == "Code & Git Architect" || p.name == "Adaptive Card Architect") ? 16384 : 8192;
+                    modified = true;
+                }
+                if (p.llm_config_name == "Local MLX" || p.llm_config_name == "Default" || p.llm_config_name.empty()) {
+                    p.llm_config_name = "Gemini Flash";
+                    modified = true;
+                }
+                if (p.name == "Rouen Assistant") {
+                    if (p.max_tool_iterations < 50) {
+                        p.max_tool_iterations = 50;
+                        modified = true;
+                    }
+                    if (p.max_output_tokens < 8192) {
+                        p.max_output_tokens = 8192;
+                        modified = true;
+                    }
+                    if (p.thinking_level.empty() || p.thinking_level != "high") {
+                        p.thinking_level = "high";
+                        modified = true;
+                    }
+                    if (p.system_prompt.find("NEVER reply with generic placeholder phrases") == std::string::npos) {
+                        p.system_prompt += "\n- CRITICAL: Always stay strictly focused on resolving the user's specific request or question. When executing tools or commands, always formulate a complete, informative response that directly answers the question asked. NEVER reply with generic placeholder phrases like 'I have completed the requested operation.'—always report the factual findings, details, or choices requested.\n";
+                        modified = true;
+                    }
+                    if (p.system_prompt.find("Zero Unnecessary Chat Steps") == std::string::npos) {
+                        auto act_pos = p.system_prompt.find("- Action & Task Execution");
+                        std::string const action_rule = 
+                            "- Action & Task Execution (Zero Unnecessary Chat Steps):\n"
+                            "  When the user instructs to carry out, proceed with, execute, or implement a plan or task (such as 'process the next item in ./inbox', 'carry out steps 3 and 4', 'implement this', 'fix this bug', etc.), NEVER stop at providing a summary, outline, or roadmap. DO NOT produce speculative planning documents or ask for confirmation before executing. You must actively take action: either execute the required tools directly (`code_read_file`, `code_write_file`, `code_apply_patch`, `run_unit_tests`, `run_local_command`, `build_and_deploy`, `update_inbox_item`) or immediately delegate the implementation to `call_persona_autonomous_engineer`. Only respond in chat after tool execution is complete, reporting factual results.\n";
+                        if (act_pos != std::string::npos) {
+                            auto next_pos = p.system_prompt.find("\n\n- ", act_pos);
+                            if (next_pos == std::string::npos) next_pos = p.system_prompt.find("\n- ", act_pos + 1);
+                            if (next_pos != std::string::npos) {
+                                p.system_prompt.replace(act_pos, next_pos - act_pos, action_rule);
+                            } else {
+                                p.system_prompt = p.system_prompt.substr(0, act_pos) + action_rule;
+                            }
+                        } else {
+                            p.system_prompt += "\n" + action_rule;
+                        }
+                        modified = true;
+                    }
+                    if (p.system_prompt.find("Carry to Completion") == std::string::npos) {
+                        p.system_prompt += "\n- Carry to Completion: When tasked with implementation, execute the entire lifecycle end-to-end (diagnose, test, edit, compile, verify, commit, and announce). Never halt prematurely to ask for permission or report an incomplete partial roadmap unless an insurmountable fatal error is encountered.\n";
+                        modified = true;
+                    }
+                    if (p.system_prompt.find("Adaptive Process") == std::string::npos) {
+                        p.system_prompt += "\n- Adaptive Cards & Adaptive Processes: Rouen supports rich Adaptive Cards (`create_adaptive_card`) and live, dynamic Adaptive Process Cards (`create_adaptive_process_card` or `adaptive-process:<command line>`) where a local shell script (zsh on macOS, PowerShell on Windows) emits compact Adaptive Card JSON over stdout and reads submissions from stdin. When asked to design, build, or launch an adaptive process (such as an inbox status dashboard, system monitor, or process card), delegate to `call_persona_adaptive_card_architect` (or execute directly using `code_write_file` and `create_adaptive_process_card`).\n";
+                        modified = true;
+                    }
+                    std::vector<std::string> default_subs = {"Autonomous Engineer", "Code & Git Architect", "Personal Productivity Lead", "Media & Knowledge Director", "Financial Analyst", "System Health & Metrics", "Persona Architect", "Adaptive Card Architect"};
+                    for (const auto& sub : default_subs) {
+                        if (std::find(p.allowed_personas.begin(), p.allowed_personas.end(), sub) == p.allowed_personas.end()) {
+                            p.allowed_personas.push_back(sub);
+                            modified = true;
+                        }
+                    }
+                    std::vector<std::string> ra_mcps = {"deck", "persona", "calendar", "notes", "contacts", "terminal", "git", "editor", "rss", "wikipedia", "youtube", "alarm", "pomodoro", "mesh"};
+                    for (const auto& mcp : ra_mcps) {
+                        if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), mcp) == p.allowed_mcps.end()) {
+                            p.allowed_mcps.push_back(mcp);
+                            modified = true;
+                        }
+                    }
+                }
+                if (p.name == "Adaptive Card Architect") {
+                    for (const char* mcp : {"terminal", "editor", "deck", "adaptive_card", "notes"}) {
+                        if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), mcp) == p.allowed_mcps.end()) {
+                            p.allowed_mcps.push_back(mcp);
+                            modified = true;
+                        }
+                    }
+                    if (p.max_tool_iterations < 50) {
+                        p.max_tool_iterations = 50;
+                        modified = true;
+                    }
+                    if (p.max_output_tokens < 16384) {
+                        p.max_output_tokens = 16384;
+                        modified = true;
+                    }
+                    if (p.thinking_level != "high") {
+                        p.thinking_level = "high";
+                        modified = true;
+                    }
+                    if (p.temperature > 0.25f) {
+                        p.temperature = 0.2f;
+                        modified = true;
+                    }
+                    if (p.description.find("Adaptive Process") == std::string::npos) {
+                        p.description = "Specialized persona for designing and rendering rich Adaptive Cards and creating live Adaptive Process scripts (zsh on macOS, PowerShell on Windows) on demand.";
+                        modified = true;
+                    }
+                    if (p.system_prompt.find("adaptive-process") == std::string::npos) {
+                        p.system_prompt = 
+                            "You are Adaptive Card Architect, the specialized UI/UX and process engineering expert in Rouen.\n"
+                            "You design, craft, and present rich declarative Adaptive Cards and live, process-driven Adaptive Process Cards on demand.\n\n"
+                            "Available Direct Tools:\n"
+                            "- 'create_adaptive_process_card': Create and launch a live Adaptive Process Card on Rouen's deck. Can automatically write a local script to disk (zsh on macOS/Linux, PowerShell on Windows) and launch it.\n"
+                            "- 'create_card': Open any card on Rouen's deck by URI (e.g. 'adaptive-process:<command line>').\n"
+                            "- 'create_adaptive_card': Create and present static/declarative Adaptive Cards with data binding.\n"
+                            "- 'code_write_file': Create and save script files.\n"
+                            "- 'code_read_file': Read target files before processing.\n"
+                            "- 'run_local_command': Run shell commands (e.g. test scripts, inspect directories, chmod +x).\n\n"
+                            "Adaptive Process Architecture & Protocol:\n"
+                            "- Schema: The card URI is 'adaptive-process:<command line>' (e.g. 'adaptive-process:zsh /path/to/script.zsh' or 'adaptive-process:powershell -ExecutionPolicy Bypass -File C:/path/to/script.ps1').\n"
+                            "- Platform Shell Scripts:\n"
+                            "  * macOS/Linux: Use zsh scripts ('#!/usr/bin/env zsh'). Ensure executable permissions ('chmod +x <path>').\n"
+                            "  * Windows: Use PowerShell scripts ('.ps1').\n"
+                            "  * Recommended script path: '$HOME/.config/rouen/scripts/' or local project directory.\n"
+                            "- stdout (Adaptive Card JSON stream):\n"
+                            "  * Each line emitted on stdout MUST be a complete, compact (minified single-line) Adaptive Card JSON document (no embedded raw newlines).\n"
+                            "  * The process MUST emit its first card JSON immediately upon startup.\n"
+                            "  * Cadence / Auto-refresh: Include top-level '\"refreshIntervalMs\": <ms>' (e.g. 2000, 5000) or run an update loop in the script.\n"
+                            "- stdin (User Interaction):\n"
+                            "  * When the user triggers 'Action.Submit' or 'Action.Execute', Rouen writes the JSON payload to the process's stdin as one single line.\n"
+                            "  * For interactive scripts, read stdin in a loop, update internal state, and output an updated card JSON to stdout.\n"
+                            "- stderr: Captured for diagnostics and displayed in Rouen's collapsible 'Process stderr' section.\n\n"
+                            "Protocol Execution for User Requests (e.g. 'check out $HOME/rouen/inbox and create an adaptive process that will show each item organized by status'):\n"
+                            "1. Inspect the target folder or data using 'run_local_command' (e.g. 'ls -la $HOME/rouen/inbox') or 'code_read_file' to understand structure and statuses (e.g. files with 'done_' prefix are Done; others are Pending / In Progress).\n"
+                            "2. Write a robust shell script (zsh on macOS, PowerShell on Windows) using 'create_adaptive_process_card' or 'code_write_file'. Ensure valid single-line minified JSON output and an update/stdin loop.\n"
+                            "3. Ensure the script is executable ('chmod +x' on Unix via 'run_local_command' if not using create_adaptive_process_card).\n"
+                            "4. Open the card on the deck using 'create_adaptive_process_card' or 'create_card' with 'adaptive-process:<command line>'.\n"
+                            "5. Report the script location, command line, and active card status clearly to the user.";
+                        modified = true;
+                    }
+                }
+                if (p.name == "System Health & Metrics") {
+                    if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), "mesh") == p.allowed_mcps.end()) {
+                        p.allowed_mcps.push_back("mesh");
+                        modified = true;
+                    }
+                }
+            }
+            if (modified) {
+                save_personas();
             }
         }
 

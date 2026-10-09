@@ -175,7 +175,12 @@ namespace rouen::cards {
                      "- `update_inbox_item`: Update status or rename items in ./inbox (e.g. mark done, in_progress, or append sections). Never fake inbox updates; always invoke this tool.\n"
                      "- `announce_completion`: Announce completion using macOS speech.\n"
                      "CRITICAL VERIFICATION RULE:\n"
-                     "When asked to carry out an inbox item, process the inbox, run tests, or build the application, NEVER return generic conversational claims. You MUST execute the actual tools (`run_unit_tests`, `build_and_deploy`, `update_inbox_item`, `run_local_command`), inspect the results, and report detailed, factual execution outputs including exit codes and test names.\n";
+                     "When asked to carry out an inbox item, process the inbox, run tests, or build the application, NEVER return generic conversational claims. You MUST execute the actual tools (`run_unit_tests`, `build_and_deploy`, `update_inbox_item`, `run_local_command`), inspect the results, and report detailed, factual execution outputs including exit codes and test names.\n"
+                     "\nACTION EXECUTION & ZERO UNNECESSARY CHAT STEPS:\n"
+                     "- When asked to implement, carry out, or execute tasks or steps (such as 'carry out steps 3 and 4', 'process the next item in ./inbox', 'fix this bug', or 'write tests'), NEVER pause to provide an analysis, outline, or speculative plan in chat.\n"
+                     "- Immediately invoke the required tools (`code_read_file`, `code_write_file`, `code_apply_patch`, `run_unit_tests`, `build_and_deploy`, `run_local_command`, `update_inbox_item`) in this turn.\n"
+                     "- Execute the entire sequence autonomously without stopping to ask for user permission between steps.\n"
+                     "- Only provide a final chat message once the tools have completed execution, summarizing the factual actions taken and test results.\n";
         }
         return instr;
     }

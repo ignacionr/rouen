@@ -933,11 +933,60 @@ TEST(PersonaManagerTest, RouenAssistantTaskExecutionDelegationRule) {
     ASSERT_NE(def_p, nullptr);
     EXPECT_NE(def_p->system_prompt.find("Action & Task Execution"), std::string::npos);
     EXPECT_NE(def_p->system_prompt.find("call_persona_autonomous_engineer"), std::string::npos);
+    EXPECT_NE(def_p->system_prompt.find("Zero Unnecessary Chat Steps"), std::string::npos);
+    EXPECT_NE(def_p->system_prompt.find("Carry to Completion"), std::string::npos);
     EXPECT_NE(std::find(def_p->allowed_personas.begin(), def_p->allowed_personas.end(), "Autonomous Engineer"), def_p->allowed_personas.end());
     EXPECT_NE(std::find(def_p->allowed_personas.begin(), def_p->allowed_personas.end(), "Code & Git Architect"), def_p->allowed_personas.end());
     EXPECT_NE(std::find(def_p->allowed_personas.begin(), def_p->allowed_personas.end(), "Financial Analyst"), def_p->allowed_personas.end());
     EXPECT_NE(std::find(def_p->allowed_personas.begin(), def_p->allowed_personas.end(), "Persona Architect"), def_p->allowed_personas.end());
     EXPECT_NE(std::find(def_p->allowed_personas.begin(), def_p->allowed_personas.end(), "Adaptive Card Architect"), def_p->allowed_personas.end());
+
+    const Persona* eng_p = pm.get_persona_by_name("Autonomous Engineer");
+    ASSERT_NE(eng_p, nullptr);
+    EXPECT_NE(eng_p->system_prompt.find("Zero Chat Overhead & Immediate Action"), std::string::npos);
+    EXPECT_NE(eng_p->system_prompt.find("Carry to Completion"), std::string::npos);
+    EXPECT_EQ(eng_p->max_tool_iterations, 100);
+}
+
+TEST(PersonaManagerTest, ImportFromDirectoryPreservesAndMigratesCorePersonaIntegrity) {
+    auto& pm = PersonaManager::instance();
+    auto temp_dir = std::filesystem::temp_directory_path() / "test_rouen_persona_sync_migration";
+    std::filesystem::create_directories(temp_dir);
+
+    // Create a stale rouen-assistant.json with only Financial Analyst and 10 iterations
+    std::string stale_ra = R"({
+        "name": "Rouen Assistant",
+        "description": "Primary orchestrator",
+        "allowed_mcps": ["deck"],
+        "system_prompt": "You are Rouen Assistant.",
+        "llm_config_name": "Gemini Flash",
+        "enable_search": false,
+        "allowed_personas": ["Financial Analyst"],
+        "temperature": 0.7,
+        "max_tool_iterations": 10,
+        "max_output_tokens": 8192
+    })";
+    {
+        std::ofstream f(temp_dir / "rouen-assistant.json");
+        f << stale_ra;
+    }
+
+    bool imported = pm.import_from_directory(temp_dir);
+    EXPECT_TRUE(imported);
+
+    const Persona* ra = pm.get_persona_by_name("Rouen Assistant");
+    ASSERT_NE(ra, nullptr);
+    EXPECT_GE(ra->max_tool_iterations, 50);
+    EXPECT_NE(std::find(ra->allowed_personas.begin(), ra->allowed_personas.end(), "Autonomous Engineer"), ra->allowed_personas.end());
+    EXPECT_NE(std::find(ra->allowed_personas.begin(), ra->allowed_personas.end(), "Adaptive Card Architect"), ra->allowed_personas.end());
+    EXPECT_NE(ra->system_prompt.find("Zero Unnecessary Chat Steps"), std::string::npos);
+
+    // Verify cache directory was also updated by export_to_directory
+    std::ifstream updated_f(temp_dir / "rouen-assistant.json");
+    std::string updated_content((std::istreambuf_iterator<char>(updated_f)), std::istreambuf_iterator<char>());
+    EXPECT_NE(updated_content.find("Autonomous Engineer"), std::string::npos);
+
+    std::filesystem::remove_all(temp_dir);
 }
 
 TEST(PersonaManagerTest, AdaptiveCardArchitectCapabilities) {

@@ -32,8 +32,14 @@ void test_workspace_rules_loader() {
     test_helpers::assert_true(rules.find("-j2") != std::string::npos, "Rules mention -j2 parallelism limit");
     test_helpers::assert_true(rules.find("say") != std::string::npos, "Rules mention macOS say notification");
     test_helpers::assert_true(rules.find("9-step") != std::string::npos || rules.find("9-STEP") != std::string::npos, "Rules mention 9-step inbox lifecycle");
+    test_helpers::assert_true(rules.find("ZERO CHAT OVERHEAD") != std::string::npos, "Rules mention ZERO CHAT OVERHEAD rule");
     test_helpers::assert_true(rules.find("AVAILABLE WORKSPACE SKILLS") != std::string::npos, "Rules list available skills");
     test_helpers::assert_true(rules.find("cpp20-module-migration") != std::string::npos, "Skills list includes cpp20-module-migration");
+
+    // Test 2b: Query with "carry out steps 3 and 4" triggers inbox rules and critical execution rule
+    std::string step_rules = rouen::helpers::WorkspaceRulesLoader::load_workspace_rules(current_root, "carry out steps 3 and 4");
+    test_helpers::assert_true(step_rules.find("ZERO CHAT OVERHEAD") != std::string::npos, "Step query includes ZERO CHAT OVERHEAD rule");
+    test_helpers::assert_true(step_rules.find("9-step") != std::string::npos || step_rules.find("9-STEP") != std::string::npos, "Step query includes 9-step workflow");
 
     // Test 3: Fixture with no .agents returns empty string
     std::filesystem::path empty_fixture = std::filesystem::temp_directory_path() / "rouen_empty_ws_fixture";
