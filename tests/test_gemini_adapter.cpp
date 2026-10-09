@@ -845,6 +845,20 @@ TEST(PersonaManagerTest, AutonomousEngineerExtendedIterationsAndTokens) {
     EXPECT_EQ(def_p->max_output_tokens, 8192);
 }
 
+TEST(PersonaManagerTest, RouenAssistantTaskExecutionDelegationRule) {
+    auto& pm = PersonaManager::instance();
+    const Persona* def_p = nullptr;
+    for (const auto& p : pm.get_personas()) {
+        if (p.name == "Rouen Assistant") {
+            def_p = &p;
+            break;
+        }
+    }
+    ASSERT_NE(def_p, nullptr);
+    EXPECT_NE(def_p->system_prompt.find("Action & Task Execution"), std::string::npos);
+    EXPECT_NE(def_p->system_prompt.find("call_persona_autonomous_engineer"), std::string::npos);
+}
+
 TEST(GeminiAdapterTest, DirectGlazeParsingWithEscapedQuotesAndCandidateFallback) {
     GeminiAdapter adapter("dummy_key");
     // Response with complex JSON, escaped characters, and extra metadata keys

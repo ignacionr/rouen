@@ -671,7 +671,7 @@ namespace rouen::cards {
                     // Use pre-calculated child ID
                     ImGui::BeginChild(cache.child_id.c_str(), 
                         ImVec2(cache.content_width, cache.bubble_height), true, 
-                        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+                        ImGuiWindowFlags_NoScrollWithMouse);
                     
                     // Set text color based on sender
                     ImU32 txt_color = assistant_text_color;
@@ -2181,8 +2181,10 @@ namespace rouen::cards {
                         accumulated_height += line_height + ImGui::GetStyle().ItemSpacing.y * 3.0f;
                         continue;
                     }
-                    if (md_line.starts_with("### ")) {
-                        std::string_view const content = std::string_view{md_line}.substr(4);
+                    if (md_line.starts_with("### ") || md_line.starts_with("#### ") || md_line.starts_with("##### ") || md_line.starts_with("###### ")) {
+                        std::string_view content = md_line;
+                        while (!content.empty() && content.front() == '#') content.remove_prefix(1);
+                        while (!content.empty() && content.front() == ' ') content.remove_prefix(1);
                         ImVec2 const size = ImGui::CalcTextSize(content.data(), content.data() + content.size(), true, max_text_width);
                         accumulated_height += std::max(size.y, line_height) + ImGui::GetStyle().ItemSpacing.y;
                         max_line_width = std::max(max_line_width, size.x);
@@ -2206,23 +2208,27 @@ namespace rouen::cards {
                         continue;
                     }
                     
-                    // 5. Unordered / Ordered Bullets
+                    // 5. Unordered / Ordered Bullets (including indented)
                     bool is_bullet = false;
                     std::string_view bullet_content;
-                    if (md_line.starts_with("- ") || md_line.starts_with("* ")) {
+                    std::string_view trimmed_bullet = md_line;
+                    while (!trimmed_bullet.empty() && (trimmed_bullet.front() == ' ' || trimmed_bullet.front() == '\t')) {
+                        trimmed_bullet.remove_prefix(1);
+                    }
+                    if (trimmed_bullet.starts_with("- ") || trimmed_bullet.starts_with("* ")) {
                         is_bullet = true;
-                        bullet_content = std::string_view{md_line}.substr(2);
+                        bullet_content = trimmed_bullet.substr(2);
                     } else {
                         // Check for ordered list "1. "
-                        const std::size_t dot = md_line.find(". ");
+                        const std::size_t dot = trimmed_bullet.find(". ");
                         if (dot != std::string::npos && dot > 0 && dot < 5) {
                             bool all_digits = true;
                             for (std::size_t idx = 0; idx < dot; ++idx) {
-                                if (md_line[idx] < '0' || md_line[idx] > '9') { all_digits = false; break; }
+                                if (trimmed_bullet[idx] < '0' || trimmed_bullet[idx] > '9') { all_digits = false; break; }
                             }
                             if (all_digits) {
                                 is_bullet = true;
-                                bullet_content = std::string_view{md_line}.substr(dot + 2);
+                                bullet_content = trimmed_bullet.substr(dot + 2);
                             }
                         }
                     }
@@ -2262,9 +2268,9 @@ namespace rouen::cards {
             
             cache.text_width = cache.content_width - padding.x * 2.0f;
             
-            // Calculate total bubble height
+            // Calculate total bubble height with comfortable safety margin
             cache.bubble_height = line_height + separator_height + message_height + 
-                                padding.y * 2.0f + ImGui::GetStyle().ItemSpacing.y + (is_user ? 0.0f : 6.0f);
+                                padding.y * 2.0f + ImGui::GetStyle().ItemSpacing.y + (is_user ? 0.0f : 12.0f);
             
             // Generate unique child ID using message index for better stability
             cache.child_id = "msg_bubble_" + std::to_string(i);

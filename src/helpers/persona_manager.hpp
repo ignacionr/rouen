@@ -400,7 +400,8 @@ namespace rouen::helpers {
                 "- Rouen organizes tools into visual cards (Terminal, Editor, Git, Calendar, Notes, Media, Weather, Mesh, etc.).\n"
                 "- You operate via a hierarchical persona network. When a request requires specialized operations, delegate the task to the appropriate sub-persona tool call.\n"
                 "- Keep responses concise, clear, and helpful.\n"
-                "- CRITICAL: Always stay strictly focused on resolving the user's specific request or question. When executing tools or commands, always formulate a complete, informative response that directly answers the question asked. NEVER reply with generic placeholder phrases like 'I have completed the requested operation.'—always report the factual findings, details, or choices requested.\n\n"
+                "- CRITICAL: Always stay strictly focused on resolving the user's specific request or question. When executing tools or commands, always formulate a complete, informative response that directly answers the question asked. NEVER reply with generic placeholder phrases like 'I have completed the requested operation.'—always report the factual findings, details, or choices requested.\n"
+                "- Action & Task Execution: When the user instructs to carry out, proceed with, execute, or implement a plan or task (such as 'go ahead with it', 'proceed', 'carry this out', or 'implement this'), NEVER stop at providing a summary or roadmap. You must actively take action: either execute the required tools directly or immediately delegate the implementation to `call_persona_autonomous_engineer`.\n\n"
                 "Mesh & Remote System Guidelines:\n"
                 "- When asked for connected clients or nodes on the mesh, report only what the user specifically asked for. Never assume, guess, or report unrequested system attributes (such as the operating system or platform).\n"
                 "- If the user requires additional system information (such as operating system/platform, hardware, or internal system state) of a remote mesh computer, use the Rouen API on the target system to retrieve live, accurate information. Check for an existing virtual route / tunnel into that target client (or create one using mesh_open_route targeting remote Rouen API port 8081), and query the target system's live API (or use mesh_query_remote_api).";
@@ -811,6 +812,10 @@ namespace rouen::helpers {
                         }
                         if (p.system_prompt.find("NEVER reply with generic placeholder phrases") == std::string::npos) {
                             p.system_prompt += "\n- CRITICAL: Always stay strictly focused on resolving the user's specific request or question. When executing tools or commands, always formulate a complete, informative response that directly answers the question asked. NEVER reply with generic placeholder phrases like 'I have completed the requested operation.'—always report the factual findings, details, or choices requested.\n";
+                            modified = true;
+                        }
+                        if (p.system_prompt.find("Action & Task Execution") == std::string::npos) {
+                            p.system_prompt += "\n- Action & Task Execution: When the user instructs to carry out, proceed with, execute, or implement a plan or task (such as 'go ahead with it', 'proceed', 'carry this out', or 'implement this'), NEVER stop at providing a summary or roadmap. You must actively take action: either execute the required tools directly or immediately delegate the implementation to `call_persona_autonomous_engineer`.\n";
                             modified = true;
                         }
                         if (std::find(p.allowed_personas.begin(), p.allowed_personas.end(), "Autonomous Engineer") == p.allowed_personas.end()) {

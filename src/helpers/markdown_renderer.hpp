@@ -173,23 +173,41 @@ inline void render_flowing_markdown(
         return;
     }
 
-    const float start_pos_x = (indent_x >= 0.0f) ? indent_x : ImGui::GetCursorPosX();
-    const float avail_width = ImGui::GetContentRegionAvail().x;
-    const float wrap_pos_x  = start_pos_x + avail_width;
+    const float line_start_x = (indent_x >= 0.0f) ? indent_x : ImGui::GetCursorPosX();
+    const float wrap_pos_x  = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
 
     const auto tokens = tokenize_spans_into_words(spans);
     if (tokens.empty()) return;
 
-    bool is_line_start = (indent_x < 0.0f);
+    float last_item_max_x = ImGui::GetCursorPosX();
+    bool is_line_start = true;
 
     for (const auto& tok : tokens) {
         if (tok.kind == adaptive_cards::span_kind::image) {
             if (config.render_image_cb) {
                 config.render_image_cb(std::string(tok.text), std::string(tok.url));
+                is_line_start = true;
+                last_item_max_x = line_start_x;
             } else {
+                std::string const badge = "[" + std::string(tok.text) + "]";
+                float const badge_w = ImGui::CalcTextSize(badge.c_str()).x;
+                bool need_wrap = false;
+                if (!is_line_start) {
+                    if (last_item_max_x + 4.0f + badge_w > wrap_pos_x) {
+                        need_wrap = true;
+                    }
+                }
+                if (need_wrap) {
+                    if (indent_x >= 0.0f) {
+                        ImGui::SetCursorPosX(indent_x);
+                    }
+                    is_line_start = true;
+                } else if (!is_line_start) {
+                    ImGui::SameLine(0.0f, 4.0f);
+                }
                 constexpr ImVec4 img_badge_color{0.45f, 0.75f, 0.95f, 1.0f};
                 ImGui::PushStyleColor(ImGuiCol_Text, img_badge_color);
-                ImGui::Text("[%.*s]", static_cast<int>(tok.text.size()), tok.text.data());
+                ImGui::TextUnformatted(badge.c_str());
                 ImGui::PopStyleColor();
                 if (ImGui::IsItemHovered()) {
                     ImGui::SetTooltip("Image: %.*s", static_cast<int>(tok.url.size()), tok.url.data());
@@ -198,8 +216,9 @@ inline void render_flowing_markdown(
                 if (ImGui::IsItemClicked() && !tok.url.empty() && open_url_cb) {
                     open_url_cb(std::string(tok.url));
                 }
+                last_item_max_x = ImGui::GetItemRectMax().x;
+                is_line_start = false;
             }
-            is_line_start = false;
             continue;
         }
 
@@ -232,16 +251,20 @@ inline void render_flowing_markdown(
         const float word_w = font->CalcTextSizeA(font_size, FLT_MAX, -1.0f, tok.text.data(), tok.text.data() + tok.text.size()).x;
         const float space_w = font->CalcTextSizeA(font_size, FLT_MAX, -1.0f, " ", nullptr).x;
 
-        const float current_x = ImGui::GetCursorPosX();
-
-        // Check if word causes an overflow past the wrap boundary
-        if (!is_line_start && (current_x + word_w > wrap_pos_x)) {
-            ImGui::NewLine();
-            ImGui::SetCursorPosX(start_pos_x);
-            is_line_start = true;
+        bool need_wrap = false;
+        if (!is_line_start) {
+            const float predicted_x = last_item_max_x + space_w + word_w;
+            if (predicted_x > wrap_pos_x) {
+                need_wrap = true;
+            }
         }
 
-        if (!is_line_start) {
+        if (need_wrap) {
+            if (indent_x >= 0.0f) {
+                ImGui::SetCursorPosX(indent_x);
+            }
+            is_line_start = true;
+        } else if (!is_line_start) {
             ImGui::SameLine(0.0f, space_w);
         }
 
@@ -251,6 +274,8 @@ inline void render_flowing_markdown(
             ImGui::TextUnformatted(tok.text.data(), tok.text.data() + tok.text.size());
             ImGui::PopStyleColor();
         }
+
+        last_item_max_x = ImGui::GetItemRectMax().x;
 
         if (tok.kind == adaptive_cards::span_kind::link) {
             if (ImGui::IsItemHovered()) {
@@ -265,9 +290,11 @@ inline void render_flowing_markdown(
         is_line_start = false;
 
         if (tok.is_hard_break) {
-            ImGui::NewLine();
-            ImGui::SetCursorPosX(start_pos_x);
+            if (indent_x >= 0.0f) {
+                ImGui::SetCursorPosX(indent_x);
+            }
             is_line_start = true;
+            last_item_max_x = line_start_x;
         }
     }
 }

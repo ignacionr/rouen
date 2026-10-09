@@ -643,3 +643,66 @@ TEST(MarkdownRenderer, ImGuiFontGuardRAII) {
     ImGui::DestroyContext(ctx);
 }
 
+TEST(MarkdownRenderer, ChatMessageMarkdownFlowWrapping) {
+    ImGuiContext* ctx = ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(1200.0f, 800.0f);
+
+    ImFontConfig cfg2;
+    ImFont* font_bold = io.Fonts->AddFontDefault(&cfg2);
+    ImFontConfig cfg3;
+    ImFont* font_mono = io.Fonts->AddFontDefault(&cfg3);
+    unsigned char* tex_pixels;
+    int tex_w, tex_h;
+    io.Fonts->GetTexDataAsRGBA32(&tex_pixels, &tex_w, &tex_h);
+
+    ImGui::NewFrame();
+    ImGui::Begin("TestWindow");
+
+    const std::string text = 
+        "### Implementation Status & Next Steps for `rss-item` Adaptive Card Feature\n\n"
+        "We have successfully analyzed the feature specification and architectural requirements for adding full Adaptive Cards presentation, two-way action handling (`play_media`, `pause_media`, `bookmark_item`), and declarative rendering mode to the `rss-item` card (`src/cards/information/rss_item.hpp` and `src/cards/information/rss_item.cpp`).\n\n"
+        "#### Summary of Planned & Specified Changes:\n"
+        "1. **Header Updates (`src/cards/information/rss_item.hpp`)**:\n"
+        "   - Declare override methods: `get_adaptive_card_json()` and `handle_action(std::string_view action_json)`.\n"
+        "   - Add state tracking variables: `adaptive_view_mode`, `adaptive_parser_`, `adaptive_renderer_`, `adaptive_input_state_`, `adaptive_bound_`, `adaptive_error_`, and `last_adaptive_parse_time_`.\n\n"
+        "2. **Dual-Mode Rendering in `render(rouen::ui::ui_context& ui)`**:\n"
+        "   - Provide an \"Adaptive Card View\" toggle checkbox at the top of the card interface.\n"
+        "   - When active, parse and render the declarative Adaptive Card 1.5 JSON layout using the native renderer, supporting action callbacks (`open_url`, `on_submit`).\n\n"
+        "3. **Two-Way Action Dispatch (`handle_action`)**:\n"
+        "   - Parse inbound JSON payloads via Glaze to support verbs like `play_media`, `pause_media`, and `bookmark_item`, triggering appropriate side effects on audio playback and saved favorites.\n\n"
+        "4. **Unit & Regression Testing**:\n"
+        "   - Add comprehensive tests in `tests/test_card_adaptive_interface.cpp` verifying JSON serialization, action dispatch, and malformed payload resilience.\n\n"
+        "5. **Build & Deployment**:\n"
+        "   - Compile and deploy locally to `$HOME/Applications/Rouen.app` using the strict `-j2` Ninja build constraints.";
+
+    rouen::helpers::markdown_render_config md_cfg{
+        .font_bold = font_bold,
+        .font_italic = nullptr,
+        .font_code = font_mono
+    };
+
+    ImGui::BeginChild("ScrollingRegion", ImVec2(0, -60), false);
+    ImGui::BeginChild("msg_bubble_1", ImVec2(550, 600), true, ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + 530);
+
+    float render_start_y = ImGui::GetCursorPosY();
+    rouen::helpers::render_markdown_block(text, md_cfg);
+    float render_end_y = ImGui::GetCursorPosY();
+    float total_rendered_height = render_end_y - render_start_y;
+
+    // The rendered text must wrap cleanly without runaway line jumps.
+    // Previously, broken wrap logic produced 1761px height for this text.
+    // Correct word-level wrapping fits within 600px.
+    EXPECT_GT(total_rendered_height, 200.0f);
+    EXPECT_LT(total_rendered_height, 600.0f);
+
+    ImGui::PopTextWrapPos();
+    ImGui::EndChild();
+    ImGui::EndChild();
+    ImGui::End();
+
+    ImGui::Render();
+    ImGui::DestroyContext(ctx);
+}
+
