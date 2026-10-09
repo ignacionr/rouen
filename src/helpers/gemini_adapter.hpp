@@ -378,7 +378,13 @@ namespace rouen::helpers {
                 CONFIG_DEBUG("Creating GeminiResponse object");
                 GeminiResponse gemini_response;
                 
-                // Simple workaround: manually clean JSON to only keep candidates
+                // 1. Direct parsing with Glaze (fast and handles arbitrary valid JSON with unknown keys ignored)
+                auto direct_err = glz::read<glz::opts{.error_on_unknown_keys = false}>(gemini_response, response);
+                if (!direct_err && !gemini_response.candidates.empty()) {
+                    return gemini_response;
+                }
+
+                // 2. Fallback: manually clean JSON to only keep candidates
                 std::string cleaned_response = "{\"candidates\":";
                 
                 // Find the candidates array
@@ -400,8 +406,14 @@ namespace rouen::helpers {
                 
                 for (size_t i = array_start + 1; i < response.length() && bracket_count > 0; ++i) {
                     char c = response[i];
-                    if (c == '"' && (i == 0 || response[i-1] != '\\')) {
-                        in_string = !in_string;
+                    if (c == '"') {
+                        size_t bs_count = 0;
+                        for (size_t k = i; k > 0 && response[k - 1] == '\\'; --k) {
+                            bs_count++;
+                        }
+                        if (bs_count % 2 == 0) {
+                            in_string = !in_string;
+                        }
                     } else if (!in_string) {
                         if (c == '[') {
                             bracket_count++;
@@ -692,6 +704,22 @@ namespace rouen::helpers {
             int iterations = 0;
             const int eff_max_iterations = max_iterations > 0 ? max_iterations : 25;
             
+            // Make the candidate model loop list
+            std::vector<std::string> candidates = {model_name};
+            auto add_candidate = [&](const std::string& c) {
+                if (std::find(candidates.begin(), candidates.end(), c) == candidates.end()) {
+                    candidates.push_back(c);
+                }
+            };
+            add_candidate("gemini-3.8-flash");
+            add_candidate("gemini-3.1-flash-lite");
+            add_candidate("gemini-flash-lite-latest");
+            add_candidate("gemini-2.5-flash-lite");
+            add_candidate("gemini-3.6-flash");
+            add_candidate("gemini-3.5-flash");
+            add_candidate("gemini-flash-latest");
+            add_candidate("gemini-3-flash-preview");
+
             while (keep_calling && iterations < eff_max_iterations) {
                 iterations++;
                 wait_min_time();
@@ -702,22 +730,6 @@ namespace rouen::helpers {
                     build_gemini_request(current_conversation, temperature, enable_search, thinking_level, max_output_tokens);
 
                 CONFIG_DEBUG_FMT("Sending Gemini request (iteration {}) to: {}", iterations, url);
-
-                // Make the HTTP request with candidate model loop
-                std::vector<std::string> candidates = {model_name};
-                auto add_candidate = [&](const std::string& c) {
-                    if (std::find(candidates.begin(), candidates.end(), c) == candidates.end()) {
-                        candidates.push_back(c);
-                    }
-                };
-                add_candidate("gemini-3.8-flash");
-                add_candidate("gemini-3.1-flash-lite");
-                add_candidate("gemini-flash-lite-latest");
-                add_candidate("gemini-2.5-flash-lite");
-                add_candidate("gemini-3.6-flash");
-                add_candidate("gemini-3.5-flash");
-                add_candidate("gemini-flash-latest");
-                add_candidate("gemini-3-flash-preview");
 
                 std::string response;
                 bool request_ok = false;
@@ -833,19 +845,71 @@ namespace rouen::helpers {
             // execute a final synthesis turn without tools so the model synthesizes its findings.
             if (keep_calling && iterations >= eff_max_iterations && final_text.empty()) {
                 CONFIG_WARN_FMT("Reached max_iterations ({}), requesting final synthesis without tools...", eff_max_iterations);
+                
+                // 1. Determine original user request to remind the model
+                std::string orig_query = std::string(message);
+                if (orig_query.empty()) {
+                    for (const auto& m : current_conversation) {
+                        if ((m.role == "user" || m.role == "human") && !m.content.empty()) {
+                            orig_query = m.content;
+                            break;
+                        }
+                    }
+                }
+
+                // 2. Append explicit synthesis prompt so the model focuses on answering the original user request
+                std::vector<Message> synth_conversation = current_conversation;
+                synth_conversation.emplace_back("user", std::format(
+                    "You have reached the tool execution limit for this turn. "
+                    "Based on all the steps and tool outputs gathered above, provide a comprehensive final response directly addressing the original request: \"{}\". "
+                    "Do NOT request any further tool calls. Directly report your findings, answers, conclusions, and any recommended next steps.",
+                    orig_query
+                ));
+
                 try {
-                    wait_min_time();
-                    std::string synth_req = build_gemini_request(current_conversation, temperature, enable_search, thinking_level, max_output_tokens);
-                    std::string synth_res = do_post(url, synth_req, [](auto header_setter) {
-                        header_setter("Content-Type: application/json");
-                    });
-                    auto synth_data = parse_gemini_response_full(synth_res);
-                    if (!synth_data.candidates.empty()) {
-                        for (const auto& part : synth_data.candidates[0].content.parts) {
-                            if (!part.text.empty()) {
-                                final_text += part.text;
+                    std::string synth_req = build_gemini_request(synth_conversation, temperature, enable_search, thinking_level, max_output_tokens);
+                    bool synth_ok = false;
+                    for (const auto& try_model : candidates) {
+                        auto try_url = std::format("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", 
+                                                   try_model, api_key_);
+                        for (int attempt = 0; attempt < 3; ++attempt) {
+                            try {
+                                wait_min_time();
+                                std::string synth_res = do_post(try_url, synth_req, [](auto header_setter) {
+                                    header_setter("Content-Type: application/json");
+                                });
+                                auto synth_data = parse_gemini_response_full(synth_res);
+                                if (!synth_data.candidates.empty()) {
+                                    for (const auto& part : synth_data.candidates[0].content.parts) {
+                                        if (!part.text.empty()) {
+                                            final_text += part.text;
+                                        }
+                                    }
+                                }
+                                if (!final_text.empty()) {
+                                    synth_ok = true;
+                                    break;
+                                }
+                            } catch (const std::exception& e) {
+                                std::string const err_str = e.what();
+                                if (err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || 
+                                    err_str.find("quota") != std::string::npos || 
+                                    err_str.find("429") != std::string::npos) {
+                                    CONFIG_WARN_FMT("Synthesis attempt on model {} rate limited, trying next candidate...", try_model);
+                                    break;
+                                }
+                                bool const is_retryable = (err_str.find("503") != std::string::npos ||
+                                                           err_str.find("404") != std::string::npos ||
+                                                           err_str.find("400") != std::string::npos ||
+                                                           err_str.find("NOT_FOUND") != std::string::npos);
+                                if (!is_retryable) {
+                                    break;
+                                }
+                                CONFIG_WARN_FMT("Synthesis attempt on model {} failed: {}, trying next candidate...", try_model, err_str);
+                                break;
                             }
                         }
+                        if (synth_ok) break;
                     }
                 } catch (const std::exception& e) {
                     CONFIG_WARN_FMT("Final synthesis turn error: {}", e.what());
@@ -854,22 +918,50 @@ namespace rouen::helpers {
 
             // Fallback if final_text is empty after function calling
             if (final_text.empty()) {
+                // 1. Try to extract the last non-empty model text from conversation history
                 for (auto it = current_conversation.rbegin(); it != current_conversation.rend(); ++it) {
                     if (it->role == "model" && !it->content.empty()) {
                         final_text = it->content;
                         break;
                     }
                 }
+
+                // 2. If still empty, inspect the collected tool execution responses to construct
+                // an informative, factual response instead of a generic canned placeholder.
                 if (final_text.empty()) {
-                    bool executed_func = false;
+                    std::vector<std::pair<std::string, std::string>> collected_responses;
                     for (const auto& msg : current_conversation) {
-                        if (msg.role == "function" && !msg.function_responses.empty()) {
-                            executed_func = true;
-                            break;
+                        if (msg.role == "function") {
+                            for (const auto& fr : msg.function_responses) {
+                                if (!fr.response.empty()) {
+                                    collected_responses.push_back({fr.name, fr.response});
+                                }
+                            }
                         }
                     }
-                    if (executed_func) {
-                        final_text = "I have completed the requested operation.";
+                    if (!collected_responses.empty()) {
+                        // Extract cleanly formatted messages/outputs from tool responses
+                        const auto& [last_name, last_resp] = collected_responses.back();
+                        std::string clean_resp = last_resp;
+                        try {
+                            glz::json_t doc;
+                            if (!glz::read_json(doc, last_resp)) {
+                                if (doc.contains("message") && doc["message"].is_string()) {
+                                    clean_resp = doc["message"].get<std::string>();
+                                } else if (doc.contains("output") && doc["output"].is_string()) {
+                                    clean_resp = doc["output"].get<std::string>();
+                                } else if (doc.contains("result") && doc["result"].is_string()) {
+                                    clean_resp = doc["result"].get<std::string>();
+                                }
+                            }
+                        } catch (...) {}
+
+                        if (collected_responses.size() == 1) {
+                            final_text = clean_resp;
+                        } else {
+                            final_text = std::format("Executed {} tool operations (last tool: `{}`). Output:\n\n{}", 
+                                                     collected_responses.size(), last_name, clean_resp);
+                        }
                     }
                 }
             }

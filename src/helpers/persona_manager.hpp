@@ -399,7 +399,8 @@ namespace rouen::helpers {
                 "Capabilities & Architecture:\n"
                 "- Rouen organizes tools into visual cards (Terminal, Editor, Git, Calendar, Notes, Media, Weather, Mesh, etc.).\n"
                 "- You operate via a hierarchical persona network. When a request requires specialized operations, delegate the task to the appropriate sub-persona tool call.\n"
-                "- Keep responses concise, clear, and helpful.\n\n"
+                "- Keep responses concise, clear, and helpful.\n"
+                "- CRITICAL: Always stay strictly focused on resolving the user's specific request or question. When executing tools or commands, always formulate a complete, informative response that directly answers the question asked. NEVER reply with generic placeholder phrases like 'I have completed the requested operation.'—always report the factual findings, details, or choices requested.\n\n"
                 "Mesh & Remote System Guidelines:\n"
                 "- When asked for connected clients or nodes on the mesh, report only what the user specifically asked for. Never assume, guess, or report unrequested system attributes (such as the operating system or platform).\n"
                 "- If the user requires additional system information (such as operating system/platform, hardware, or internal system state) of a remote mesh computer, use the Rouen API on the target system to retrieve live, accurate information. Check for an existing virtual route / tunnel into that target client (or create one using mesh_open_route targeting remote Rouen API port 8081), and query the target system's live API (or use mesh_query_remote_api).";
@@ -407,7 +408,7 @@ namespace rouen::helpers {
             default_p.enable_search = false;
             default_p.temperature = 0.7f;
             default_p.thinking_level = "high";
-            default_p.max_tool_iterations = 10;
+            default_p.max_tool_iterations = 25;
             default_p.max_output_tokens = 8192;
             personas_.push_back(default_p);
 
@@ -804,6 +805,14 @@ namespace rouen::helpers {
                         modified = true;
                     }
                     if (p.name == "Rouen Assistant") {
+                        if (p.max_tool_iterations < 25) {
+                            p.max_tool_iterations = 25;
+                            modified = true;
+                        }
+                        if (p.system_prompt.find("NEVER reply with generic placeholder phrases") == std::string::npos) {
+                            p.system_prompt += "\n- CRITICAL: Always stay strictly focused on resolving the user's specific request or question. When executing tools or commands, always formulate a complete, informative response that directly answers the question asked. NEVER reply with generic placeholder phrases like 'I have completed the requested operation.'—always report the factual findings, details, or choices requested.\n";
+                            modified = true;
+                        }
                         if (std::find(p.allowed_personas.begin(), p.allowed_personas.end(), "Autonomous Engineer") == p.allowed_personas.end()) {
                             p.allowed_personas.insert(p.allowed_personas.begin(), "Autonomous Engineer");
                             modified = true;

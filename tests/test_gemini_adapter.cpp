@@ -476,7 +476,8 @@ TEST(GeminiAdapterTest, FunctionCallingEmptyFinalTextFallback) {
 
     EXPECT_FALSE(resp.choices.empty());
     EXPECT_FALSE(resp.choices[0].message.content.empty());
-    EXPECT_EQ(resp.choices[0].message.content, "I have completed the requested operation.");
+    EXPECT_EQ(resp.choices[0].message.content, "Theme 'Amber' selected successfully");
+    EXPECT_NE(resp.choices[0].message.content, "I have completed the requested operation.");
 }
 
 TEST(ProcessHelperTest, ExpandsTildeCorrectly) {
@@ -840,9 +841,92 @@ TEST(PersonaManagerTest, AutonomousEngineerExtendedIterationsAndTokens) {
     EXPECT_EQ(arch_p->max_tool_iterations, 50);
     EXPECT_EQ(arch_p->max_output_tokens, 16384);
 
-    EXPECT_EQ(def_p->max_tool_iterations, 10);
+    EXPECT_EQ(def_p->max_tool_iterations, 25);
     EXPECT_EQ(def_p->max_output_tokens, 8192);
 }
 
+TEST(GeminiAdapterTest, DirectGlazeParsingWithEscapedQuotesAndCandidateFallback) {
+    GeminiAdapter adapter("dummy_key");
+    // Response with complex JSON, escaped characters, and extra metadata keys
+    std::string response = R"({
+        "candidates": [{
+            "content": {
+                "parts": [{
+                    "text": "Found path: C:\\\\Users\\\\Alice\\\"Docs\\\" and file [report.txt]."
+                }]
+            },
+            "finishReason": "STOP",
+            "index": 0
+        }],
+        "usageMetadata": {"promptTokenCount": 12, "candidatesTokenCount": 34},
+        "modelVersion": "gemini-3.8-flash"
+    })";
 
+    auto parsed = adapter.parse_gemini_response_full(response);
+    ASSERT_FALSE(parsed.candidates.empty());
+    ASSERT_FALSE(parsed.candidates[0].content.parts.empty());
+    EXPECT_EQ(parsed.candidates[0].content.parts[0].text, "Found path: C:\\\\Users\\\\Alice\\\"Docs\\\" and file [report.txt].");
+}
 
+TEST(GeminiAdapterTest, SynthesisTurnIncludesOriginalUserQueryAnchor) {
+    GeminiAdapter adapter("dummy_key");
+    int turn = 0;
+    std::string captured_synth_body;
+
+    auto mock_post = [&](const std::string&, const std::string& body, auto) -> std::string {
+        turn++;
+        if (turn == 1) {
+            return R"({
+                "candidates": [{
+                    "content": {
+                        "parts": [{
+                            "functionCall": {
+                                "name": "check_status",
+                                "args": {}
+                            }
+                        }]
+                    }
+                }]
+            })";
+        } else {
+            captured_synth_body = body;
+            return R"({
+                "candidates": [{
+                    "content": {
+                        "parts": [{
+                            "text": "Synthesized: Checked status and all systems are running."
+                        }]
+                    }
+                }]
+            })";
+        }
+    };
+
+    auto mock_executor = [](const std::string&, const std::string&) -> std::string {
+        return R"({"status":"ok"})";
+    };
+
+    std::vector<std::string> schemas = {
+        R"({"name":"check_status","description":"Check status","parameters":{"type":"object"}})"
+    };
+
+    auto resp = adapter.sendMessageWithFunctionCalling(
+        "Please check the system health status",
+        mock_post,
+        mock_executor,
+        "user",
+        "gemini-3.8-flash",
+        "",
+        0.2f,
+        nullptr,
+        &schemas,
+        "high",
+        1,
+        4096
+    );
+
+    EXPECT_FALSE(captured_synth_body.empty());
+    EXPECT_NE(captured_synth_body.find("Please check the system health status"), std::string::npos);
+    EXPECT_NE(resp.choices[0].message.content, "I have completed the requested operation.");
+    EXPECT_EQ(resp.choices[0].message.content, "Synthesized: Checked status and all systems are running.");
+}

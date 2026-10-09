@@ -729,11 +729,30 @@ namespace ignacionr
             // execute a final synthesis turn without tools so the model synthesizes its findings
             if (keep_calling && iterations >= eff_max_iterations && final_text.empty()) {
                 try {
+                    // Determine original user query to anchor synthesis
+                    std::string orig_query = std::string(message);
+                    if (orig_query.empty()) {
+                        for (const auto& m : chat_history) {
+                            if (m.role == "user" && !m.content.empty()) {
+                                orig_query = m.content;
+                                break;
+                            }
+                        }
+                    }
+
+                    std::vector<OpenAIMessage> synth_history = chat_history;
+                    synth_history.push_back({"user", std::format(
+                        "You have reached the tool execution limit for this turn. "
+                        "Based on all the steps and tool outputs gathered above, provide a comprehensive final response directly addressing the original request: \"{}\". "
+                        "Do NOT request any further tool calls. Directly report your findings, answers, conclusions, and any recommended next steps.",
+                        orig_query
+                    )});
+
                     std::string synth_body = "{";
                     synth_body += std::format("\"model\":\"{}\",", model);
                     synth_body += std::format("\"temperature\":{},", temperature);
                     synth_body += std::format("\"max_tokens\":{},", eff_max_tokens);
-                    synth_body += std::format("\"messages\":{}", serialize_messages(chat_history));
+                    synth_body += std::format("\"messages\":{}", serialize_messages(synth_history));
                     synth_body += "}";
                     auto r = do_post(url, synth_body, [this](auto header_setter){
                         header_setter("Authorization: Bearer " + api_key_);
@@ -754,6 +773,17 @@ namespace ignacionr
                     if (it->role == "assistant" && !it->content.empty()) {
                         final_text = it->content;
                         break;
+                    }
+                }
+                if (final_text.empty()) {
+                    std::vector<std::string> tool_outputs;
+                    for (const auto& msg : chat_history) {
+                        if (msg.role == "tool" && !msg.content.empty()) {
+                            tool_outputs.push_back(msg.content);
+                        }
+                    }
+                    if (!tool_outputs.empty()) {
+                        final_text = tool_outputs.back();
                     }
                 }
             }
