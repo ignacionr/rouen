@@ -159,6 +159,7 @@ public:
         out << "- NEVER ask for permission, assistance, or confirmation from the user as to whether you should proceed, continue, or implement code/fixes. Assume full authorization and carry out the work directly.\n";
         out << "- NEVER output documentation, architectural overviews, roadmaps, or speculative plans about 'what should be next' in place of actually carrying out the implementation.\n";
         out << "- When investigating, diagnosing, or verifying a feature or bug (such as inspecting whether a card supports adaptive cards), DO NOT stop after diagnosis. Immediately proceed to implement the required code changes, write tests, run tests, and compile in the same turn.\n";
+        out << "- LIMIT RECONNAISSANCE: Do NOT get stuck in an endless research loop. Spend AT MOST 3 to 5 tool calls on reading or searching files. Once you locate the target file and the existing interface pattern, you MUST immediately start writing tests and applying code patches (`code_apply_patch`, `code_write_file`). Never make more than 5 consecutive read/search calls before modifying code.\n";
         out << "- Carry all tasks through to completion end-to-end (diagnose -> test -> implement -> verify -> compile) before returning your response.\n\n";
 
         if (has_inbox) {

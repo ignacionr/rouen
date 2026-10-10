@@ -33,6 +33,7 @@ void test_workspace_rules_loader() {
     test_helpers::assert_true(rules.find("say") != std::string::npos, "Rules mention macOS say notification");
     test_helpers::assert_true(rules.find("9-step") != std::string::npos || rules.find("9-STEP") != std::string::npos, "Rules mention 9-step inbox lifecycle");
     test_helpers::assert_true(rules.find("ZERO CHAT OVERHEAD") != std::string::npos, "Rules mention ZERO CHAT OVERHEAD rule");
+    test_helpers::assert_true(rules.find("LIMIT RECONNAISSANCE") != std::string::npos, "Rules mention LIMIT RECONNAISSANCE limit");
     test_helpers::assert_true(rules.find("AVAILABLE WORKSPACE SKILLS") != std::string::npos, "Rules list available skills");
     test_helpers::assert_true(rules.find("cpp20-module-migration") != std::string::npos, "Skills list includes cpp20-module-migration");
 

@@ -183,6 +183,7 @@ namespace rouen::cards {
                      "  * NEVER ask the user for assistance or confirmation whether you should proceed or continue. Assume full authorization.\n"
                      "  * NEVER stop at diagnosis. After inspecting files and locating missing code or bugs, immediately carry out the fixes, write tests, run tests, and compile in the same turn.\n"
                      "  * Immediately invoke the required tools (`code_read_file`, `code_write_file`, `code_apply_patch`, `run_unit_tests`, `build_and_deploy`, `run_local_command`, `update_inbox_item`) in this turn.\n"
+                      "  * Limit Reconnaissance: Spend AT MOST 3 to 5 tool calls reading or searching files. Once the target file and existing pattern are identified, IMMEDIATELY proceed to writing tests and applying code patches (`code_apply_patch`, `code_write_file`). Never make more than 5 consecutive read/search calls before modifying code.\n"
                      "  * Execute the entire sequence autonomously without stopping to ask for user permission between steps.\n"
                      "  * Only provide a final chat message once the tools have completed execution, summarizing the factual actions taken and test results.\n";
         }

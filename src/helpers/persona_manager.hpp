@@ -447,7 +447,8 @@ namespace rouen::helpers {
                 "  1. NEVER ask for confirmation, assistance, or permission to proceed or continue. Assume full authorization to execute immediately.\n"
                 "  2. NEVER provide documentation, roadmaps, architectural overviews, or speculative outlines about 'what should be next' in lieu of actually implementing it.\n"
                 "  3. NEVER stop at diagnosis. After reading files and identifying missing code or open requirements, you must immediately carry out the implementation (`code_write_file`, `code_apply_patch`, `run_unit_tests`, `build_and_deploy`, `run_local_command`) or delegate to `call_persona_autonomous_engineer` in this same turn.\n"
-                "  4. Carry to Completion: Execute the complete lifecycle end-to-end (diagnose, test, edit, compile, verify, commit, and announce) before replying. Only reply in chat after the work is completed, reporting concrete, factual results.\n\n"
+                "  4. Limit Reconnaissance: Spend AT MOST 3 to 5 tool calls reading or searching files. Once the target file and existing pattern are identified, you MUST immediately start writing tests and applying code patches (`code_apply_patch`, `code_write_file`). Never make more than 5 consecutive read/search calls before modifying code.\n"
+                "  5. Carry to Completion: Execute the complete lifecycle end-to-end (diagnose, test, edit, compile, verify, commit, and announce) before replying. Only reply in chat after the work is completed, reporting concrete, factual results.\n\n"
                 "Mesh & Remote System Guidelines:\n"
                 "- When asked for connected clients or nodes on the mesh, report only what the user specifically asked for. Never assume, guess, or report unrequested system attributes (such as the operating system or platform).\n"
                 "- If the user requires additional system information (such as operating system/platform, hardware, or internal system state) of a remote mesh computer, use the Rouen API on the target system to retrieve live, accurate information. Check for an existing virtual route / tunnel into that target client (or create one using mesh_open_route targeting remote Rouen API port 8081), and query the target system's live API (or use mesh_query_remote_api).\n\n"
@@ -456,8 +457,8 @@ namespace rouen::helpers {
             default_p.enable_search = false;
             default_p.temperature = 0.1f;
             default_p.thinking_level = "high";
-            default_p.max_tool_iterations = 50;
-            default_p.max_output_tokens = 8192;
+            default_p.max_tool_iterations = 100;
+            default_p.max_output_tokens = 16384;
             personas_.push_back(default_p);
 
             Persona eng_p;
@@ -856,6 +857,7 @@ namespace rouen::helpers {
                     "- NEVER provide documentation, roadmaps, architectural overviews, or speculative outlines about 'what should be next' in lieu of actually implementing it.\n"
                     "- NEVER stop at diagnosis. Immediately carry out the code modifications, tests, compilation, and verification in this same turn.\n"
                     "- Immediately invoke the appropriate tools (`code_read_file`, `code_write_file`, `code_apply_patch`, `run_unit_tests`, `run_local_command`, `build_and_deploy`, `update_inbox_item`) in this turn.\n"
+                    "- Limit Reconnaissance: Spend AT MOST 3 to 5 tool calls reading or searching files. Once the target file and existing pattern are identified, you MUST immediately start writing tests and applying code patches (`code_apply_patch`, `code_write_file`). Never make more than 5 consecutive read/search calls before modifying code.\n"
                     "- Execute the entire sequence autonomously without stopping to ask for user permission between steps.\n"
                     "- Carry to Completion: Execute the entire lifecycle end-to-end (diagnose, test, edit, compile, verify, commit, and announce). Never halt prematurely to ask for permission or report an incomplete partial roadmap unless an insurmountable fatal error is encountered.";
 
@@ -989,7 +991,7 @@ namespace rouen::helpers {
                         p.temperature = 0.1f;
                         modified = true;
                     }
-                    if (p.system_prompt.find("NEVER ask for confirmation, assistance, or permission") == std::string::npos) {
+                    if (p.system_prompt.find("Limit Reconnaissance") == std::string::npos) {
                         auto act_pos = p.system_prompt.find("Zero Chat Overhead & Immediate Action:");
                         std::string const action_rule = 
                             "Zero Chat Overhead & Immediate Action:\n"
@@ -998,6 +1000,7 @@ namespace rouen::helpers {
                             "- NEVER provide documentation, roadmaps, architectural overviews, or speculative outlines about 'what should be next' in lieu of actually implementing it.\n"
                             "- NEVER stop at diagnosis. Immediately carry out the code modifications, tests, compilation, and verification in this same turn.\n"
                             "- Immediately invoke the appropriate tools (`code_read_file`, `code_write_file`, `code_apply_patch`, `run_unit_tests`, `run_local_command`, `build_and_deploy`, `update_inbox_item`) in this turn.\n"
+                            "- Limit Reconnaissance: Spend AT MOST 3 to 5 tool calls reading or searching files. Once the target file and existing pattern are identified, you MUST immediately start writing tests and applying code patches (`code_apply_patch`, `code_write_file`). Never make more than 5 consecutive read/search calls before modifying code.\n"
                             "- Execute the entire sequence autonomously without stopping to ask for user permission between steps.\n"
                             "- Carry to Completion: Execute the entire lifecycle end-to-end (diagnose, test, edit, compile, verify, commit, and announce). Never halt prematurely to ask for permission or report an incomplete partial roadmap unless an insurmountable fatal error is encountered.";
                         if (act_pos != std::string::npos) {
@@ -1035,12 +1038,12 @@ namespace rouen::helpers {
                     modified = true;
                 }
                 if (p.name == "Rouen Assistant") {
-                    if (p.max_tool_iterations < 50) {
-                        p.max_tool_iterations = 50;
+                    if (p.max_tool_iterations < 100) {
+                        p.max_tool_iterations = 100;
                         modified = true;
                     }
-                    if (p.max_output_tokens < 8192) {
-                        p.max_output_tokens = 8192;
+                    if (p.max_output_tokens < 16384) {
+                        p.max_output_tokens = 16384;
                         modified = true;
                     }
                     if (p.temperature > 0.15f) {
@@ -1055,7 +1058,7 @@ namespace rouen::helpers {
                         p.system_prompt += "\n- CRITICAL: Always stay strictly focused on resolving the user's specific request or question. When executing tools or commands, always formulate a complete, informative response that directly answers the question asked. NEVER reply with generic placeholder phrases like 'I have completed the requested operation.'—always report the factual findings, details, or choices requested.\n";
                         modified = true;
                     }
-                    if (p.system_prompt.find("NEVER ask for confirmation, assistance, or permission") == std::string::npos) {
+                    if (p.system_prompt.find("Limit Reconnaissance") == std::string::npos) {
                         auto act_pos = p.system_prompt.find("- Action & Task Execution");
                         std::string const action_rule = 
                             "- Action & Task Execution (Zero Unnecessary Chat Steps):\n"
@@ -1063,7 +1066,8 @@ namespace rouen::helpers {
                             "  1. NEVER ask for confirmation, assistance, or permission to proceed or continue. Assume full authorization to execute immediately.\n"
                             "  2. NEVER provide documentation, roadmaps, architectural overviews, or speculative outlines about 'what should be next' in lieu of actually implementing it.\n"
                             "  3. NEVER stop at diagnosis. After reading files and identifying missing code or open requirements, you must immediately carry out the implementation (`code_write_file`, `code_apply_patch`, `run_unit_tests`, `build_and_deploy`, `run_local_command`) or delegate to `call_persona_autonomous_engineer` in this same turn.\n"
-                            "  4. Carry to Completion: Execute the complete lifecycle end-to-end (diagnose, test, edit, compile, verify, commit, and announce) before replying. Only reply in chat after the work is completed, reporting concrete, factual results.\n";
+                            "  4. Limit Reconnaissance: Spend AT MOST 3 to 5 tool calls reading or searching files. Once the target file and existing pattern are identified, you MUST immediately start writing tests and applying code patches (`code_apply_patch`, `code_write_file`). Never make more than 5 consecutive read/search calls before modifying code.\n"
+                            "  5. Carry to Completion: Execute the complete lifecycle end-to-end (diagnose, test, edit, compile, verify, commit, and announce) before replying. Only reply in chat after the work is completed, reporting concrete, factual results.\n";
                         if (act_pos != std::string::npos) {
                             auto next_pos = p.system_prompt.find("\n\n- ", act_pos);
                             if (next_pos == std::string::npos) next_pos = p.system_prompt.find("\n- ", act_pos + 1);
@@ -1107,8 +1111,8 @@ namespace rouen::helpers {
                             modified = true;
                         }
                     }
-                    if (p.max_tool_iterations < 50) {
-                        p.max_tool_iterations = 50;
+                    if (p.max_tool_iterations < 100) {
+                        p.max_tool_iterations = 100;
                         modified = true;
                     }
                     if (p.max_output_tokens < 16384) {
