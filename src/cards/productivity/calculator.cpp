@@ -1,17 +1,22 @@
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <exception>
 #include <filesystem>
 #include <format>
+#include <iostream>
 #include <numbers>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "../../fonts.hpp"
 #include "../../helpers/glaze_include.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
+#include "../../helpers/platform_utils.hpp"
 #include <imgui.h>
 
 #include "calculator.hpp"
@@ -349,6 +354,7 @@ void calculator::evaluate_current() {
     if (!err.empty()) {
         error_message_ = err;
     } else {
+        std::string orig_expr = display_expr_;
         evaluated_result_ = res;
         display_expr_ = res;
         error_message_.clear();
@@ -358,7 +364,7 @@ void calculator::evaluate_current() {
             // Non-numeric result, ignore stod failure
         }
 
-        history_.push_back({display_expr_, res});
+        history_.push_back({orig_expr, res});
         if (history_.size() > 50) {
             history_.erase(history_.begin());
         }
@@ -722,8 +728,48 @@ void calculator::render_history_panel() {
     ImGui::EndChild();
 }
 
-bool calculator::render() {
-    return render_window([this]() {
+bool calculator::render(rouen::ui::ui_context& ui) {
+    return render_window([this, &ui]() {
+        // Presentation mode selector
+        ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+        ui.separator();
+
+        if (adaptive_view_mode) {
+            auto now = std::chrono::steady_clock::now();
+            auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+            if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                try {
+                    adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                    adaptive_error_.clear();
+                } catch (const std::exception& e) {
+                    adaptive_error_ = e.what();
+                }
+                last_adaptive_parse_time_ = now;
+            }
+
+            if (!adaptive_error_.empty()) {
+                ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+            } else {
+                adaptive_renderer_.render(
+                    adaptive_bound_, adaptive_input_state_,
+                    helpers::adaptive_cards::renderer::action_callbacks{
+                        .open_url = [](const std::string& url) {
+                            static_cast<void>(rouen::platform::open_url(url));
+                        },
+                        .on_submit = [this](const std::string& payload) {
+                            handle_action(payload);
+                        }
+                    },
+                    helpers::adaptive_cards::render_config{
+                        .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                        .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                        .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                    }
+                );
+            }
+            return;
+        }
+
         handle_keyboard_input();
 
         render_display_panel();
@@ -734,6 +780,217 @@ bool calculator::render() {
             render_buttons_grid();
         }
     });
+}
+
+bool calculator::render() {
+    rouen::ui::imgui_ui_context_impl ui;
+    return render(ui);
+}
+
+std::string calculator::get_adaptive_card_json() const {
+    glz::json_t card;
+    card["type"] = "AdaptiveCard";
+    card["version"] = "1.5";
+    card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+    std::string upper_text;
+    if (!error_message_.empty()) {
+        upper_text = "Error: " + error_message_;
+    } else if (!history_.empty()) {
+        upper_text = history_.back().expression + " =";
+    } else if (newly_evaluated_ && !evaluated_result_.empty()) {
+        upper_text = display_expr_ + " =";
+    } else {
+        upper_text = display_expr_ + " =";
+    }
+
+    std::string main_text = !error_message_.empty() ? error_message_ : display_expr_;
+
+    std::vector<glz::json_t> body;
+
+    // 1. Display Container (emphasis style)
+    glz::json_t display_container;
+    display_container["type"] = "Container";
+    display_container["style"] = "emphasis";
+
+    std::vector<glz::json_t> display_items;
+    glz::json_t upper_tb;
+    upper_tb["type"] = "TextBlock";
+    upper_tb["text"] = upper_text;
+    upper_tb["isSubtle"] = true;
+    upper_tb["horizontalAlignment"] = "Right";
+    upper_tb["size"] = "Small";
+    display_items.push_back(std::move(upper_tb));
+
+    glz::json_t main_tb;
+    main_tb["type"] = "TextBlock";
+    main_tb["text"] = main_text;
+    main_tb["weight"] = "Bolder";
+    main_tb["size"] = "ExtraLarge";
+    main_tb["horizontalAlignment"] = "Right";
+    main_tb["color"] = !error_message_.empty() ? "Attention" : "Accent";
+    display_items.push_back(std::move(main_tb));
+
+    display_container["items"] = std::move(display_items);
+    body.push_back(std::move(display_container));
+
+    // 2. Expression Input Container
+    glz::json_t input_container;
+    input_container["type"] = "Container";
+
+    std::vector<glz::json_t> input_items;
+    glz::json_t input_text;
+    input_text["type"] = "Input.Text";
+    input_text["id"] = "direct_expr";
+    input_text["placeholder"] = "Type math expression (e.g. sqrt(144) + 2^8)...";
+    input_items.push_back(std::move(input_text));
+
+    input_container["items"] = std::move(input_items);
+    body.push_back(std::move(input_container));
+
+    // 3. FactSet
+    glz::json_t fact_set;
+    fact_set["type"] = "FactSet";
+
+    std::vector<glz::json_t> facts;
+    facts.push_back(glz::json_t::object_t{
+        {"title", "Memory (M):"},
+        {"value", std::format("{:.2f}", memory_value_)}
+    });
+    facts.push_back(glz::json_t::object_t{
+        {"title", "Mode:"},
+        {"value", "Floating-point / Radians"}
+    });
+
+    std::string last_eval = !history_.empty()
+        ? (history_.back().expression + " = " + history_.back().result)
+        : "None";
+    facts.push_back(glz::json_t::object_t{
+        {"title", "Last Eval:"},
+        {"value", last_eval}
+    });
+
+    fact_set["facts"] = std::move(facts);
+    body.push_back(std::move(fact_set));
+
+    card["body"] = std::move(body);
+
+    // 4. Actions
+    std::vector<glz::json_t> actions;
+    auto add_action = [&actions](const std::string& title, const std::string& verb) {
+        glz::json_t a;
+        a["type"] = "Action.Execute";
+        a["title"] = title;
+        a["verb"] = verb;
+        actions.push_back(std::move(a));
+    };
+
+    add_action("Evaluate (=)", "calc_eval");
+    add_action("Clear (C)", "calc_clear");
+    add_action("Memory Recall (MR)", "calc_memory_recall");
+    add_action("Memory Store (MS)", "calc_memory_store");
+
+    card["actions"] = std::move(actions);
+
+    std::string out;
+    static_cast<void>(glz::write_json(card, out));
+    return out;
+}
+
+void calculator::handle_action(std::string_view action_json) {
+    if (action_json.empty()) return;
+
+    try {
+        std::string verb;
+        glz::json_t data{};
+        glz::json_t payload{};
+
+        auto err = glz::read_json(payload, std::string(action_json));
+        if (!err && payload.is_object()) {
+            if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                verb = payload["verb"].get<std::string>();
+            } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                verb = payload["action"].get<std::string>();
+            }
+            if (payload.contains("data")) {
+                data = payload["data"];
+            } else {
+                data = payload;
+            }
+        } else {
+            verb = std::string(action_json);
+        }
+
+        if (verb == "calc_input") {
+            std::string token;
+            if (data.contains("token")) {
+                if (data["token"].holds<std::string>()) {
+                    token = data["token"].get<std::string>();
+                } else if (data["token"].holds<double>()) {
+                    token = format_number(data["token"].get<double>());
+                }
+            } else if (payload.contains("token")) {
+                if (payload["token"].holds<std::string>()) {
+                    token = payload["token"].get<std::string>();
+                } else if (payload["token"].holds<double>()) {
+                    token = format_number(payload["token"].get<double>());
+                }
+            }
+            if (!token.empty()) {
+                append_to_expression(token);
+            }
+        } else if (verb == "calc_eval" || verb == "eval" || verb == "=") {
+            std::string direct_expr;
+            if (data.contains("direct_expr") && data["direct_expr"].holds<std::string>()) {
+                direct_expr = data["direct_expr"].get<std::string>();
+            } else if (data.contains("expression") && data["expression"].holds<std::string>()) {
+                direct_expr = data["expression"].get<std::string>();
+            } else if (payload.contains("direct_expr") && payload["direct_expr"].holds<std::string>()) {
+                direct_expr = payload["direct_expr"].get<std::string>();
+            } else if (payload.contains("expression") && payload["expression"].holds<std::string>()) {
+                direct_expr = payload["expression"].get<std::string>();
+            }
+
+            if (!direct_expr.empty()) {
+                display_expr_ = direct_expr;
+                newly_evaluated_ = false;
+            }
+            evaluate_current();
+        } else if (verb == "calc_clear" || verb == "clear" || verb == "C") {
+            clear_all();
+        } else if (verb == "calc_memory_store" || verb == "memory_store" || verb == "MS") {
+            try {
+                if (data.contains("value")) {
+                    if (data["value"].holds<double>()) {
+                        memory_value_ = data["value"].get<double>();
+                    } else if (data["value"].holds<std::string>()) {
+                        memory_value_ = std::stod(data["value"].get<std::string>());
+                    }
+                } else if (!evaluated_result_.empty() && newly_evaluated_) {
+                    memory_value_ = std::stod(evaluated_result_);
+                } else {
+                    auto [eval_res, eval_err] = evaluate(display_expr_, ans_value_);
+                    if (eval_err.empty()) {
+                        memory_value_ = std::stod(eval_res);
+                    } else {
+                        memory_value_ = std::stod(display_expr_);
+                    }
+                }
+            } catch (...) {
+            }
+        } else if (verb == "calc_memory_recall" || verb == "memory_recall" || verb == "MR") {
+            append_to_expression(format_number(memory_value_));
+        } else if (verb == "calc_memory_clear" || verb == "MC") {
+            memory_value_ = 0.0;
+        } else if (verb == "toggle_adaptive_view") {
+            adaptive_view_mode = !adaptive_view_mode;
+        }
+
+        last_adaptive_parse_time_ = {};
+    } catch (const std::exception& e) {
+        std::cerr << "[calculator] Action error: " << e.what() << std::endl;
+    } catch (...) {
+    }
 }
 
 std::vector<card::mcp_function> calculator::get_mcp_functions() const {

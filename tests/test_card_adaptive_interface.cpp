@@ -22,6 +22,8 @@
 #include "../src/cards/development/vcproject_card.hpp"
 #include "../src/cards/development/fs-directory.hpp"
 #include "../src/cards/development/git.hpp"
+#include "../src/cards/productivity/calculator.hpp"
+#include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
 
@@ -690,6 +692,92 @@ TEST(ApiServerHost, SchemasAndSchemesEndpointReturnsAllRegisteredSchemes) {
     EXPECT_NE(spec.find("getSchemas"), std::string::npos);
     EXPECT_NE(spec.find("/api/schemes"), std::string::npos);
     EXPECT_NE(spec.find("getSchemes"), std::string::npos);
+}
+
+TEST(calculatorAdaptiveTest, JsonSerialization) {
+    rouen::cards::calculator calc{};
+    std::string card_json = calc.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    // Verify required FactSet fields and inputs exist
+    bool found_memory_fact = false;
+    bool found_mode_fact = false;
+    bool found_last_eval_fact = false;
+    bool found_direct_expr_input = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.Text" && child.id == "direct_expr") {
+                    found_direct_expr_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Memory (M):") found_memory_fact = true;
+                if (fact.title == "Mode:") found_mode_fact = true;
+                if (fact.title == "Last Eval:") found_last_eval_fact = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_memory_fact);
+    EXPECT_TRUE(found_mode_fact);
+    EXPECT_TRUE(found_last_eval_fact);
+    EXPECT_TRUE(found_direct_expr_input);
+}
+
+TEST(calculatorAdaptiveTest, ActionDispatch) {
+    rouen::cards::calculator calc{};
+
+    // 1. calc_input: append tokens
+    calc.handle_action(R"({"verb":"calc_input","data":{"token":"12"}})");
+    calc.handle_action(R"({"verb":"calc_input","data":{"token":" + "}})");
+    calc.handle_action(R"({"verb":"calc_input","data":{"token":"8"}})");
+
+    // 2. calc_eval: evaluate expression (12 + 8 = 20)
+    calc.handle_action(R"({"verb":"calc_eval"})");
+    std::string json_after_eval = calc.get_adaptive_card_json();
+    EXPECT_NE(json_after_eval.find("20"), std::string::npos);
+    EXPECT_NE(json_after_eval.find("12 + 8 = 20"), std::string::npos);
+
+    // 3. calc_memory_store: store current 20 into memory
+    calc.handle_action(R"({"verb":"calc_memory_store"})");
+    std::string json_after_ms = calc.get_adaptive_card_json();
+    EXPECT_NE(json_after_ms.find("20"), std::string::npos);
+
+    // 4. calc_clear: clear display
+    calc.handle_action(R"({"verb":"calc_clear"})");
+    std::string json_after_clear = calc.get_adaptive_card_json();
+    EXPECT_TRUE(json_after_clear.find(R"("text":"0")") != std::string::npos || json_after_clear.find(R"("text": "0")") != std::string::npos);
+
+    // 5. calc_memory_recall: recall stored memory 20
+    calc.handle_action(R"({"verb":"calc_memory_recall"})");
+    std::string json_after_mr = calc.get_adaptive_card_json();
+    EXPECT_NE(json_after_mr.find("20"), std::string::npos);
+
+    // 6. Direct expression evaluation via Input.Text
+    calc.handle_action(R"({"verb":"calc_eval","data":{"direct_expr":"50 * 2"}})");
+    std::string json_direct = calc.get_adaptive_card_json();
+    EXPECT_NE(json_direct.find("100"), std::string::npos);
+}
+
+TEST(calculatorAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::calculator calc{};
+    EXPECT_NO_THROW(calc.handle_action(""));
+    EXPECT_NO_THROW(calc.handle_action("not a json string"));
+    EXPECT_NO_THROW(calc.handle_action("{"));
+    EXPECT_NO_THROW(calc.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(calc.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(calc.handle_action("{\"verb\":\"calc_input\"}")); // Missing token
+    EXPECT_NO_THROW(calc.handle_action("{\"verb\":\"calc_eval\",\"data\":null}"));
 }
 
 

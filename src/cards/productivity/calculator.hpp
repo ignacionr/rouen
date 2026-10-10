@@ -1,11 +1,15 @@
 #pragma once
 
-#include <string>
-#include <vector>
+#include <chrono>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #include "../interface/card.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
 
 namespace rouen::cards {
 
@@ -20,12 +24,22 @@ public:
     ~calculator() override = default;
 
     bool render() override;
+    bool render(rouen::ui::ui_context& ui) override;
     [[nodiscard]] std::string get_uri() const override;
 
     std::vector<mcp_function> get_mcp_functions() const override;
 
     // Evaluates mathematical expression, returning (result_string, error_message)
     static std::pair<std::string, std::string> evaluate(const std::string& expr, double ans_val = 0.0);
+
+    /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+    [[nodiscard]] std::string get_adaptive_card_json() const override;
+
+    /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+    void handle_action(std::string_view action_json) override;
+
+    [[nodiscard]] bool get_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    void set_adaptive_view_mode(bool enabled) noexcept { adaptive_view_mode = enabled; }
 
 private:
     void handle_keyboard_input();
@@ -57,6 +71,15 @@ private:
 
     std::string last_flashed_key_{""};
     float flash_timer_{0.0f};
+
+    // Adaptive Card presentation override state
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    std::string adaptive_error_{};
+    std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
 };
 
 } // namespace rouen::cards
