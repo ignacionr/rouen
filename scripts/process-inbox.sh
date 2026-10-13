@@ -207,7 +207,8 @@ run_worker() {
     log "AGY Binary:        $AGY_BIN"
     log "Pending items:     $(count_pending_items)"
 
-    declare -A item_failures
+    local current_failures=0
+    local last_item=""
 
     while true; do
         local pending_list
@@ -226,15 +227,21 @@ run_worker() {
         local item_name
         item_name=$(basename "$current_item")
 
-        local failures="${item_failures[$item_name]:-0}"
-        if [ "$failures" -ge 2 ]; then
-            log "WARNING: Item $item_name failed $failures consecutive attempts. Marking skipped to avoid deadlock."
+        if [ "$item_name" != "$last_item" ]; then
+            last_item="$item_name"
+            current_failures=0
+        fi
+
+        if [ "$current_failures" -ge 2 ]; then
+            log "WARNING: Item $item_name failed $current_failures consecutive attempts. Marking skipped to avoid deadlock."
             local skipped_path="$INBOX_DIR/skipped_$item_name"
             mv "$current_item" "$skipped_path" 2>/dev/null || true
+            current_failures=0
+            last_item=""
             continue
         fi
 
-        log ">>> Processing inbox item: $item_name (Attempt $((failures + 1))) <<<"
+        log ">>> Processing inbox item: $item_name (Attempt $((current_failures + 1))) <<<"
 
         local prompt
         prompt="You are an autonomous senior software engineer working in the Rouen repository at: $REPO_ROOT.
@@ -265,11 +272,11 @@ Do not ask for user permission or pause with speculative questions; carry the ta
         # Verify outcome
         if [ ! -f "$current_item" ]; then
             log "SUCCESS: $item_name was processed and marked done (exit code $exit_code)."
-            unset "item_failures[$item_name]"
+            current_failures=0
+            last_item=""
         else
-            failures=$((failures + 1))
-            item_failures[$item_name]=$failures
-            log "NOTICE: $item_name still exists after run (attempt $failures, exit code $exit_code)."
+            current_failures=$((current_failures + 1))
+            log "NOTICE: $item_name still exists after run (attempt $current_failures, exit code $exit_code)."
         fi
 
         sleep 3
