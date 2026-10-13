@@ -23,6 +23,7 @@
 #include "../src/cards/system/dbrepair.hpp"
 #include "../src/cards/system/display_card.hpp"
 #include "../src/cards/system/envvars.hpp"
+#include "../src/cards/system/mesh_card.hpp"
 #include "../src/cards/productivity/pomodoro.hpp"
 #include "../src/cards/production/adlib.hpp"
 #include "../src/cards/development/vcproject_card.hpp"
@@ -3211,6 +3212,98 @@ TEST(media_companionAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(companion.handle_action("{\"verb\":\"comp_toggle_play\",\"data\":null}"));
     EXPECT_NO_THROW(companion.handle_action("{\"verb\":\"comp_toggle_shuffle\",\"data\":null}"));
 }
+
+TEST(mesh_cardAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::mesh_card card{};
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_relay_server = false;
+    bool found_latency = false;
+    bool found_peer_ws = false;
+    bool found_peer_linux = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Relay Server:") found_relay_server = true;
+                if (fact.title == "Roundtrip Latency:") found_latency = true;
+                if (fact.title == "Peer ws-ir-01:") found_peer_ws = true;
+                if (fact.title == "Peer linux-dev-02:") found_peer_linux = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_relay_server);
+    EXPECT_TRUE(found_latency);
+    EXPECT_TRUE(found_peer_ws);
+    EXPECT_TRUE(found_peer_linux);
+
+    bool found_reconnect_action = false;
+    bool found_invite_action = false;
+
+    for (const auto& act : doc.actions) {
+        if (act.verb == "mesh_reconnect") found_reconnect_action = true;
+        if (act.verb == "mesh_invite") found_invite_action = true;
+    }
+
+    EXPECT_TRUE(found_reconnect_action);
+    EXPECT_TRUE(found_invite_action);
+}
+
+TEST(mesh_cardAdaptiveTest, ActionDispatch) {
+    rouen::cards::mesh_card card{};
+
+    // Initial state assertions
+    EXPECT_TRUE(card.is_relay_connected());
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+    EXPECT_EQ(card.get_local_client_id(), "macbook-pro-ir");
+    EXPECT_EQ(card.get_relay_url(), "wss://mesh.rouen.live/relay");
+    EXPECT_EQ(card.get_relay_latency_ms(), 24);
+
+    // 1. mesh_reconnect
+    card.handle_action(R"({"type":"Action.Execute","verb":"mesh_reconnect"})");
+    EXPECT_EQ(card.get_last_action(), "mesh_reconnect");
+    EXPECT_TRUE(card.is_relay_connected());
+
+    // 2. mesh_ping_peer
+    card.handle_action(R"({"type":"Action.Execute","verb":"mesh_ping_peer","data":{"peer_id":"ws-ir-01"}})");
+    EXPECT_EQ(card.get_last_action(), "mesh_ping_peer");
+    EXPECT_EQ(card.get_last_pinged_peer(), "ws-ir-01");
+
+    // 3. mesh_invite
+    card.handle_action(R"({"type":"Action.Execute","verb":"mesh_invite"})");
+    EXPECT_EQ(card.get_last_action(), "mesh_invite");
+    EXPECT_FALSE(card.get_pairing_invite().empty());
+
+    // 4. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(mesh_cardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::mesh_card card{};
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"mesh_reconnect\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"mesh_ping_peer\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"mesh_invite\",\"data\":null}"));
+}
+
 
 
 

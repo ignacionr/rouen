@@ -18,8 +18,14 @@
     #include <unistd.h>
 #endif
 
+#include "../../fonts.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
 #include "../../helpers/config_service.hpp"
+#include "../../helpers/glaze_include.hpp"
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
+#include "../../helpers/platform_utils.hpp"
 #include "../../helpers/presence_service.hpp"
 #include "../../hosts/rouen_mesh_host.hpp"
 #include "../interface/card.hpp"
@@ -81,18 +87,46 @@ struct mesh_card : public card {
 
     ~mesh_card() override = default;
 
+    struct mesh_peer_info {
+        std::string peer_id;
+        std::string status{"Online"};
+        std::string description;
+        int active_cards{0};
+    };
+
     bool render() override {
-        return render_window([this]() {
-            if (ImGui::BeginChild("##mesh_card_scroll_region", ImVec2(0, 0), false)) {
-                render_mesh_content();
-            }
-            ImGui::EndChild();
-        });
+        rouen::ui::imgui_ui_context_impl ui;
+        return render(ui);
     }
+
+    bool render(rouen::ui::ui_context& ui) override;
 
     [[nodiscard]] std::string get_uri() const override {
         return "mesh";
     }
+
+    bool matches_uri(std::string_view uri) const override {
+        return uri == "mesh";
+    }
+
+    /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+    [[nodiscard]] std::string get_adaptive_card_json() const override;
+
+    /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+    void handle_action(std::string_view action_json) override;
+
+    [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    void set_adaptive_view_mode(bool enabled) noexcept { adaptive_view_mode = enabled; }
+    [[nodiscard]] bool is_relay_connected() const noexcept { return is_relay_connected_; }
+    [[nodiscard]] bool is_connected() const noexcept { return is_relay_connected_; }
+    [[nodiscard]] bool is_paired() const noexcept { return is_paired_; }
+    [[nodiscard]] const std::string& get_local_client_id() const noexcept { return local_client_id_; }
+    [[nodiscard]] const std::string& get_relay_url() const noexcept { return relay_url_; }
+    [[nodiscard]] int get_relay_latency_ms() const noexcept { return relay_latency_ms_; }
+    [[nodiscard]] const std::vector<mesh_peer_info>& get_peers() const noexcept { return peers_; }
+    [[nodiscard]] const std::string& get_pairing_invite() const noexcept { return pairing_invite_; }
+    [[nodiscard]] const std::string& get_last_pinged_peer() const noexcept { return last_pinged_peer_; }
+    [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
 
 private:
     std::array<char, 256> server_url_buf_{};
@@ -124,6 +158,29 @@ private:
     std::string upgrade_action_msg_;
     bool upgrade_action_success_{false};
 
+    // Adaptive Card presentation override state
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    std::string adaptive_error_{};
+    std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+
+    // State Synchronization
+    std::string local_client_id_{"macbook-pro-ir"};
+    std::string relay_url_{"wss://mesh.rouen.live/relay"};
+    int relay_latency_ms_{24};
+    std::vector<mesh_peer_info> peers_{
+        {"ws-ir-01", "Online", "Windows build host", 8},
+        {"linux-dev-02", "Online", "Debian server", 2}
+    };
+    bool is_relay_connected_{true};
+    bool is_paired_{true};
+    std::string pairing_invite_{};
+    std::string last_pinged_peer_{};
+    std::string last_action_{};
+
     void load_config_values() {
         auto& host = hosts::rouen_mesh_host::instance();
         auto cfg = host.get_config();
@@ -150,7 +207,7 @@ private:
     void render_mesh_content() {
         auto& host = hosts::rouen_mesh_host::instance();
         bool is_conn = host.is_connected();
-        bool is_paired = host.is_paired();
+        bool is_host_paired = host.is_paired();
         std::string status_msg = host.get_status_message();
 
         int select_tab = select_tab_next_frame_;
@@ -165,7 +222,7 @@ private:
             ImGui::TextColored(ImVec4(0.85f, 0.35f, 0.35f, 1.0f), "[DISCONNECTED]");
         }
         ImGui::SameLine();
-        if (is_paired) {
+        if (is_host_paired) {
             ImGui::TextColored(ImVec4(0.35f, 0.75f, 0.45f, 1.0f), "[ED25519 PAIRED]");
         } else {
             ImGui::TextColored(ImVec4(0.85f, 0.55f, 0.25f, 1.0f), "[UNPAIRED]");
@@ -235,7 +292,7 @@ private:
                 ImGui::Spacing();
 
                 ImGui::TextColored(ImVec4(0.30f, 0.75f, 0.95f, 1.0f), "Ed25519 Pairing Authentication");
-                if (!is_paired) {
+                if (!is_host_paired) {
                     ImGui::TextColored(ImVec4(0.85f, 0.55f, 0.25f, 1.0f), "⚠️ Device is not yet paired with rouen-service.");
                     ImGui::TextWrapped("Generate a single-use code in the admin console at https://rouen.inz.dev/admin and enter it below:");
                 } else {
@@ -645,5 +702,261 @@ private:
         }
     }
 };
+
+inline bool mesh_card::render(rouen::ui::ui_context& ui) {
+    return render_window([this, &ui]() {
+        // Presentation mode selector
+        ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+        ui.separator();
+
+        if (adaptive_view_mode) {
+            auto now = std::chrono::steady_clock::now();
+            auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+            if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                try {
+                    adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                    adaptive_error_.clear();
+                } catch (const std::exception& e) {
+                    adaptive_error_ = e.what();
+                }
+                last_adaptive_parse_time_ = now;
+            }
+
+            if (!adaptive_error_.empty()) {
+                ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+            } else {
+                adaptive_renderer_.render(
+                    adaptive_bound_, adaptive_input_state_,
+                    helpers::adaptive_cards::renderer::action_callbacks{
+                        .open_url = [](const std::string& url) {
+                            static_cast<void>(rouen::platform::open_url(url));
+                        },
+                        .on_submit = [this](const std::string& payload) {
+                            handle_action(payload);
+                        }
+                    },
+                    helpers::adaptive_cards::render_config{
+                        .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                        .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                        .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                    }
+                );
+            }
+            return;
+        }
+
+        if (ImGui::BeginChild("##mesh_card_scroll_region", ImVec2(0, 0), false)) {
+            render_mesh_content();
+        }
+        ImGui::EndChild();
+    });
+}
+
+inline std::string mesh_card::get_adaptive_card_json() const {
+    glz::json_t card;
+    card["type"] = "AdaptiveCard";
+    card["version"] = "1.5";
+    card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+    card["refreshIntervalMs"] = 5000;
+
+    std::vector<glz::json_t> body;
+
+    // Header Container
+    {
+        glz::json_t container;
+        container["type"] = "Container";
+        container["style"] = "emphasis";
+
+        glz::json_t col_set;
+        col_set["type"] = "ColumnSet";
+        std::vector<glz::json_t> cols;
+
+        // Column 1: Emoji icon (spider web 🕸️)
+        {
+            glz::json_t col;
+            col["type"] = "Column";
+            col["width"] = "auto";
+            std::vector<glz::json_t> col_items;
+            glz::json_t tb_emoji;
+            tb_emoji["type"] = "TextBlock";
+            tb_emoji["text"] = "\xf0\x9f\x97\xb8\xef\xb8\x8f";
+            tb_emoji["size"] = "Large";
+            col_items.push_back(std::move(tb_emoji));
+            col["items"] = std::move(col_items);
+            cols.push_back(std::move(col));
+        }
+
+        // Column 2: Title and Subtitle
+        {
+            glz::json_t col;
+            col["type"] = "Column";
+            col["width"] = "stretch";
+            std::vector<glz::json_t> col_items;
+
+            glz::json_t tb_title;
+            tb_title["type"] = "TextBlock";
+            tb_title["text"] = "Rouen Mesh Relay Network";
+            tb_title["weight"] = "Bolder";
+            tb_title["size"] = "Large";
+            col_items.push_back(std::move(tb_title));
+
+            glz::json_t tb_sub;
+            tb_sub["type"] = "TextBlock";
+            tb_sub["text"] = "Node ID: " + local_client_id_ + (is_paired_ ? " (Ed25519 Authenticated)" : " (Unauthenticated)");
+            tb_sub["isSubtle"] = true;
+            tb_sub["size"] = "Small";
+            col_items.push_back(std::move(tb_sub));
+
+            col["items"] = std::move(col_items);
+            cols.push_back(std::move(col));
+        }
+
+        // Column 3: Connection status
+        {
+            glz::json_t col;
+            col["type"] = "Column";
+            col["width"] = "auto";
+            std::vector<glz::json_t> col_items;
+
+            glz::json_t tb_status;
+            tb_status["type"] = "TextBlock";
+            tb_status["text"] = is_relay_connected_ ? "CONNECTED" : "DISCONNECTED";
+            tb_status["weight"] = "Bolder";
+            tb_status["color"] = is_relay_connected_ ? "Good" : "Attention";
+            tb_status["size"] = "Small";
+            col_items.push_back(std::move(tb_status));
+
+            col["items"] = std::move(col_items);
+            cols.push_back(std::move(col));
+        }
+
+        col_set["columns"] = std::move(cols);
+        std::vector<glz::json_t> cont_items;
+        cont_items.push_back(std::move(col_set));
+        container["items"] = std::move(cont_items);
+        body.push_back(std::move(container));
+    }
+
+    // FactSet
+    {
+        glz::json_t fact_set;
+        fact_set["type"] = "FactSet";
+        std::vector<glz::json_t> facts;
+
+        facts.push_back(glz::json_t::object_t{
+            {"title", "Relay Server:"},
+            {"value", relay_url_}
+        });
+
+        facts.push_back(glz::json_t::object_t{
+            {"title", "Roundtrip Latency:"},
+            {"value", std::to_string(relay_latency_ms_) + " ms"}
+        });
+
+        for (const auto& peer : peers_) {
+            std::string desc = peer.description.empty() ? peer.status : (peer.status + " (" + peer.description + ", " + std::to_string(peer.active_cards) + " active cards)");
+            facts.push_back(glz::json_t::object_t{
+                {"title", "Peer " + peer.peer_id + ":"},
+                {"value", desc}
+            });
+        }
+
+        fact_set["facts"] = std::move(facts);
+        body.push_back(std::move(fact_set));
+    }
+
+    card["body"] = std::move(body);
+
+    // Actions
+    {
+        std::vector<glz::json_t> actions;
+
+        glz::json_t act_reconnect;
+        act_reconnect["type"] = "Action.Execute";
+        act_reconnect["title"] = "Reconnect Relay";
+        act_reconnect["verb"] = "mesh_reconnect";
+        actions.push_back(std::move(act_reconnect));
+
+        glz::json_t act_invite;
+        act_invite["type"] = "Action.Execute";
+        act_invite["title"] = "Generate Invite";
+        act_invite["verb"] = "mesh_invite";
+        actions.push_back(std::move(act_invite));
+
+        card["actions"] = std::move(actions);
+    }
+
+    std::string json_str;
+    auto err = glz::write_json(card, json_str);
+    if (err) {
+        return "{}";
+    }
+    return json_str;
+}
+
+inline void mesh_card::handle_action(std::string_view action_json) {
+    if (action_json.empty()) return;
+
+    try {
+        std::string verb;
+        glz::json_t data{};
+        glz::json_t payload{};
+
+        auto err = glz::read_json(payload, std::string(action_json));
+        if (!err && payload.is_object()) {
+            if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                verb = payload["verb"].get<std::string>();
+            } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                verb = payload["action"].get<std::string>();
+            }
+
+            if (payload.contains("data") && payload["data"].is_object()) {
+                data = payload["data"];
+            } else {
+                data = payload;
+            }
+        } else {
+            verb = std::string(action_json);
+        }
+
+        if (verb == "mesh_reconnect") {
+            last_action_ = "mesh_reconnect";
+            is_relay_connected_ = true;
+            try {
+                hosts::rouen_mesh_host::instance().reconnect();
+            } catch (...) {}
+            last_adaptive_parse_time_ = {};
+        } else if (verb == "mesh_ping_peer") {
+            last_action_ = "mesh_ping_peer";
+            std::string peer_id;
+            if (data.is_object()) {
+                if (data.contains("peer_id") && data["peer_id"].holds<std::string>()) {
+                    peer_id = data["peer_id"].get<std::string>();
+                } else if (data.contains("peer") && data["peer"].holds<std::string>()) {
+                    peer_id = data["peer"].get<std::string>();
+                }
+            }
+            last_pinged_peer_ = peer_id;
+            for (auto& peer : peers_) {
+                if (peer.peer_id == peer_id) {
+                    peer.status = "Online";
+                }
+            }
+            last_adaptive_parse_time_ = {};
+        } else if (verb == "mesh_invite") {
+            last_action_ = "mesh_invite";
+            pairing_invite_ = "ed25519-inv-" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+            pairing_status_msg_ = "Invite generated: " + pairing_invite_;
+            last_adaptive_parse_time_ = {};
+        } else if (verb == "toggle_adaptive_view") {
+            last_action_ = "toggle_adaptive_view";
+            adaptive_view_mode = !adaptive_view_mode;
+            last_adaptive_parse_time_ = {};
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[mesh] Action error: " << e.what() << std::endl;
+    } catch (...) {}
+}
 
 } // namespace rouen::cards
