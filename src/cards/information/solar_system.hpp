@@ -3,6 +3,7 @@
 // 1. Standard includes in alphabetic order
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <ctime>
@@ -16,6 +17,9 @@
 
 // 2. Libraries used in the project, in alphabetic order
 #include "../../../external/IconsMaterialDesign.h"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
+#include "../../fonts.hpp"
 #include "../../helpers/glaze_include.hpp"
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/platform_utils.hpp"
@@ -72,6 +76,13 @@ public:
         
         // Historical orbit path storage for rendering
         std::vector<ImVec2> orbit_points_2d;
+
+        // Physical and observational characteristics
+        double radius_km{0.0};
+        double surface_gravity{0.0}; // m/s^2
+        int moon_count{0};
+        std::string moons_summary{"0"};
+        double avg_orbital_speed_kms{0.0};
     };
 
     solar_system(std::string_view locator = "") {
@@ -114,6 +125,355 @@ public:
         auto colon = uri.find(':');
         if (colon != std::string_view::npos) {
             set_locator(uri.substr(colon + 1));
+        }
+    }
+
+    static std::string format_thousands(double val, int decimals = 1) {
+        std::string s = std::format("{:.{}f}", val, decimals);
+        auto dot = s.find('.');
+        int int_len = (dot == std::string::npos) ? static_cast<int>(s.length()) : static_cast<int>(dot);
+        std::string res;
+        for (int i = 0; i < int_len; ++i) {
+            if (i > 0 && (int_len - i) % 3 == 0) res += ',';
+            res += s[static_cast<size_t>(i)];
+        }
+        if (dot != std::string::npos) {
+            res += s.substr(dot);
+        }
+        return res;
+    }
+
+    /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+    [[nodiscard]] std::string get_adaptive_card_json() const override {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+        card["refreshIntervalMs"] = 1000;
+
+        const auto& sel = (selected_body_index_ < bodies_.size()) ? bodies_[selected_body_index_] : bodies_[0];
+
+        std::string upper_name = sel.name;
+        for (char& c : upper_name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+        std::vector<glz::json_t> body;
+
+        // 1. Header Container
+        {
+            glz::json_t header_container;
+            header_container["type"] = "Container";
+            header_container["style"] = "emphasis";
+
+            std::vector<glz::json_t> header_items;
+            glz::json_t col_set;
+            col_set["type"] = "ColumnSet";
+
+            std::vector<glz::json_t> cols;
+
+            // Icon Column
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+                glz::json_t icon;
+                icon["type"] = "TextBlock";
+                icon["text"] = "\U0001FA90"; // 🪐
+                icon["size"] = "Large";
+                items.push_back(std::move(icon));
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            // Title Column
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                std::vector<glz::json_t> items;
+
+                glz::json_t title;
+                title["type"] = "TextBlock";
+                title["text"] = "Solar System Ephemeris";
+                title["weight"] = "Bolder";
+                title["size"] = "Large";
+                items.push_back(std::move(title));
+
+                glz::json_t subtitle;
+                subtitle["type"] = "TextBlock";
+                subtitle["text"] = "Real-time celestial mechanics & telemetry";
+                subtitle["isSubtle"] = true;
+                subtitle["size"] = "Small";
+                items.push_back(std::move(subtitle));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            // Target Body Badge Column
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+
+                glz::json_t badge;
+                badge["type"] = "TextBlock";
+                badge["text"] = upper_name;
+                badge["weight"] = "Bolder";
+                badge["color"] = "Attention";
+                badge["size"] = "Medium";
+                items.push_back(std::move(badge));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            col_set["columns"] = std::move(cols);
+            header_items.push_back(std::move(col_set));
+            header_container["items"] = std::move(header_items);
+            body.push_back(std::move(header_container));
+        }
+
+        // 2. ChoiceSet Container
+        {
+            glz::json_t choice_container;
+            choice_container["type"] = "Container";
+
+            std::vector<glz::json_t> choice_items;
+            glz::json_t choice_set;
+            choice_set["type"] = "Input.ChoiceSet";
+            choice_set["id"] = "celestial_body";
+            choice_set["label"] = "Target Body";
+            choice_set["value"] = sel.name;
+
+            std::vector<glz::json_t> choices;
+            const std::array<std::string_view, 7> default_choices = {
+                "Sun", "Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn"
+            };
+
+            bool sel_found = false;
+            for (auto name : default_choices) {
+                if (name == sel.name) sel_found = true;
+                glz::json_t ch;
+                ch["title"] = std::string(name);
+                ch["value"] = std::string(name);
+                choices.push_back(std::move(ch));
+            }
+
+            if (!sel_found) {
+                glz::json_t ch;
+                ch["title"] = sel.name;
+                ch["value"] = sel.name;
+                choices.push_back(std::move(ch));
+            }
+
+            choice_set["choices"] = std::move(choices);
+            choice_items.push_back(std::move(choice_set));
+            choice_container["items"] = std::move(choice_items);
+            body.push_back(std::move(choice_container));
+        }
+
+        // 3. FactSet
+        {
+            glz::json_t fact_set;
+            fact_set["type"] = "FactSet";
+
+            std::vector<glz::json_t> facts;
+
+            // Distance from Sun
+            {
+                glz::json_t f;
+                f["title"] = "Distance from Sun:";
+                if (sel.id == "sun") {
+                    f["value"] = "0.000 AU (Center of System)";
+                } else {
+                    double dist_au = (sel.a > 0.0) ? sel.a : sel.helio_dist;
+                    f["value"] = std::format("{:.3f} AU ({:.1f} million km)", dist_au, dist_au * 149.5978707);
+                }
+                facts.push_back(std::move(f));
+            }
+
+            // Orbital Velocity
+            {
+                glz::json_t f;
+                f["title"] = "Orbital Velocity:";
+                f["value"] = std::format("{:.2f} km/s", sel.avg_orbital_speed_kms);
+                facts.push_back(std::move(f));
+            }
+
+            // Equatorial Radius
+            {
+                glz::json_t f;
+                f["title"] = "Equatorial Radius:";
+                double earth_ratios = (sel.radius_km > 0.0) ? (sel.radius_km / 6371.0) : 0.0;
+                f["value"] = std::format("{} km ({:.3f} Earths)", format_thousands(sel.radius_km, 1), earth_ratios);
+                facts.push_back(std::move(f));
+            }
+
+            // Surface Gravity
+            {
+                glz::json_t f;
+                f["title"] = "Surface Gravity:";
+                double g_ratio = sel.surface_gravity / 9.80665;
+                f["value"] = std::format("{:.2f} m/s\u00b2 ({:.2f} g)", sel.surface_gravity, g_ratio);
+                facts.push_back(std::move(f));
+            }
+
+            // Known Moons
+            {
+                glz::json_t f;
+                f["title"] = "Known Moons:";
+                f["value"] = sel.moons_summary;
+                facts.push_back(std::move(f));
+            }
+
+            fact_set["facts"] = std::move(facts);
+            body.push_back(std::move(fact_set));
+        }
+
+        card["body"] = std::move(body);
+
+        // Actions
+        std::vector<glz::json_t> actions;
+        {
+            glz::json_t act_inspect;
+            act_inspect["type"] = "Action.Execute";
+            act_inspect["title"] = "Inspect Body";
+            act_inspect["verb"] = "select_body";
+            actions.push_back(std::move(act_inspect));
+
+            glz::json_t act_url;
+            act_url["type"] = "Action.OpenUrl";
+            act_url["title"] = "NASA Horizons JPL";
+            act_url["url"] = "https://ssd.jpl.nasa.gov/horizons/";
+            actions.push_back(std::move(act_url));
+        }
+        card["actions"] = std::move(actions);
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
+    }
+
+    /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+    void handle_action(std::string_view action_json) override {
+        if (action_json.empty()) return;
+        try {
+            glz::json_t payload{};
+            std::string verb;
+            glz::json_t data{};
+
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (!err && payload.is_object()) {
+                if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                    verb = payload["verb"].get<std::string>();
+                } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                    verb = payload["action"].get<std::string>();
+                }
+
+                if (payload.contains("data") && payload["data"].is_object()) {
+                    data = payload["data"];
+                } else {
+                    data = payload;
+                }
+            } else {
+                verb = std::string(action_json);
+            }
+
+            if (verb == "select_body") {
+                last_action_ = "select_body";
+                std::string body_name;
+                if (data.is_object()) {
+                    if (data.contains("celestial_body") && data["celestial_body"].holds<std::string>()) {
+                        body_name = data["celestial_body"].get<std::string>();
+                    } else if (data.contains("body_name") && data["body_name"].holds<std::string>()) {
+                        body_name = data["body_name"].get<std::string>();
+                    } else if (data.contains("body") && data["body"].holds<std::string>()) {
+                        body_name = data["body"].get<std::string>();
+                    } else if (data.contains("name") && data["name"].holds<std::string>()) {
+                        body_name = data["name"].get<std::string>();
+                    }
+                }
+                if (!body_name.empty()) {
+                    select_body_by_name(body_name);
+                }
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "time_lapse_speed") {
+                last_action_ = "time_lapse_speed";
+                if (data.is_object()) {
+                    float spd = anim_speed_days_per_sec_;
+                    if (data.contains("speed_multiplier")) {
+                        if (data["speed_multiplier"].holds<double>()) {
+                            spd = static_cast<float>(data["speed_multiplier"].get<double>());
+                        } else if (data["speed_multiplier"].holds<std::string>()) {
+                            try { spd = std::stof(data["speed_multiplier"].get<std::string>()); } catch (...) {}
+                        }
+                    } else if (data.contains("speed")) {
+                        if (data["speed"].holds<double>()) {
+                            spd = static_cast<float>(data["speed"].get<double>());
+                        } else if (data["speed"].holds<std::string>()) {
+                            try { spd = std::stof(data["speed"].get<std::string>()); } catch (...) {}
+                        }
+                    } else if (data.contains("multiplier")) {
+                        if (data["multiplier"].holds<double>()) {
+                            spd = static_cast<float>(data["multiplier"].get<double>());
+                        } else if (data["multiplier"].holds<std::string>()) {
+                            try { spd = std::stof(data["multiplier"].get<std::string>()); } catch (...) {}
+                        }
+                    }
+                    if (spd > 0.0f) {
+                        anim_speed_days_per_sec_ = spd;
+                    }
+                }
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "toggle_adaptive_view") {
+                adaptive_view_mode = !adaptive_view_mode;
+                last_action_ = "toggle_adaptive_view";
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[solar-system] Action error: " << e.what() << std::endl;
+        }
+    }
+
+    [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    void set_adaptive_view_mode(bool mode) noexcept { adaptive_view_mode = mode; }
+    [[nodiscard]] std::string get_last_action() const { return last_action_; }
+    [[nodiscard]] std::string get_selected_body_name() const {
+        if (selected_body_index_ < bodies_.size()) return bodies_[selected_body_index_].name;
+        return "";
+    }
+    [[nodiscard]] size_t get_selected_body_index() const noexcept { return selected_body_index_; }
+    [[nodiscard]] float get_anim_speed() const noexcept { return anim_speed_days_per_sec_; }
+    void set_anim_speed(float speed) noexcept { anim_speed_days_per_sec_ = speed; }
+    [[nodiscard]] double get_selected_body_distance_au() const noexcept {
+        if (selected_body_index_ < bodies_.size()) {
+            return (bodies_[selected_body_index_].a > 0.0) ? bodies_[selected_body_index_].a : bodies_[selected_body_index_].helio_dist;
+        }
+        return 0.0;
+    }
+    [[nodiscard]] double get_selected_body_orbital_speed() const noexcept {
+        if (selected_body_index_ < bodies_.size()) return bodies_[selected_body_index_].avg_orbital_speed_kms;
+        return 0.0;
+    }
+    [[nodiscard]] double get_selected_body_radius_km() const noexcept {
+        if (selected_body_index_ < bodies_.size()) return bodies_[selected_body_index_].radius_km;
+        return 0.0;
+    }
+    [[nodiscard]] int get_selected_body_moon_count() const noexcept {
+        if (selected_body_index_ < bodies_.size()) return bodies_[selected_body_index_].moon_count;
+        return 0;
+    }
+
+    void select_body_by_name(std::string_view target_name) {
+        for (size_t i = 0; i < bodies_.size(); ++i) {
+            if (::helpers::StringHelper::contains_case_insensitive(bodies_[i].name, target_name) ||
+                ::helpers::StringHelper::contains_case_insensitive(bodies_[i].id, target_name)) {
+                selected_body_index_ = i;
+                focused_center_index_ = i;
+                update_all_positions();
+                break;
+            }
         }
     }
 
@@ -228,6 +588,46 @@ public:
 
     bool render(rouen::ui::ui_context& ui) override {
         return render_window([this, &ui]() {
+            // Presentation mode selector
+            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            ui.separator();
+
+            if (adaptive_view_mode) {
+                auto now = std::chrono::steady_clock::now();
+                auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                    try {
+                        adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                        adaptive_error_.clear();
+                    } catch (const std::exception& e) {
+                        adaptive_error_ = e.what();
+                    }
+                    last_adaptive_parse_time_ = now;
+                }
+
+                if (!adaptive_error_.empty()) {
+                    ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                } else {
+                    adaptive_renderer_.render(
+                        adaptive_bound_, adaptive_input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                handle_action(payload);
+                            }
+                        },
+                        helpers::adaptive_cards::render_config{
+                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        }
+                    );
+                }
+                return;
+            }
+
             render_header_controls(ui);
             ui.separator();
             
@@ -271,6 +671,16 @@ public:
     }
 
 private:
+    // Adaptive Card presentation override state
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    std::string adaptive_error_{};
+    std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+    std::string last_action_{};
+
     enum class Tab { OrbitCanvas, EphemerisTable, MoonPhases, Events };
     Tab current_tab_{Tab::OrbitCanvas};
 
@@ -297,7 +707,7 @@ private:
     bool show_labels_{true};
     bool show_vectors_{false};
     bool show_grid_{true};
-    size_t selected_body_index_{3}; // Default selected: Earth (index 3) or Sun
+    size_t selected_body_index_{5}; // Default selected: Mars (index 5)
     size_t focused_center_index_{0}; // Default center: Sun (index 0)
 
     // Catalog of celestial bodies
@@ -312,14 +722,7 @@ private:
         if (s.length() >= 10 && s[4] == '-' && s[7] == '-') {
             set_date_from_string(s);
         } else {
-            // Treat as object focus request
-            for (size_t i = 0; i < bodies_.size(); ++i) {
-                if (::helpers::StringHelper::contains_case_insensitive(bodies_[i].name, s)) {
-                    selected_body_index_ = i;
-                    focused_center_index_ = i;
-                    break;
-                }
-            }
+            select_body_by_name(s);
         }
     }
 
@@ -405,6 +808,7 @@ private:
         sun.id = "sun"; sun.name = "Sun"; sun.category = "Sun"; sun.symbol = ICON_MD_WB_SUNNY;
         sun.color = ImVec4(1.0f, 0.9f, 0.2f, 1.0f); sun.display_size = 14.0f;
         sun.a = 0.0; sun.e = 0.0; sun.mag = -26.74;
+        sun.radius_km = 696340.0; sun.surface_gravity = 274.0; sun.moon_count = 0; sun.moons_summary = "0"; sun.avg_orbital_speed_kms = 0.0;
         bodies_.push_back(sun);
 
         // 1: Mercury
@@ -415,6 +819,7 @@ private:
         merc.L0 = 252.25084; merc.Lrate = 149472.67411;
         merc.w0 = 77.45645; merc.wrate = 1.5564775;
         merc.node0 = 48.33167; merc.noderate = -0.1253408;
+        merc.radius_km = 2439.7; merc.surface_gravity = 3.70; merc.moon_count = 0; merc.moons_summary = "0"; merc.avg_orbital_speed_kms = 47.36;
         bodies_.push_back(merc);
 
         // 2: Venus
@@ -425,6 +830,7 @@ private:
         ven.L0 = 181.97973; ven.Lrate = 58517.81568;
         ven.w0 = 131.53298; ven.wrate = 1.4022288;
         ven.node0 = 76.67992; ven.noderate = -0.2776941;
+        ven.radius_km = 6051.8; ven.surface_gravity = 8.87; ven.moon_count = 0; ven.moons_summary = "0"; ven.avg_orbital_speed_kms = 35.02;
         bodies_.push_back(ven);
 
         // 3: Earth
@@ -435,6 +841,7 @@ private:
         earth.L0 = 100.46435; earth.Lrate = 35999.37245;
         earth.w0 = 102.94719; earth.wrate = 0.3179526;
         earth.node0 = -11.26064; earth.noderate = -0.2410708;
+        earth.radius_km = 6371.0; earth.surface_gravity = 9.81; earth.moon_count = 1; earth.moons_summary = "1 (The Moon)"; earth.avg_orbital_speed_kms = 29.78;
         bodies_.push_back(earth);
 
         // 4: Earth's Moon
@@ -442,6 +849,7 @@ private:
         moon.id = "moon"; moon.name = "Moon"; moon.category = "Moon"; moon.symbol = ICON_MD_BEDTIME;
         moon.color = ImVec4(0.88f, 0.88f, 0.92f, 1.0f); moon.display_size = 4.5f;
         moon.a = 1.0; // Follows Earth heliocentrically with geocentric offset
+        moon.radius_km = 1737.4; moon.surface_gravity = 1.62; moon.moon_count = 0; moon.moons_summary = "0"; moon.avg_orbital_speed_kms = 1.02;
         bodies_.push_back(moon);
 
         // 5: Mars
@@ -452,6 +860,7 @@ private:
         mars.L0 = 355.45332; mars.Lrate = 19140.30268;
         mars.w0 = 336.04084; mars.wrate = 1.8410769;
         mars.node0 = 49.57854; mars.noderate = -0.2949880;
+        mars.radius_km = 3389.5; mars.surface_gravity = 3.72; mars.moon_count = 2; mars.moons_summary = "2 (Phobos & Deimos)"; mars.avg_orbital_speed_kms = 24.07;
         bodies_.push_back(mars);
 
         // 6: Ceres (Dwarf Planet)
@@ -460,6 +869,7 @@ private:
         ceres.color = ImVec4(0.70f, 0.70f, 0.65f, 1.0f); ceres.display_size = 4.0f;
         ceres.a = 2.767; ceres.e = 0.0758; ceres.I = 10.59;
         ceres.L0 = 102.8; ceres.Lrate = 7820.0; ceres.w0 = 73.1; ceres.node0 = 80.3;
+        ceres.radius_km = 469.7; ceres.surface_gravity = 0.27; ceres.moon_count = 0; ceres.moons_summary = "0"; ceres.avg_orbital_speed_kms = 17.88;
         bodies_.push_back(ceres);
 
         // 7: 4 Vesta (Asteroid)
@@ -468,6 +878,7 @@ private:
         vesta.color = ImVec4(0.80f, 0.75f, 0.60f, 1.0f); vesta.display_size = 4.0f;
         vesta.a = 2.361; vesta.e = 0.0886; vesta.I = 7.14;
         vesta.L0 = 250.0; vesta.Lrate = 9800.0; vesta.w0 = 150.0; vesta.node0 = 103.8;
+        vesta.radius_km = 262.7; vesta.surface_gravity = 0.25; vesta.moon_count = 0; vesta.moons_summary = "0"; vesta.avg_orbital_speed_kms = 19.34;
         bodies_.push_back(vesta);
 
         // 8: Jupiter
@@ -478,6 +889,7 @@ private:
         jup.L0 = 34.40438; jup.Lrate = 3034.74612;
         jup.w0 = 14.75385; jup.wrate = 0.7686884;
         jup.node0 = 100.55615; jup.noderate = 0.2046910;
+        jup.radius_km = 69911.0; jup.surface_gravity = 24.79; jup.moon_count = 95; jup.moons_summary = "95 (Io, Europa, Ganymede, Callisto...)"; jup.avg_orbital_speed_kms = 13.07;
         bodies_.push_back(jup);
 
         // 9: Saturn
@@ -488,6 +900,7 @@ private:
         sat.L0 = 50.07744; sat.Lrate = 1222.49362;
         sat.w0 = 92.43194; sat.wrate = -0.4189721;
         sat.node0 = 113.71504; sat.noderate = -0.2886779;
+        sat.radius_km = 58232.0; sat.surface_gravity = 10.44; sat.moon_count = 146; sat.moons_summary = "146 (Titan, Enceladus, Mimas...)"; sat.avg_orbital_speed_kms = 9.68;
         bodies_.push_back(sat);
 
         // 10: Uranus
@@ -498,6 +911,7 @@ private:
         uran.L0 = 313.23218; uran.Lrate = 428.48203;
         uran.w0 = 170.96424; uran.wrate = 0.4080528;
         uran.node0 = 74.22988; uran.noderate = 0.0424058;
+        uran.radius_km = 25362.0; uran.surface_gravity = 8.69; uran.moon_count = 28; uran.moons_summary = "28 (Titania, Oberon, Umbriel...)"; uran.avg_orbital_speed_kms = 6.80;
         bodies_.push_back(uran);
 
         // 11: Neptune
@@ -508,6 +922,7 @@ private:
         nep.L0 = 304.88003; nep.Lrate = 218.45945;
         nep.w0 = 44.97135; nep.wrate = -0.8442751;
         nep.node0 = 131.78060; nep.noderate = -0.0050866;
+        nep.radius_km = 24622.0; nep.surface_gravity = 11.15; nep.moon_count = 16; nep.moons_summary = "16 (Triton, Proteus...)"; nep.avg_orbital_speed_kms = 5.43;
         bodies_.push_back(nep);
 
         // 12: Pluto (Dwarf Planet)
@@ -518,6 +933,7 @@ private:
         pluto.L0 = 238.92881; pluto.Lrate = 145.2078;
         pluto.w0 = 224.06676; pluto.wrate = -0.0406294;
         pluto.node0 = 110.30347; pluto.noderate = -0.011834;
+        pluto.radius_km = 1188.3; pluto.surface_gravity = 0.62; pluto.moon_count = 5; pluto.moons_summary = "5 (Charon, Styx, Nix, Kerberos, Hydra)"; pluto.avg_orbital_speed_kms = 4.74;
         bodies_.push_back(pluto);
 
         // 13: 1P/Halley (Comet)
@@ -526,6 +942,7 @@ private:
         halley.color = ImVec4(0.40f, 0.90f, 0.85f, 1.0f); halley.display_size = 5.0f;
         halley.a = 17.834; halley.e = 0.9671; halley.I = 162.26;
         halley.L0 = 111.3; halley.Lrate = 475.0; halley.w0 = 111.3; halley.node0 = 58.4;
+        halley.radius_km = 5.5; halley.surface_gravity = 0.002; halley.moon_count = 0; halley.moons_summary = "0"; halley.avg_orbital_speed_kms = 25.0;
         bodies_.push_back(halley);
 
         // 14: Voyager 1 (Space Probe)
@@ -533,6 +950,7 @@ private:
         voyager1.id = "voyager1"; voyager1.name = "Voyager 1"; voyager1.category = "Space Probe"; voyager1.symbol = ICON_MD_SATELLITE_ALT;
         voyager1.color = ImVec4(1.00f, 0.40f, 0.70f, 1.0f); voyager1.display_size = 5.0f;
         voyager1.a = 163.5; voyager1.e = 1.05; voyager1.I = 35.0; // Hyperbolic escape
+        voyager1.radius_km = 0.003; voyager1.surface_gravity = 0.0; voyager1.moon_count = 0; voyager1.moons_summary = "0"; voyager1.avg_orbital_speed_kms = 17.0;
         bodies_.push_back(voyager1);
 
         // 15: James Webb Space Telescope (Space Probe at L2)
@@ -540,6 +958,7 @@ private:
         jwst.id = "jwst"; jwst.name = "JWST (L2)"; jwst.category = "Space Probe"; jwst.symbol = ICON_MD_EXPLORE;
         jwst.color = ImVec4(1.00f, 0.75f, 0.20f, 1.0f); jwst.display_size = 5.0f;
         jwst.a = 1.01; jwst.e = 0.0167; jwst.I = 0.0;
+        jwst.radius_km = 0.01; jwst.surface_gravity = 0.0; jwst.moon_count = 0; jwst.moons_summary = "0"; jwst.avg_orbital_speed_kms = 29.78;
         bodies_.push_back(jwst);
     }
 

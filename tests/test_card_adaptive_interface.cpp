@@ -52,6 +52,7 @@
 #include "../src/cards/information/markdown_viewer.hpp"
 #include "../src/cards/information/number_series.hpp"
 #include "../src/cards/information/pdf_viewer.hpp"
+#include "../src/cards/information/solar_system.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -4357,6 +4358,119 @@ TEST(settings_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"settings_test_llm\",\"data\":null}"));
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"settings_query_models\",\"data\":null}"));
 }
+
+TEST(solar_systemAdaptiveTest, JsonSerialization) {
+    rouen::cards::solar_system card{};
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_header_title = false;
+    bool found_celestial_body_input = false;
+    bool found_dist_fact = false;
+    bool found_velocity_fact = false;
+    bool found_radius_fact = false;
+    bool found_gravity_fact = false;
+    bool found_moons_fact = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& col_set : elem.items) {
+                if (col_set.type == "ColumnSet") {
+                    for (const auto& col : col_set.columns) {
+                        for (const auto& item : col.items) {
+                            if (item.type == "TextBlock") {
+                                if (item.text.find("Solar System Ephemeris") != std::string::npos) {
+                                    found_header_title = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (const auto& item : elem.items) {
+                if (item.type == "Input.ChoiceSet") {
+                    if (item.id == "celestial_body") {
+                        found_celestial_body_input = true;
+                    }
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title.find("Distance from Sun") != std::string::npos) found_dist_fact = true;
+                if (fact.title.find("Orbital Velocity") != std::string::npos) found_velocity_fact = true;
+                if (fact.title.find("Equatorial Radius") != std::string::npos) found_radius_fact = true;
+                if (fact.title.find("Surface Gravity") != std::string::npos) found_gravity_fact = true;
+                if (fact.title.find("Known Moons") != std::string::npos) found_moons_fact = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_header_title);
+    EXPECT_TRUE(found_celestial_body_input);
+    EXPECT_TRUE(found_dist_fact);
+    EXPECT_TRUE(found_velocity_fact);
+    EXPECT_TRUE(found_radius_fact);
+    EXPECT_TRUE(found_gravity_fact);
+    EXPECT_TRUE(found_moons_fact);
+
+    bool found_select_body_action = false;
+    bool found_open_url_action = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "select_body" || act.title.find("Inspect Body") != std::string::npos) {
+            found_select_body_action = true;
+        }
+        if (act.type == "Action.OpenUrl" || act.url.find("horizons") != std::string::npos) {
+            found_open_url_action = true;
+        }
+    }
+    EXPECT_TRUE(found_select_body_action);
+    EXPECT_TRUE(found_open_url_action);
+}
+
+TEST(solar_systemAdaptiveTest, ActionDispatch) {
+    rouen::cards::solar_system card{};
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+
+    // 1. select_body
+    card.handle_action(R"({"type":"Action.Execute","verb":"select_body","data":{"celestial_body":"Jupiter"}})");
+    EXPECT_EQ(card.get_last_action(), "select_body");
+    EXPECT_EQ(card.get_selected_body_name(), "Jupiter");
+
+    card.handle_action(R"({"type":"Action.Execute","verb":"select_body","data":{"celestial_body":"Mars"}})");
+    EXPECT_EQ(card.get_last_action(), "select_body");
+    EXPECT_EQ(card.get_selected_body_name(), "Mars");
+
+    // 2. time_lapse_speed
+    card.handle_action(R"({"type":"Action.Execute","verb":"time_lapse_speed","data":{"speed_multiplier":5.0}})");
+    EXPECT_EQ(card.get_last_action(), "time_lapse_speed");
+    EXPECT_FLOAT_EQ(card.get_anim_speed(), 5.0f);
+
+    // 3. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(solar_systemAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::solar_system card{};
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"select_body\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"time_lapse_speed\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"time_lapse_speed\",\"data\":{\"speed_multiplier\":\"invalid_number\"}}"));
+}
+
 
 
 
