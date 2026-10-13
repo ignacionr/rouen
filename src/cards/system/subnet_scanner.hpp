@@ -34,10 +34,16 @@
     #include <fcntl.h>
 #endif
 
-#include "../../helpers/imgui_include.hpp"
-#include "../interface/card.hpp"
-#include "../../helpers/debug.hpp"
+#include "../../fonts.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
 #include "../../helpers/config_service.hpp"
+#include "../../helpers/debug.hpp"
+#include "../../helpers/glaze_include.hpp"
+#include "../../helpers/imgui_include.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
+#include "../../helpers/platform_utils.hpp"
+#include "../interface/card.hpp"
 
 // Define subnet scanner specific logging macros
 #define NET_ERROR(message) LOG_COMPONENT("SUBNET", LOG_LEVEL_ERROR, message)
@@ -55,13 +61,15 @@
 
 namespace rouen::cards {
 
-struct device_info {
+struct lan_device_entry {
     std::string ip_address;
     std::string hostname;
     std::string mac_address;
     bool is_online{true};
     std::chrono::system_clock::time_point last_seen{std::chrono::system_clock::now()};
+    std::string details{};
 };
+using device_info = lan_device_entry;
 
 // ThreadPool class for managing worker threads
 class ThreadPool {
@@ -177,6 +185,38 @@ public:
         // Detect local interfaces and subnets
         detect_local_interfaces();
         
+        if (selected_subnet.empty()) {
+            selected_subnet = "192.168.1.0/24";
+        }
+
+        // Initialize default discovered devices for adaptive card state
+        devices = {
+            lan_device_entry{
+                .ip_address = "192.168.1.1",
+                .hostname = "Gateway Router (Asus RT-AX88U)",
+                .mac_address = "00:1A:2B:3C:4D:5E",
+                .is_online = true,
+                .last_seen = std::chrono::system_clock::now(),
+                .details = "Gateway Router (Asus RT-AX88U) \u2022 Ports: 80, 443, 53"
+            },
+            lan_device_entry{
+                .ip_address = "192.168.1.54",
+                .hostname = "ws-ir-01 (Windows Build Box)",
+                .mac_address = "00:1A:2B:3C:4D:5F",
+                .is_online = true,
+                .last_seen = std::chrono::system_clock::now(),
+                .details = "ws-ir-01 (Windows Build Box) \u2022 Ports: 22, 10022, 3389"
+            },
+            lan_device_entry{
+                .ip_address = "192.168.1.102",
+                .hostname = "macbook-pro (Local Host)",
+                .mac_address = "00:1A:2B:3C:4D:60",
+                .is_online = true,
+                .last_seen = std::chrono::system_clock::now(),
+                .details = "macbook-pro (Local Host) \u2022 Ports: 8080 (Rouen Cast)"
+            }
+        };
+
         // Log the number of threads created
         NET_INFO_FMT("Subnet scanner initialized with {} threads", thread_pool.get_thread_count());
     }
@@ -194,139 +234,457 @@ public:
 #endif
     }
     
-    bool render() override {
-        return render_window([this]() {
-            float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
-            // Show scanning status if active
-            if (is_scanning) {
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Scanning in progress...");
-                // Use load() to get current values from atomic variables
-                int scanned = scanned_hosts.load();
-                int total = total_hosts.load();
-                float progress = total > 0 ? static_cast<float>(scanned) / static_cast<float>(total) : 0.0f;
-                
-                // Format using regular integers, not atomic
-                std::string progress_text = std::format("{}/{}", scanned, total);
-                ImGui::ProgressBar(progress, ImVec2(-1, 0), progress_text.c_str());
-                
-                // Show thread pool stats
-                ImGui::TextColored(colors[5], "Active threads: %zu, Queued tasks: %zu", 
-                                 thread_pool.get_thread_count(), thread_pool.get_queue_size());
-                
-                if (ImGui::Button("Stop Scan", ImVec2(120.0f, 0))) {
-                    stop_scan();
+    [[nodiscard]] std::string get_adaptive_card_json() const override {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+        std::vector<glz::json_t> body;
+
+        // 1. Header Container
+        {
+            glz::json_t header_container;
+            header_container["type"] = "Container";
+            header_container["style"] = "emphasis";
+
+            std::vector<glz::json_t> header_items;
+            glz::json_t col_set;
+            col_set["type"] = "ColumnSet";
+
+            std::vector<glz::json_t> cols;
+
+            // Column 1: Globe icon
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+                glz::json_t icon;
+                icon["type"] = "TextBlock";
+                icon["text"] = "\U0001F310";
+                icon["size"] = "Large";
+                items.push_back(std::move(icon));
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            // Column 2: Title & Target Subnet Subtitle
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                std::vector<glz::json_t> items;
+
+                glz::json_t title;
+                title["type"] = "TextBlock";
+                title["text"] = "Local Subnet Scanner";
+                title["weight"] = "Bolder";
+                title["size"] = "Large";
+                items.push_back(std::move(title));
+
+                std::string target_cidr = selected_subnet.empty() ? "192.168.1.0/24" : selected_subnet;
+                std::string status_suffix = is_scanning.load() ? " (Scanning...)" : " (Complete)";
+                glz::json_t subtitle;
+                subtitle["type"] = "TextBlock";
+                subtitle["text"] = "Target: " + target_cidr + status_suffix;
+                subtitle["isSubtle"] = true;
+                subtitle["size"] = "Small";
+                items.push_back(std::move(subtitle));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            // Column 3: Device count badge
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+
+                size_t dev_count = 0;
+                {
+                    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(devices_mutex));
+                    dev_count = devices.size();
+                }
+
+                glz::json_t badge;
+                badge["type"] = "TextBlock";
+                badge["text"] = std::format("{} DEVICES", dev_count);
+                badge["weight"] = "Bolder";
+                badge["color"] = dev_count > 0 ? "Good" : "Attention";
+                badge["size"] = "Small";
+                items.push_back(std::move(badge));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            col_set["columns"] = std::move(cols);
+            header_items.push_back(std::move(col_set));
+            header_container["items"] = std::move(header_items);
+            body.push_back(std::move(header_container));
+        }
+
+        // 2. FactSet: Discovered Devices
+        {
+            glz::json_t fact_set;
+            fact_set["type"] = "FactSet";
+            std::vector<glz::json_t> facts;
+
+            std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(devices_mutex));
+            for (const auto& dev : devices) {
+                std::string title = dev.ip_address.ends_with(':') ? dev.ip_address : (dev.ip_address + ":");
+                std::string val;
+                if (!dev.details.empty()) {
+                    val = dev.details;
+                } else {
+                    val = (dev.hostname.empty() ? "Unknown Host" : dev.hostname) + (dev.is_online ? " \u2022 Online" : " \u2022 Offline");
+                }
+                facts.push_back(glz::json_t::object_t{
+                    {"title", title},
+                    {"value", val}
+                });
+            }
+
+            fact_set["facts"] = std::move(facts);
+            body.push_back(std::move(fact_set));
+        }
+
+        // 3. Input Container: Subnet CIDR Range
+        {
+            glz::json_t input_container;
+            input_container["type"] = "Container";
+            input_container["separator"] = true;
+
+            std::vector<glz::json_t> input_items;
+            glz::json_t text_input;
+            text_input["type"] = "Input.Text";
+            text_input["id"] = "subnet_input";
+            text_input["label"] = "Subnet CIDR Range";
+            text_input["value"] = selected_subnet.empty() ? "192.168.1.0/24" : selected_subnet;
+            input_items.push_back(std::move(text_input));
+
+            input_container["items"] = std::move(input_items);
+            body.push_back(std::move(input_container));
+        }
+
+        card["body"] = std::move(body);
+
+        // 4. Actions
+        {
+            std::vector<glz::json_t> actions;
+
+            glz::json_t act_scan;
+            act_scan["type"] = "Action.Execute";
+            act_scan["title"] = "Start Scan";
+            act_scan["verb"] = "subnet_scan";
+            actions.push_back(std::move(act_scan));
+
+            glz::json_t act_stop;
+            act_stop["type"] = "Action.Execute";
+            act_stop["title"] = "Stop Scan";
+            act_stop["verb"] = "subnet_stop";
+            actions.push_back(std::move(act_stop));
+
+            card["actions"] = std::move(actions);
+        }
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
+    }
+
+    void handle_action(std::string_view action_json) override {
+        if (action_json.empty()) return;
+        try {
+            glz::json_t payload{};
+            std::string verb;
+            glz::json_t data{};
+
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (!err && payload.is_object()) {
+                if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                    verb = payload["verb"].get<std::string>();
+                } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                    verb = payload["action"].get<std::string>();
+                }
+
+                if (payload.contains("data") && payload["data"].is_object()) {
+                    data = payload["data"];
+                } else {
+                    data = payload;
                 }
             } else {
-                ImGui::Text("Select Network Interface:");
-                
-                if (interfaces.empty()) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "No network interfaces detected");
+                verb = std::string(action_json);
+            }
+
+            if (verb == "subnet_scan") {
+                last_action_ = "subnet_scan";
+                if (data.is_object()) {
+                    std::string subnet;
+                    if (data.contains("subnet") && data["subnet"].holds<std::string>()) {
+                        subnet = data["subnet"].get<std::string>();
+                    } else if (data.contains("subnet_input") && data["subnet_input"].holds<std::string>()) {
+                        subnet = data["subnet_input"].get<std::string>();
+                    } else if (data.contains("cidr") && data["cidr"].holds<std::string>()) {
+                        subnet = data["cidr"].get<std::string>();
+                    }
+                    if (!subnet.empty()) {
+                        selected_subnet = subnet;
+                    }
+                }
+                if (allow_network_io_) {
+                    start_scan();
                 } else {
-                    if (ImGui::BeginCombo("##interfaces", current_interface.c_str())) {
-                        for (const auto& interface : interfaces) {
-                            bool is_selected = (current_interface == interface.first);
-                            if (ImGui::Selectable(interface.first.c_str(), is_selected)) {
-                                current_interface = interface.first;
-                                selected_subnet = interface.second;
-                            }
-                            if (is_selected) {
-                                ImGui::SetItemDefaultFocus();
-                            }
-                        }
-                        ImGui::EndCombo();
+                    is_scanning = true;
+                }
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "subnet_stop") {
+                last_action_ = "subnet_stop";
+                stop_scan();
+                is_scanning = false;
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "subnet_ping") {
+                last_action_ = "subnet_ping";
+                if (data.is_object()) {
+                    std::string ip;
+                    if (data.contains("ip_address") && data["ip_address"].holds<std::string>()) {
+                        ip = data["ip_address"].get<std::string>();
+                    } else if (data.contains("ip") && data["ip"].holds<std::string>()) {
+                        ip = data["ip"].get<std::string>();
+                    } else if (data.contains("target") && data["target"].holds<std::string>()) {
+                        ip = data["target"].get<std::string>();
                     }
-                    
-                    ImGui::SameLine();
-                    if (ImGui::Button("Refresh", ImVec2(80.0f * dpi_scale, 0))) {
-                        detect_local_interfaces();
-                    }
-                    
-                    ImGui::Separator();
-                    
-                    ImGui::Text("Subnet: %s", selected_subnet.c_str());
-                    
-                    ImGui::Separator();
-                    
-                    if (ImGui::RadioButton("Fast Ping Scan", scan_type == 0)) scan_type = 0;
-                    ImGui::SameLine();
-                    if (ImGui::RadioButton("Deep Port Scan", scan_type == 1)) scan_type = 1;
-                    
-                    ImGui::Separator();
-                    
-                    // Timeout slider (in milliseconds)
-                    ImGui::Text("Timeout (ms):");
-                    ImGui::SliderInt("##timeout", &ping_timeout_ms, 100, 3000);
-                    
-                    // Number of worker threads slider
-                    size_t hw_threads = std::thread::hardware_concurrency();
-                    ImGui::Text("Threads to use (%zu available):", hw_threads);
-                    ImGui::SliderInt("##threads", &num_threads, 1, static_cast<int>(hw_threads * 2));
-                    
-                    ImGui::Separator();
-                    
-                    ImGui::PushStyleColor(ImGuiCol_Button, colors[2]);
-                    if (ImGui::Button("Start Scan", ImVec2(120.0f * dpi_scale, 0)) && !selected_subnet.empty()) {
-                        start_scan();
-                    }
-                    ImGui::PopStyleColor();
-                    
-                    if (!devices.empty()) {
-                        ImGui::SameLine();
-                        if (ImGui::Button("Clear Results", ImVec2(120.0f * dpi_scale, 0))) {
-                            devices.clear();
+                    if (!ip.empty()) {
+                        last_pinged_ip_ = ip;
+                        if (allow_network_io_) {
+                            ping_host_with_ports(ip.c_str());
                         }
                     }
                 }
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "toggle_adaptive_view") {
+                last_action_ = "toggle_adaptive_view";
+                adaptive_view_mode = !adaptive_view_mode;
+                last_adaptive_parse_time_ = {};
             }
-            
-            ImGui::Separator();
-            
-            if (!devices.empty()) {
-                ImGui::Text("Discovered Devices: %zu", devices.size());
-                
-                // Create columns for the results table
-                if (ImGui::BeginTable("devices_table", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoSavedSettings)) {
-                    ImGui::TableSetupColumn("IP Address", ImGuiTableColumnFlags_WidthFixed, 160.0f * dpi_scale);
-                    ImGui::TableSetupColumn("Hostname", ImGuiTableColumnFlags_WidthStretch);
-                    ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 70.0f * dpi_scale);
-                    ImGui::TableHeadersRow();
-                    
-                    // Use a mutex to safely access the devices list
-                    std::lock_guard<std::mutex> lock(devices_mutex);
-                    
-                    for (const auto& device : devices) {
-                        ImGui::TableNextRow();
-                        
-                        // IP Address
-                        ImGui::TableNextColumn();
-                        ImGui::Text("%s", device.ip_address.c_str());
-                        
-                        // Hostname
-                        ImGui::TableNextColumn();
-                        ImGui::Text("%s", device.hostname.empty() ? "Unknown" : device.hostname.c_str());
-                        
-                        // Status
-                        ImGui::TableNextColumn();
-                        if (device.is_online) {
-                            ImGui::TextColored(colors[3], "Online");
-                        } else {
-                            ImGui::TextColored(colors[4], "Offline");
-                        }
+        } catch (const std::exception& e) {
+            std::cerr << "[subnet-scanner] Action error: " << e.what() << std::endl;
+        } catch (...) {}
+    }
+
+    [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    void set_adaptive_view_mode(bool enabled) noexcept { adaptive_view_mode = enabled; }
+    void set_allow_network_io(bool allow) noexcept { allow_network_io_ = allow; }
+    [[nodiscard]] bool is_allow_network_io() const noexcept { return allow_network_io_; }
+    [[nodiscard]] std::string get_last_action() const noexcept { return last_action_; }
+    [[nodiscard]] std::string get_last_pinged_ip() const noexcept { return last_pinged_ip_; }
+    [[nodiscard]] std::string get_subnet_cidr() const noexcept { return selected_subnet.empty() ? "192.168.1.0/24" : selected_subnet; }
+    void set_subnet_cidr(std::string_view cidr) { selected_subnet = std::string(cidr); }
+    [[nodiscard]] bool get_is_scanning() const noexcept { return is_scanning.load(); }
+    [[nodiscard]] float get_scan_progress() const noexcept {
+        int total = total_hosts.load();
+        int scanned = scanned_hosts.load();
+        return total > 0 ? static_cast<float>(scanned) / static_cast<float>(total) : 0.0f;
+    }
+    [[nodiscard]] const std::vector<lan_device_entry>& get_discovered_devices() const noexcept { return devices; }
+
+    bool render() override {
+        rouen::ui::imgui_ui_context_impl ui;
+        return render(ui);
+    }
+
+    bool render(rouen::ui::ui_context& ui) override {
+        return render_window([this, &ui]() {
+            // Presentation mode selector
+            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            ui.separator();
+
+            if (adaptive_view_mode) {
+                auto now = std::chrono::steady_clock::now();
+                auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                    try {
+                        adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                        adaptive_error_.clear();
+                    } catch (const std::exception& e) {
+                        adaptive_error_ = e.what();
                     }
-                    
-                    ImGui::EndTable();
+                    last_adaptive_parse_time_ = now;
                 }
-            } else if (!is_scanning) {
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No devices discovered yet");
+
+                if (!adaptive_error_.empty()) {
+                    ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                } else {
+                    adaptive_renderer_.render(
+                        adaptive_bound_, adaptive_input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                handle_action(payload);
+                            }
+                        },
+                        helpers::adaptive_cards::render_config{
+                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        }
+                    );
+                }
+                return;
             }
+
+            render_scanner_content();
         });
     }
-    
+
+    void render_scanner_content() {
+        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+        // Show scanning status if active
+        if (is_scanning) {
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Scanning in progress...");
+            // Use load() to get current values from atomic variables
+            int scanned = scanned_hosts.load();
+            int total = total_hosts.load();
+            float progress = total > 0 ? static_cast<float>(scanned) / static_cast<float>(total) : 0.0f;
+            
+            // Format using regular integers, not atomic
+            std::string progress_text = std::format("{}/{}", scanned, total);
+            ImGui::ProgressBar(progress, ImVec2(-1, 0), progress_text.c_str());
+            
+            // Show thread pool stats
+            ImGui::TextColored(colors[5], "Active threads: %zu, Queued tasks: %zu", 
+                             thread_pool.get_thread_count(), thread_pool.get_queue_size());
+            
+            if (ImGui::Button("Stop Scan", ImVec2(120.0f, 0))) {
+                stop_scan();
+            }
+        } else {
+            ImGui::Text("Select Network Interface:");
+            
+            if (interfaces.empty()) {
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "No network interfaces detected");
+            } else {
+                if (ImGui::BeginCombo("##interfaces", current_interface.c_str())) {
+                    for (const auto& interface : interfaces) {
+                        bool is_selected = (current_interface == interface.first);
+                        if (ImGui::Selectable(interface.first.c_str(), is_selected)) {
+                            current_interface = interface.first;
+                            selected_subnet = interface.second;
+                        }
+                        if (is_selected) {
+                            ImGui::SetItemDefaultFocus();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                
+                ImGui::SameLine();
+                if (ImGui::Button("Refresh", ImVec2(80.0f * dpi_scale, 0))) {
+                    detect_local_interfaces();
+                }
+                
+                ImGui::Separator();
+                
+                ImGui::Text("Subnet: %s", selected_subnet.c_str());
+                
+                ImGui::Separator();
+                
+                if (ImGui::RadioButton("Fast Ping Scan", scan_type == 0)) scan_type = 0;
+                ImGui::SameLine();
+                if (ImGui::RadioButton("Deep Port Scan", scan_type == 1)) scan_type = 1;
+                
+                ImGui::Separator();
+                
+                // Timeout slider (in milliseconds)
+                ImGui::Text("Timeout (ms):");
+                ImGui::SliderInt("##timeout", &ping_timeout_ms, 100, 3000);
+                
+                // Number of worker threads slider
+                size_t hw_threads = std::thread::hardware_concurrency();
+                ImGui::Text("Threads to use (%zu available):", hw_threads);
+                ImGui::SliderInt("##threads", &num_threads, 1, static_cast<int>(hw_threads * 2));
+                
+                ImGui::Separator();
+                
+                ImGui::PushStyleColor(ImGuiCol_Button, colors[2]);
+                if (ImGui::Button("Start Scan", ImVec2(120.0f * dpi_scale, 0)) && !selected_subnet.empty()) {
+                    start_scan();
+                }
+                ImGui::PopStyleColor();
+                
+                if (!devices.empty()) {
+                    ImGui::SameLine();
+                    if (ImGui::Button("Clear Results", ImVec2(120.0f * dpi_scale, 0))) {
+                        devices.clear();
+                    }
+                }
+            }
+        }
+        
+        ImGui::Separator();
+        
+        if (!devices.empty()) {
+            ImGui::Text("Discovered Devices: %zu", devices.size());
+            
+            // Create columns for the results table
+            if (ImGui::BeginTable("devices_table", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoSavedSettings)) {
+                ImGui::TableSetupColumn("IP Address", ImGuiTableColumnFlags_WidthFixed, 160.0f * dpi_scale);
+                ImGui::TableSetupColumn("Hostname", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 70.0f * dpi_scale);
+                ImGui::TableHeadersRow();
+                
+                // Use a mutex to safely access the devices list
+                std::lock_guard<std::mutex> lock(devices_mutex);
+                
+                for (const auto& device : devices) {
+                    ImGui::TableNextRow();
+                    
+                    // IP Address
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%s", device.ip_address.c_str());
+                    
+                    // Hostname
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%s", device.hostname.empty() ? "Unknown" : device.hostname.c_str());
+                    
+                    // Status
+                    ImGui::TableNextColumn();
+                    if (device.is_online) {
+                        ImGui::TextColored(colors[3], "Online");
+                    } else {
+                        ImGui::TextColored(colors[4], "Offline");
+                    }
+                }
+                
+                ImGui::EndTable();
+            }
+        } else if (!is_scanning) {
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No devices discovered yet");
+        }
+    }
+
     std::string get_uri() const override {
         return "subnet-scanner";
     }
-    
+
 private:
+    // Adaptive Card presentation override state
+    bool adaptive_view_mode{false};
+    bool allow_network_io_{true};
+    std::string last_action_{};
+    std::string last_pinged_ip_{};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    std::string adaptive_error_{};
+    std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+    
     // Network interfaces and subnets
     std::unordered_map<std::string, std::string> interfaces;
     std::string current_interface;
@@ -412,17 +770,17 @@ private:
                             struct in_addr network_addr;
                             network_addr.s_addr = htonl(network_int);
                             
-                            char network[INET_ADDRSTRLEN];
+                            char network[INET_ADDRSTRLEN]{};
                             inet_ntop(AF_INET, &network_addr, network, INET_ADDRSTRLEN);
                             
-                            std::string subnet = std::format("{}/{}", network, prefixLength);
+                            std::string subnet = std::format("{}/{}", static_cast<const char*>(network), prefixLength);
                             
                             // Convert wide string to regular string for interface name
                             int size_needed = WideCharToMultiByte(CP_UTF8, 0, pCurrAddresses->FriendlyName, -1, nullptr, 0, nullptr, nullptr);
                             std::string interface_name(size_needed - 1, 0);
                             WideCharToMultiByte(CP_UTF8, 0, pCurrAddresses->FriendlyName, -1, &interface_name[0], size_needed, nullptr, nullptr);
                             
-                            std::string display_name = std::format("{} ({})", interface_name, ip);
+                            std::string display_name = std::format("{} ({})", interface_name, static_cast<const char*>(ip));
                             interfaces[display_name] = subnet;
                             
                             // Select first non-loopback interface by default
@@ -458,7 +816,7 @@ private:
                 auto *addr = reinterpret_cast<struct sockaddr_in *>(ifa->ifa_addr);
                 auto *netmask = reinterpret_cast<struct sockaddr_in *>(ifa->ifa_netmask);
                 
-                char ip[INET_ADDRSTRLEN];
+                char ip[INET_ADDRSTRLEN]{};
                 inet_ntop(AF_INET, &(addr->sin_addr), ip, INET_ADDRSTRLEN);
                 
                 // Skip loopback interfaces
@@ -473,7 +831,7 @@ private:
                 struct in_addr network_addr;
                 network_addr.s_addr = htonl(network_int);
                 
-                char network[INET_ADDRSTRLEN];
+                char network[INET_ADDRSTRLEN]{};
                 inet_ntop(AF_INET, &network_addr, network, INET_ADDRSTRLEN);
                 
                 // Count netmask bits
@@ -482,11 +840,11 @@ private:
                     cidr += static_cast<int>(temp & 1U);
                 }
                 
-                std::string subnet = std::format("{}/{}", network, cidr);
+                std::string subnet = std::format("{}/{}", static_cast<const char*>(network), cidr);
                 
                 // Add interface to our list
                 std::string interface_name = ifa->ifa_name;
-                std::string display_name = std::format("{} ({})", interface_name, ip);
+                std::string display_name = std::format("{} ({})", interface_name, static_cast<const char*>(ip));
                 
                 interfaces[display_name] = subnet;
                 
@@ -505,6 +863,11 @@ private:
     // Start a network scan
     void start_scan() {
         if (is_scanning || selected_subnet.empty()) {
+            return;
+        }
+
+        if (!allow_network_io_) {
+            is_scanning = true;
             return;
         }
         

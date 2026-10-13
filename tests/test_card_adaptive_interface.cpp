@@ -28,6 +28,7 @@
 #include "../src/cards/system/notifications.hpp"
 #include "../src/cards/system/process_panel.hpp"
 #include "../src/cards/system/settings.hpp"
+#include "../src/cards/system/subnet_scanner.hpp"
 #include "../src/cards/productivity/pomodoro.hpp"
 #include "../src/cards/production/adlib.hpp"
 #include "../src/cards/development/vcproject_card.hpp"
@@ -4470,6 +4471,111 @@ TEST(solar_systemAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"time_lapse_speed\",\"data\":null}"));
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"time_lapse_speed\",\"data\":{\"speed_multiplier\":\"invalid_number\"}}"));
 }
+
+TEST(subnet_scannerAdaptiveTest, JsonSerialization) {
+    rouen::cards::subnet_scanner card{};
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_header_title = false;
+    bool found_subnet_input = false;
+    bool found_router_fact = false;
+    bool found_win_fact = false;
+    bool found_host_fact = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& col_set : elem.items) {
+                if (col_set.type == "ColumnSet") {
+                    for (const auto& col : col_set.columns) {
+                        for (const auto& item : col.items) {
+                            if (item.type == "TextBlock") {
+                                if (item.text.find("Local Subnet Scanner") != std::string::npos) {
+                                    found_header_title = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (const auto& item : elem.items) {
+                if (item.type == "Input.Text" && item.id == "subnet_input") {
+                    found_subnet_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title.find("192.168.1.1:") != std::string::npos) found_router_fact = true;
+                if (fact.title.find("192.168.1.54:") != std::string::npos) found_win_fact = true;
+                if (fact.title.find("192.168.1.102:") != std::string::npos) found_host_fact = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_header_title);
+    EXPECT_TRUE(found_subnet_input);
+    EXPECT_TRUE(found_router_fact);
+    EXPECT_TRUE(found_win_fact);
+    EXPECT_TRUE(found_host_fact);
+
+    bool found_scan_action = false;
+    bool found_stop_action = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "subnet_scan") found_scan_action = true;
+        if (act.verb == "subnet_stop") found_stop_action = true;
+    }
+    EXPECT_TRUE(found_scan_action);
+    EXPECT_TRUE(found_stop_action);
+}
+
+TEST(subnet_scannerAdaptiveTest, ActionDispatch) {
+    rouen::cards::subnet_scanner card{};
+    card.set_allow_network_io(false);
+
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+
+    // 1. subnet_scan
+    card.handle_action(R"({"type":"Action.Execute","verb":"subnet_scan","data":{"subnet":"10.0.0.0/24"}})");
+    EXPECT_EQ(card.get_last_action(), "subnet_scan");
+    EXPECT_EQ(card.get_subnet_cidr(), "10.0.0.0/24");
+
+    // 2. subnet_stop
+    card.handle_action(R"({"type":"Action.Execute","verb":"subnet_stop"})");
+    EXPECT_EQ(card.get_last_action(), "subnet_stop");
+    EXPECT_FALSE(card.get_is_scanning());
+
+    // 3. subnet_ping
+    card.handle_action(R"({"type":"Action.Execute","verb":"subnet_ping","data":{"ip_address":"192.168.1.54"}})");
+    EXPECT_EQ(card.get_last_action(), "subnet_ping");
+    EXPECT_EQ(card.get_last_pinged_ip(), "192.168.1.54");
+
+    // 4. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(subnet_scannerAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::subnet_scanner card{};
+    card.set_allow_network_io(false);
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"subnet_scan\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"subnet_ping\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"subnet_stop\",\"data\":null}"));
+}
+
 
 
 
