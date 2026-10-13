@@ -25,6 +25,7 @@
 #include "../src/cards/system/envvars.hpp"
 #include "../src/cards/system/mesh_card.hpp"
 #include "../src/cards/system/notifications.hpp"
+#include "../src/cards/system/process_panel.hpp"
 #include "../src/cards/productivity/pomodoro.hpp"
 #include "../src/cards/production/adlib.hpp"
 #include "../src/cards/development/vcproject_card.hpp"
@@ -3631,4 +3632,125 @@ TEST(pdf_viewerAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"pdf_zoom\",\"data\":null}"));
     EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"pdf_zoom\",\"data\":{\"zoom_factor\":null}}"));
 }
+
+TEST(process_panelAdaptiveTest, JsonSerialization) {
+    rouen::cards::process_panel panel{};
+    std::string card_json = panel.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_header = false;
+    bool found_active_badge = false;
+    bool found_process_facts = false;
+    bool found_cmd_input = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "ColumnSet") {
+                    for (const auto& col : child.columns) {
+                        for (const auto& col_item : col.items) {
+                            if (col_item.text.find("Process Orchestration Panel") != std::string::npos) {
+                                found_header = true;
+                            }
+                            if (col_item.text.find("ACTIVE") != std::string::npos) {
+                                found_active_badge = true;
+                            }
+                        }
+                    }
+                }
+                if (child.type == "Input.Text" && child.id == "new_cmd") {
+                    found_cmd_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            if (!elem.facts.empty()) {
+                found_process_facts = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_header);
+    EXPECT_TRUE(found_active_badge);
+    EXPECT_TRUE(found_process_facts);
+    EXPECT_TRUE(found_cmd_input);
+
+    bool found_launch_action = false;
+    bool found_kill_action = false;
+    bool found_refresh_action = false;
+
+    for (const auto& act : doc.actions) {
+        if (act.verb == "proc_launch") found_launch_action = true;
+        if (act.verb == "proc_kill") found_kill_action = true;
+        if (act.verb == "proc_refresh") found_refresh_action = true;
+    }
+
+    EXPECT_TRUE(found_launch_action);
+    EXPECT_TRUE(found_kill_action);
+    EXPECT_TRUE(found_refresh_action);
+}
+
+TEST(process_panelAdaptiveTest, ActionDispatch) {
+    rouen::cards::process_panel panel{};
+
+    // Initial state assertions
+    EXPECT_FALSE(panel.is_adaptive_view_mode());
+    EXPECT_EQ(panel.get_total_running_count(), 3u);
+    EXPECT_EQ(panel.get_active_processes().size(), 3u);
+
+    // 1. proc_launch
+    panel.handle_action(R"({"type":"Action.Execute","verb":"proc_launch","data":{"command_line":"./scripts/daemon.sh"}})");
+    EXPECT_EQ(panel.get_last_action(), "proc_launch");
+    EXPECT_EQ(panel.get_last_launched_cmd(), "./scripts/daemon.sh");
+    EXPECT_EQ(panel.get_total_running_count(), 4u);
+    EXPECT_EQ(panel.get_active_processes().size(), 4u);
+
+    // 2. proc_launch with new_cmd field
+    panel.handle_action(R"({"type":"Action.Execute","verb":"proc_launch","data":{"new_cmd":"ninja -j2"}})");
+    EXPECT_EQ(panel.get_last_action(), "proc_launch");
+    EXPECT_EQ(panel.get_last_launched_cmd(), "ninja -j2");
+    EXPECT_EQ(panel.get_total_running_count(), 5u);
+
+    // 3. proc_kill
+    panel.handle_action(R"({"type":"Action.Execute","verb":"proc_kill","data":{"pid":48914}})");
+    EXPECT_EQ(panel.get_last_action(), "proc_kill");
+    EXPECT_EQ(panel.get_last_killed_pid(), 48914);
+    EXPECT_EQ(panel.get_total_running_count(), 4u);
+    bool found_killed_pid = false;
+    for (const auto& proc : panel.get_active_processes()) {
+        if (proc.pid == 48914) found_killed_pid = true;
+    }
+    EXPECT_FALSE(found_killed_pid);
+
+    // 4. proc_refresh
+    panel.handle_action(R"({"type":"Action.Execute","verb":"proc_refresh"})");
+    EXPECT_EQ(panel.get_last_action(), "proc_refresh");
+
+    // 5. toggle_adaptive_view
+    panel.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(panel.is_adaptive_view_mode());
+    panel.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(panel.is_adaptive_view_mode());
+}
+
+TEST(process_panelAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::process_panel panel{};
+    EXPECT_NO_THROW(panel.handle_action(""));
+    EXPECT_NO_THROW(panel.handle_action("not a json string"));
+    EXPECT_NO_THROW(panel.handle_action("{"));
+    EXPECT_NO_THROW(panel.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(panel.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(panel.handle_action("{\"verb\":\"proc_launch\",\"data\":null}"));
+    EXPECT_NO_THROW(panel.handle_action("{\"verb\":\"proc_launch\",\"data\":{\"command_line\":null}}"));
+    EXPECT_NO_THROW(panel.handle_action("{\"verb\":\"proc_kill\",\"data\":null}"));
+    EXPECT_NO_THROW(panel.handle_action("{\"verb\":\"proc_kill\",\"data\":{\"pid\":null}}"));
+    EXPECT_NO_THROW(panel.handle_action("{\"verb\":\"proc_refresh\",\"data\":null}"));
+}
+
 
