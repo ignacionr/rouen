@@ -18,6 +18,7 @@
 #include "../src/cards/information/ai_chat.hpp"
 #include "../src/cards/system/about.hpp"
 #include "../src/cards/system/sysinfo.hpp"
+#include "../src/cards/system/cast_control.hpp"
 #include "../src/cards/productivity/pomodoro.hpp"
 #include "../src/cards/production/adlib.hpp"
 #include "../src/cards/development/vcproject_card.hpp"
@@ -1031,6 +1032,109 @@ TEST(camera_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(camera.handle_action("{\"verb\":\"cam_switch_device\"}")); // Missing device
     EXPECT_NO_THROW(camera.handle_action("{\"verb\":\"cam_capture\",\"data\":null}"));
 }
+
+TEST(cast_controlAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::cast_control cast_card{};
+    std::string card_json = cast_card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    // Verify all required FactSet fields and inputs exist
+    bool found_endpoint_fact = false;
+    bool found_viewers_fact = false;
+    bool found_resolution_fact = false;
+    bool found_framerate_fact = false;
+    bool found_resolution_input = false;
+    bool found_fps_input = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.ChoiceSet" && (child.id == "resolution" || child.id == "res")) {
+                    found_resolution_input = true;
+                }
+                if (child.type == "Input.Number" && (child.id == "fps" || child.id == "target_fps")) {
+                    found_fps_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Stream Endpoint:") found_endpoint_fact = true;
+                if (fact.title == "Active Viewers:") found_viewers_fact = true;
+                if (fact.title == "Resolution:") found_resolution_fact = true;
+                if (fact.title == "Framerate:" || fact.title == "Frame Rate:") found_framerate_fact = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_endpoint_fact);
+    EXPECT_TRUE(found_viewers_fact);
+    EXPECT_TRUE(found_resolution_fact);
+    EXPECT_TRUE(found_framerate_fact);
+    EXPECT_TRUE(found_resolution_input);
+    EXPECT_TRUE(found_fps_input);
+
+    // Verify actions exist
+    bool found_start_act = false;
+    bool found_copy_act = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "cast_start") found_start_act = true;
+        if (act.verb == "cast_copy_url") found_copy_act = true;
+    }
+    EXPECT_TRUE(found_start_act);
+    EXPECT_TRUE(found_copy_act);
+}
+
+TEST(cast_controlAdaptiveTest, ActionDispatch) {
+    rouen::cards::cast_control cast_card{};
+
+    // Initial state assertions
+    EXPECT_FALSE(cast_card.is_broadcasting());
+
+    // 1. cast_start: start broadcast with fps and resolution
+    cast_card.handle_action(R"raw({"type":"Action.Execute","verb":"cast_start","data":{"fps":60,"resolution":"1920 x 1080 (1080p)"}})raw");
+    EXPECT_TRUE(cast_card.is_broadcasting());
+    EXPECT_EQ(cast_card.get_target_fps(), 60);
+    EXPECT_EQ(cast_card.get_resolution(), "1920 x 1080 (1080p)");
+
+    std::string streaming_json = cast_card.get_adaptive_card_json();
+    EXPECT_NE(streaming_json.find("STREAMING"), std::string::npos);
+    EXPECT_NE(streaming_json.find("cast_stop"), std::string::npos);
+
+    // 2. cast_copy_url: copy live stream url
+    cast_card.handle_action(R"raw({"type":"Action.Execute","verb":"cast_copy_url"})raw");
+    EXPECT_FALSE(cast_card.get_last_copied_url().empty());
+    EXPECT_EQ(cast_card.get_last_copied_url(), cast_card.get_stream_endpoint());
+
+    // 3. cast_stop: halt broadcast
+    cast_card.handle_action(R"raw({"type":"Action.Execute","verb":"cast_stop"})raw");
+    EXPECT_FALSE(cast_card.is_broadcasting());
+
+    std::string stopped_json = cast_card.get_adaptive_card_json();
+    EXPECT_NE(stopped_json.find("STOPPED"), std::string::npos);
+    EXPECT_NE(stopped_json.find("cast_start"), std::string::npos);
+}
+
+TEST(cast_controlAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::cast_control cast_card{};
+    EXPECT_NO_THROW(cast_card.handle_action(""));
+    EXPECT_NO_THROW(cast_card.handle_action("not a json string"));
+    EXPECT_NO_THROW(cast_card.handle_action("{"));
+    EXPECT_NO_THROW(cast_card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(cast_card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(cast_card.handle_action("{\"verb\":\"cast_start\",\"data\":null}"));
+    EXPECT_NO_THROW(cast_card.handle_action("{\"verb\":\"cast_stop\"}"));
+}
+
 
 
 
