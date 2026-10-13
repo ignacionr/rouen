@@ -3,6 +3,7 @@
 #include <string>
 
 #include "../src/cards/productivity/alarm.hpp"
+#include "../src/cards/productivity/kpi_card.hpp"
 #include "../src/cards/information/contact_card.hpp"
 #include "../src/cards/productivity/theme_card.hpp"
 #include "../src/cards/productivity/objectives_card.hpp"
@@ -2526,4 +2527,105 @@ TEST(image_viewerAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"image_rotate\",\"data\":{\"angle_deg\":null}}"));
     EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"image_fit\",\"data\":null}"));
 }
+
+TEST(kpi_cardAdaptiveTest, JsonSerialization) {
+    rouen::cards::kpi_card card{};
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_mrr_fact = false;
+    bool found_uptime_fact = false;
+    bool found_build_time_fact = false;
+    bool found_backlog_fact = false;
+    bool found_kpi_id_choice = false;
+    bool found_new_value_input = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Monthly Recurring Revenue:") found_mrr_fact = true;
+                if (fact.title == "Rouen Mesh Uptime:") found_uptime_fact = true;
+                if (fact.title == "C++ Module Compilation Time:") found_build_time_fact = true;
+                if (fact.title == "Open Issues Backlog:") found_backlog_fact = true;
+            }
+        }
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.ChoiceSet" && child.id == "kpi_id") {
+                    found_kpi_id_choice = true;
+                }
+                if (child.type == "Input.Number" && child.id == "new_value") {
+                    found_new_value_input = true;
+                }
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_mrr_fact);
+    EXPECT_TRUE(found_uptime_fact);
+    EXPECT_TRUE(found_build_time_fact);
+    EXPECT_TRUE(found_backlog_fact);
+    EXPECT_TRUE(found_kpi_id_choice);
+    EXPECT_TRUE(found_new_value_input);
+
+    bool found_update_action = false;
+    bool found_refresh_action = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "update_kpi") found_update_action = true;
+        if (act.verb == "refresh_kpis") found_refresh_action = true;
+    }
+    EXPECT_TRUE(found_update_action);
+    EXPECT_TRUE(found_refresh_action);
+}
+
+TEST(kpi_cardAdaptiveTest, ActionDispatch) {
+    rouen::cards::kpi_card card{};
+
+    // Initial state
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+
+    // 1. update_kpi
+    card.handle_action(R"({"type":"Action.Execute","verb":"update_kpi","data":{"kpi_id":"mrr","new_value":15000}})");
+    EXPECT_EQ(card.get_last_action(), "update_kpi");
+    EXPECT_EQ(card.get_selected_kpi_id(), "mrr");
+    EXPECT_DOUBLE_EQ(card.get_kpi_value("mrr"), 15000.0);
+
+    // 2. add_kpi
+    card.handle_action(R"({"type":"Action.Execute","verb":"add_kpi","data":{"name":"User Retention","target_val":85.0,"unit":"%","current_val":80.0}})");
+    EXPECT_EQ(card.get_last_action(), "add_kpi");
+    EXPECT_EQ(card.get_selected_kpi_id(), "user_retention");
+    EXPECT_DOUBLE_EQ(card.get_kpi_value("user_retention"), 80.0);
+    EXPECT_EQ(card.get_kpi_metrics().size(), 5u);
+
+    // 3. refresh_kpis
+    card.handle_action(R"({"type":"Action.Execute","verb":"refresh_kpis"})");
+    EXPECT_EQ(card.get_last_action(), "refresh_kpis");
+    EXPECT_TRUE(card.is_kpis_refreshed());
+
+    // 4. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(kpi_cardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::kpi_card card{};
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"update_kpi\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"update_kpi\",\"data\":{\"kpi_id\":null}}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"add_kpi\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"refresh_kpis\",\"data\":null}"));
+}
+
 

@@ -72,6 +72,7 @@ struct element {
     std::string type;
     std::string id;
     std::string title;
+    std::string label;
     std::string text;
     std::string value;
     std::string placeholder;
@@ -155,6 +156,29 @@ private:
         // Normalize unquoted numeric "width": 1 -> "width": "1"
         pos = 0;
         while ((pos = output.find("\"width\"", pos)) != std::string::npos) {
+            std::size_t colon = output.find(':', pos + 7);
+            if (colon == std::string::npos) break;
+            std::size_t val_start = colon + 1;
+            while (val_start < output.size() && (output[val_start] == ' ' || output[val_start] == '\t' || output[val_start] == '\r' || output[val_start] == '\n')) {
+                ++val_start;
+            }
+            if (val_start < output.size() && (std::isdigit(static_cast<unsigned char>(output[val_start])) || output[val_start] == '.' || output[val_start] == '-')) {
+                std::size_t val_end = val_start;
+                while (val_end < output.size() && (std::isdigit(static_cast<unsigned char>(output[val_end])) || output[val_end] == '.' || output[val_end] == '-')) {
+                    ++val_end;
+                }
+                std::string num_str = output.substr(val_start, val_end - val_start);
+                std::string quoted = "\"" + num_str + "\"";
+                output.replace(val_start, val_end - val_start, quoted);
+                pos = val_start + quoted.size();
+            } else {
+                pos = colon + 1;
+            }
+        }
+
+        // Normalize unquoted numeric "value": 14500 -> "value": "14500"
+        pos = 0;
+        while ((pos = output.find("\"value\"", pos)) != std::string::npos) {
             std::size_t colon = output.find(':', pos + 7);
             if (colon == std::string::npos) break;
             std::size_t val_start = colon + 1;
@@ -324,6 +348,7 @@ struct glz::meta<rouen::helpers::adaptive_cards::element> {
         "type", &T::type,
         "id", &T::id,
         "title", &T::title,
+        "label", &T::label,
         "text", &T::text,
         "value", &T::value,
         "placeholder", &T::placeholder,

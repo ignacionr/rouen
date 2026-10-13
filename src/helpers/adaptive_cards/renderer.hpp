@@ -151,7 +151,7 @@ private:
             it->second = node.choices[0].value;
         }
 
-        const std::string label = node.title.empty() ? key : node.title;
+        const std::string label = node.title.empty() ? (node.label.empty() ? key : node.label) : node.title;
         ImGui::TextUnformatted(label.c_str());
 
         if (node.isMultiSelect) {
@@ -192,7 +192,7 @@ private:
         const std::string key = node.id.empty() ? scope : node.id;
         auto [it, inserted] = state.text_values.try_emplace(key, node.value);
         state.numeric_ids.insert(key);
-        const std::string label = node.title.empty() ? key : node.title;
+        const std::string label = node.title.empty() ? (node.label.empty() ? key : node.label) : node.title;
         std::array<char, 256> buffer{};
         std::snprintf(buffer.data(), buffer.size(), "%s", it->second.c_str());
         if (ImGui::InputText(label.c_str(), buffer.data(), buffer.size())) {
@@ -647,7 +647,7 @@ private:
             it->second = node.value;
         }
 
-        std::string label = node.title.empty() ? key : node.title;
+        std::string label = node.title.empty() ? (node.label.empty() ? key : node.label) : node.title;
         if (!node.placeholder.empty()) {
             label = std::format("{} ({})", label, node.placeholder);
         }
