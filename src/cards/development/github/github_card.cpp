@@ -16,6 +16,10 @@
 
 #include "../../../helpers/debug.hpp"
 #include "../../../../external/IconsMaterialDesign.h"
+#include "../../../fonts.hpp"
+#include "../../../helpers/fetch.hpp"
+#include "../../../helpers/imgui_ui_context.hpp"
+#include "../../../helpers/platform_utils.hpp"
 #include "../../../models/github/host.hpp"
 #include "../../../models/github/login_host.hpp"
 #include "../../../registrar.hpp"
@@ -48,6 +52,27 @@ namespace rouen::cards {
 
         host_ = std::make_shared<models::github::host>();
         host_->set_login_host(login_host_);
+
+        open_issues.reserve(14);
+        for (int i = 1; i <= 14; ++i) {
+            open_issues.push_back(github_issue{
+                .number = i,
+                .title = std::format("Issue #{}", i),
+                .body = "Issue description",
+                .state = "open"
+            });
+        }
+
+        open_prs.reserve(3);
+        for (int i = 1; i <= 3; ++i) {
+            open_prs.push_back(github_pr{
+                .number = i,
+                .title = std::format("Pull Request #{}", i),
+                .body = "Pull request description",
+                .state = "open",
+                .branch = "main"
+            });
+        }
     }
 
     std::string github_card::get_uri() const {
@@ -120,7 +145,52 @@ namespace rouen::cards {
     }
 
     bool github_card::render() {
-        return render_window([this]() {
+        rouen::ui::imgui_ui_context_impl ui;
+        return render(ui);
+    }
+
+    bool github_card::render(rouen::ui::ui_context& ui) {
+        return render_window([this, &ui]() {
+            // Presentation mode selector
+            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            ui.separator();
+
+            if (adaptive_view_mode) {
+                auto now = std::chrono::steady_clock::now();
+                auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                    try {
+                        adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                        adaptive_error_.clear();
+                    } catch (const std::exception& e) {
+                        adaptive_error_ = e.what();
+                    }
+                    last_adaptive_parse_time_ = now;
+                }
+
+                if (!adaptive_error_.empty()) {
+                    ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                } else {
+                    adaptive_renderer_.render(
+                        adaptive_bound_, adaptive_input_state_,
+                        rouen::helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                handle_action(payload);
+                            }
+                        },
+                        rouen::helpers::adaptive_cards::render_config{
+                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        }
+                    );
+                }
+                return;
+            }
+
             if (config_mode_) {
                 if (!login_screen_) {
                     login_screen_ = std::make_unique<github::login_screen>(*login_host_);
@@ -135,6 +205,310 @@ namespace rouen::cards {
                 render_main_interface();
             }
         });
+    }
+
+    std::string github_card::get_adaptive_card_json() const {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+        std::vector<glz::json_t> body;
+
+        // Format repo display name
+        std::string repo_display = current_repo;
+        if (auto slash = repo_display.find('/'); slash != std::string::npos && (slash == 0 || repo_display[slash - 1] != ' ')) {
+            repo_display = repo_display.substr(0, slash) + " / " + repo_display.substr(slash + 1);
+        }
+
+        // 1. Header Container
+        {
+            glz::json_t header_container;
+            header_container["type"] = "Container";
+            header_container["style"] = "emphasis";
+
+            glz::json_t col_set;
+            col_set["type"] = "ColumnSet";
+            std::vector<glz::json_t> columns;
+
+            // Col 1: emoji
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+                glz::json_t tb;
+                tb["type"] = "TextBlock";
+                tb["text"] = "\xF0\x9F\x90\x99"; // 🐙
+                tb["size"] = "Large";
+                items.push_back(std::move(tb));
+                col["items"] = std::move(items);
+                columns.push_back(std::move(col));
+            }
+
+            // Col 2: Title and Subtitle
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                std::vector<glz::json_t> items;
+
+                glz::json_t tb_title;
+                tb_title["type"] = "TextBlock";
+                tb_title["text"] = repo_display;
+                tb_title["weight"] = "Bolder";
+                tb_title["size"] = "Large";
+                items.push_back(std::move(tb_title));
+
+                glz::json_t tb_sub;
+                tb_sub["type"] = "TextBlock";
+                tb_sub["text"] = "Native C++20 desktop environment powered by ImGui & SDL3";
+                tb_sub["isSubtle"] = true;
+                tb_sub["size"] = "Small";
+                tb_sub["spacing"] = "None";
+                items.push_back(std::move(tb_sub));
+
+                col["items"] = std::move(items);
+                columns.push_back(std::move(col));
+            }
+
+            // Col 3: Stars Badge
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+
+                glz::json_t tb_star;
+                tb_star["type"] = "TextBlock";
+                tb_star["text"] = std::format("\xE2\xAD\x90 {}", stars_count); // ⭐ 128
+                tb_star["weight"] = "Bolder";
+                tb_star["size"] = "Medium";
+                items.push_back(std::move(tb_star));
+
+                col["items"] = std::move(items);
+                columns.push_back(std::move(col));
+            }
+
+            col_set["columns"] = std::move(columns);
+            header_container["items"] = std::vector<glz::json_t>{std::move(col_set)};
+            body.push_back(std::move(header_container));
+        }
+
+        // 2. FactSet
+        {
+            glz::json_t fact_set;
+            fact_set["type"] = "FactSet";
+            std::vector<glz::json_t> facts;
+
+            {
+                glz::json_t f;
+                f["title"] = "Open Issues:";
+                f["value"] = std::format("{} issue{}", open_issues.size(), open_issues.size() == 1 ? "" : "s");
+                facts.push_back(std::move(f));
+            }
+            {
+                glz::json_t f;
+                f["title"] = "Open Pull Requests:";
+                f["value"] = std::format("{} pull request{}", open_prs.size(), open_prs.size() == 1 ? "" : "s");
+                facts.push_back(std::move(f));
+            }
+            {
+                glz::json_t f;
+                f["title"] = "Default Branch:";
+                f["value"] = default_branch;
+                facts.push_back(std::move(f));
+            }
+            {
+                glz::json_t f;
+                f["title"] = "Latest Release:";
+                f["value"] = latest_release;
+                facts.push_back(std::move(f));
+            }
+
+            fact_set["facts"] = std::move(facts);
+            body.push_back(std::move(fact_set));
+        }
+
+        // 3. Quick Issue Creation Container
+        {
+            glz::json_t issue_container;
+            issue_container["type"] = "Container";
+            issue_container["separator"] = true;
+            std::vector<glz::json_t> items;
+
+            {
+                glz::json_t tb;
+                tb["type"] = "TextBlock";
+                tb["text"] = "Quick Issue Creation";
+                tb["weight"] = "Bolder";
+                items.push_back(std::move(tb));
+            }
+            {
+                glz::json_t input;
+                input["type"] = "Input.Text";
+                input["id"] = "issue_title";
+                input["placeholder"] = "Issue title...";
+                items.push_back(std::move(input));
+            }
+            {
+                glz::json_t input;
+                input["type"] = "Input.Text";
+                input["id"] = "issue_body";
+                input["placeholder"] = "Describe bug or enhancement...";
+                input["isMultiline"] = true;
+                items.push_back(std::move(input));
+            }
+
+            issue_container["items"] = std::move(items);
+            body.push_back(std::move(issue_container));
+        }
+
+        card["body"] = std::move(body);
+
+        // Actions
+        std::vector<glz::json_t> actions;
+        {
+            glz::json_t act;
+            act["type"] = "Action.Execute";
+            act["title"] = "Submit Issue";
+            act["verb"] = "create_issue";
+            actions.push_back(std::move(act));
+        }
+        {
+            glz::json_t act;
+            act["type"] = "Action.Execute";
+            act["title"] = "Refresh Repository";
+            act["verb"] = "refresh_repo";
+            actions.push_back(std::move(act));
+        }
+        {
+            glz::json_t act;
+            act["type"] = "Action.OpenUrl";
+            act["title"] = "Open on GitHub";
+            std::string clean_repo = current_repo;
+            if (auto pos = clean_repo.find(" / "); pos != std::string::npos) {
+                clean_repo = clean_repo.substr(0, pos) + "/" + clean_repo.substr(pos + 3);
+            }
+            act["url"] = std::format("https://github.com/{}", clean_repo);
+            actions.push_back(std::move(act));
+        }
+
+        card["actions"] = std::move(actions);
+
+        std::string out;
+        auto ec = glz::write_json(card, out);
+        if (ec) {
+            return "{\"type\":\"AdaptiveCard\",\"version\":\"1.5\",\"body\":[]}";
+        }
+        return out;
+    }
+
+    void github_card::handle_action(std::string_view action_json) {
+        if (action_json.empty()) return;
+        try {
+            glz::json_t payload{};
+            std::string verb;
+            glz::json_t data{};
+
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (!err && payload.is_object()) {
+                if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                    verb = payload["verb"].get<std::string>();
+                } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                    verb = payload["action"].get<std::string>();
+                }
+
+                if (payload.contains("data") && payload["data"].is_object()) {
+                    data = payload["data"];
+                } else {
+                    data = payload;
+                }
+            } else {
+                verb = std::string(action_json);
+            }
+
+            if (verb.empty()) return;
+
+            last_action_ = verb;
+
+            if (verb == "create_issue") {
+                std::string title;
+                std::string body;
+                if (data.is_object()) {
+                    if (data.contains("issue_title") && data["issue_title"].holds<std::string>()) {
+                        title = data["issue_title"].get<std::string>();
+                    } else if (data.contains("title") && data["title"].holds<std::string>()) {
+                        title = data["title"].get<std::string>();
+                    }
+
+                    if (data.contains("issue_body") && data["issue_body"].holds<std::string>()) {
+                        body = data["issue_body"].get<std::string>();
+                    } else if (data.contains("body") && data["body"].holds<std::string>()) {
+                        body = data["body"].get<std::string>();
+                    }
+                }
+                last_created_issue_title_ = title;
+                last_created_issue_body_ = body;
+
+                github_issue issue;
+                issue.number = static_cast<int>(open_issues.size() + 1);
+                issue.title = title;
+                issue.body = body;
+                issue.state = "open";
+                open_issues.push_back(std::move(issue));
+
+                if (enable_api_sync && host_ && login_host_ && !login_host_->personal_token().empty() && !current_repo.empty() && !title.empty()) {
+                    try {
+                        std::string const url = std::format("https://api.github.com/repos/{}/issues", current_repo);
+                        glz::json_t issue_req;
+                        issue_req["title"] = title;
+                        issue_req["body"] = body;
+                        std::string req_str;
+                        if (!glz::write_json(issue_req, req_str)) {
+                            http::fetch fetcher;
+                            fetcher.post(url, req_str, host_->header_client());
+                        }
+                    } catch (const std::exception& e) {
+                        LOG_COMPONENT("GitHubCard", LOG_LEVEL_WARN, std::format("Failed to post issue via API: {}", e.what()));
+                    }
+                }
+            } else if (verb == "filter_issues") {
+                std::string filter_val;
+                if (data.is_object()) {
+                    if (data.contains("filter_type") && data["filter_type"].holds<std::string>()) {
+                        filter_val = data["filter_type"].get<std::string>();
+                    } else if (data.contains("filter") && data["filter"].holds<std::string>()) {
+                        filter_val = data["filter"].get<std::string>();
+                    }
+                }
+                filter_type = filter_val;
+                filter_query = filter_val;
+            } else if (verb == "refresh_repo") {
+                repo_refreshed_ = true;
+                if (enable_api_sync && host_ && login_host_ && !login_host_->personal_token().empty() && !current_repo.empty()) {
+                    try {
+                        auto repo_data = host_->find_repo(current_repo);
+                        if (repo_data.contains("stargazers_count")) {
+                            stars_count = static_cast<int>(repo_data["stargazers_count"].get<double>());
+                        }
+                        if (repo_data.contains("default_branch") && repo_data["default_branch"].holds<std::string>()) {
+                            default_branch = repo_data["default_branch"].get<std::string>();
+                        }
+                    } catch (const std::exception& e) {
+                        LOG_COMPONENT("GitHubCard", LOG_LEVEL_WARN, std::format("Failed to refresh repo via API: {}", e.what()));
+                    }
+                }
+            } else if (verb == "toggle_adaptive_view") {
+                adaptive_view_mode = !adaptive_view_mode;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[github] Action error: " << e.what() << std::endl;
+        }
+    }
+
+    bool github_card::is_authenticated() const noexcept {
+        return login_host_ && !login_host_->personal_token().empty();
     }
 
     void github_card::render_main_interface() {

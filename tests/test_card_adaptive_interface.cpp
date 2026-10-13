@@ -27,6 +27,7 @@
 #include "../src/cards/development/vcproject_card.hpp"
 #include "../src/cards/development/fs-directory.hpp"
 #include "../src/cards/development/git.hpp"
+#include "../src/cards/development/github/github_card.hpp"
 #include "../src/cards/productivity/calculator.hpp"
 #include "../src/cards/productivity/converter.hpp"
 #include "../src/cards/media/camera.hpp"
@@ -2188,6 +2189,114 @@ TEST(gitAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(git_card.handle_action("{\"verb\":\"git_checkout\",\"data\":{\"branch_name\":null}}"));
     EXPECT_NO_THROW(git_card.handle_action("{\"verb\":\"git_stage_file\",\"data\":{}}"));
 }
+
+TEST(github_cardAdaptiveTest, JsonSerialization) {
+    rouen::cards::github_card card{};
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_open_issues_fact = false;
+    bool found_open_prs_fact = false;
+    bool found_default_branch_fact = false;
+    bool found_latest_release_fact = false;
+    bool found_issue_title_input = false;
+    bool found_issue_body_input = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Open Issues:") found_open_issues_fact = true;
+                if (fact.title == "Open Pull Requests:") found_open_prs_fact = true;
+                if (fact.title == "Default Branch:") found_default_branch_fact = true;
+                if (fact.title == "Latest Release:") found_latest_release_fact = true;
+            }
+        }
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.Text" && child.id == "issue_title") {
+                    found_issue_title_input = true;
+                }
+                if (child.type == "Input.Text" && child.id == "issue_body") {
+                    found_issue_body_input = true;
+                }
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_open_issues_fact);
+    EXPECT_TRUE(found_open_prs_fact);
+    EXPECT_TRUE(found_default_branch_fact);
+    EXPECT_TRUE(found_latest_release_fact);
+    EXPECT_TRUE(found_issue_title_input);
+    EXPECT_TRUE(found_issue_body_input);
+
+    bool found_create_issue_action = false;
+    bool found_refresh_repo_action = false;
+    bool found_open_url_action = false;
+
+    for (const auto& act : doc.actions) {
+        if (act.verb == "create_issue") found_create_issue_action = true;
+        if (act.verb == "refresh_repo") found_refresh_repo_action = true;
+        if (act.type == "Action.OpenUrl" && act.url.find("github.com") != std::string::npos) {
+            found_open_url_action = true;
+        }
+    }
+
+    EXPECT_TRUE(found_create_issue_action);
+    EXPECT_TRUE(found_refresh_repo_action);
+    EXPECT_TRUE(found_open_url_action);
+}
+
+TEST(github_cardAdaptiveTest, ActionDispatch) {
+    rouen::cards::github_card card{};
+
+    // Initial state
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+
+    // 1. create_issue
+    size_t const initial_issues = card.get_open_issues().size();
+    card.handle_action(R"({"type":"Action.Execute","verb":"create_issue","data":{"issue_title":"Add adaptive cards to github card","issue_body":"Support adaptive card 1.5 JSON rendering"}})");
+    EXPECT_EQ(card.get_last_action(), "create_issue");
+    EXPECT_EQ(card.get_last_created_issue_title(), "Add adaptive cards to github card");
+    EXPECT_EQ(card.get_last_created_issue_body(), "Support adaptive card 1.5 JSON rendering");
+    EXPECT_EQ(card.get_open_issues().size(), initial_issues + 1);
+
+    // 2. filter_issues
+    card.handle_action(R"({"type":"Action.Execute","verb":"filter_issues","data":{"filter_type":"open"}})");
+    EXPECT_EQ(card.get_last_action(), "filter_issues");
+    EXPECT_EQ(card.get_filter_type(), "open");
+
+    // 3. refresh_repo
+    card.handle_action(R"({"type":"Action.Execute","verb":"refresh_repo"})");
+    EXPECT_EQ(card.get_last_action(), "refresh_repo");
+    EXPECT_TRUE(card.is_repo_refreshed());
+
+    // 4. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(github_cardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::github_card card{};
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"create_issue\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"create_issue\",\"data\":{\"issue_title\":null}}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"filter_issues\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"refresh_repo\",\"data\":null}"));
+}
+
 
 
 
