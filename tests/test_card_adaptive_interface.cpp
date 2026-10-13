@@ -40,6 +40,7 @@
 #include "../src/cards/media/media_card.hpp"
 #include "../src/cards/media/media_companion.hpp"
 #include "../src/cards/media/radio.hpp"
+#include "../src/cards/media/radiocut.hpp"
 #include "../src/cards/development/cmake.hpp"
 #include "../src/cards/development/diff_card.hpp"
 #include "../src/cards/information/directory_card.hpp"
@@ -3875,6 +3876,131 @@ TEST(radioAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"radio_stop\",\"data\":null}"));
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"radio_toggle_fav\",\"data\":null}"));
 }
+
+TEST(radiocutAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::radiocut card{};
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_header = false;
+    bool found_date_input = false;
+    bool found_hour_choice = false;
+    bool found_segment_title = false;
+    bool found_recorded_on = false;
+    bool found_duration = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "ColumnSet") {
+                    for (const auto& col : child.columns) {
+                        for (const auto& col_item : col.items) {
+                            if (col_item.text.find("RadioCut On-Demand Archive") != std::string::npos) {
+                                found_header = true;
+                            }
+                        }
+                    }
+                }
+                if (child.type == "Input.Date" && child.id == "cut_date") {
+                    found_date_input = true;
+                }
+                if (child.type == "Input.ChoiceSet" && child.id == "cut_hour") {
+                    found_hour_choice = true;
+                    EXPECT_GE(child.choices.size(), 3u);
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Segment Title:") found_segment_title = true;
+                if (fact.title == "Recorded On:") found_recorded_on = true;
+                if (fact.title == "Duration:") found_duration = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_header);
+    EXPECT_TRUE(found_date_input);
+    EXPECT_TRUE(found_hour_choice);
+    EXPECT_TRUE(found_segment_title);
+    EXPECT_TRUE(found_recorded_on);
+    EXPECT_TRUE(found_duration);
+
+    bool found_play_action = false;
+    bool found_download_action = false;
+
+    for (const auto& act : doc.actions) {
+        if (act.verb == "radiocut_play") found_play_action = true;
+        if (act.verb == "radiocut_download") found_download_action = true;
+    }
+
+    EXPECT_TRUE(found_play_action);
+    EXPECT_TRUE(found_download_action);
+}
+
+TEST(radiocutAdaptiveTest, ActionDispatch) {
+    rouen::cards::radiocut card{};
+
+    // Initial state assertions
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+    EXPECT_FALSE(card.is_playing());
+    EXPECT_FALSE(card.is_downloading());
+    EXPECT_EQ(card.get_broadcast_date(), "2026-10-06");
+    EXPECT_EQ(card.get_broadcast_hour(), "08:00");
+    EXPECT_FLOAT_EQ(card.get_playback_speed(), 1.25f);
+
+    // 1. radiocut_play
+    card.handle_action(R"({"type":"Action.Execute","verb":"radiocut_play","data":{"station":"Radio Mitre","cut_date":"2026-10-07","cut_hour":"09:00","cut_title":"Test Title"}})");
+    EXPECT_EQ(card.get_last_action(), "radiocut_play");
+    EXPECT_TRUE(card.is_playing());
+    EXPECT_EQ(card.get_selected_station(), "Radio Mitre");
+    EXPECT_EQ(card.get_broadcast_date(), "2026-10-07");
+    EXPECT_EQ(card.get_broadcast_hour(), "09:00");
+    EXPECT_EQ(card.get_cut_title(), "Test Title");
+
+    // 2. radiocut_speed numeric
+    card.handle_action(R"({"type":"Action.Execute","verb":"radiocut_speed","data":{"speed":1.5}})");
+    EXPECT_EQ(card.get_last_action(), "radiocut_speed");
+    EXPECT_FLOAT_EQ(card.get_playback_speed(), 1.5f);
+
+    // radiocut_speed string format
+    card.handle_action(R"({"type":"Action.Execute","verb":"radiocut_speed","data":{"speed":"2.0x"}})");
+    EXPECT_FLOAT_EQ(card.get_playback_speed(), 2.0f);
+
+    // 3. radiocut_download
+    card.handle_action(R"({"type":"Action.Execute","verb":"radiocut_download"})");
+    EXPECT_EQ(card.get_last_action(), "radiocut_download");
+    EXPECT_TRUE(card.is_downloading());
+
+    // 4. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(radiocutAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::radiocut card{};
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"radiocut_play\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"radiocut_speed\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"radiocut_speed\",\"data\":{\"speed\":\"invalid\"}}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"radiocut_download\",\"data\":null}"));
+}
+
 
 
 

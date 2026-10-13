@@ -12,8 +12,15 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <cmath>
+#include <chrono>
+#include <format>
 
+#include "../../fonts.hpp"
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
 #include "../interface/card.hpp"
 #include "../../helpers/media_player.hpp"
 #include "../../helpers/fetch.hpp"
@@ -124,8 +131,342 @@ namespace rouen::cards {
             renderer = r;
         }
         
+        /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+        [[nodiscard]] std::string get_adaptive_card_json() const override {
+            glz::json_t card;
+            card["type"] = "AdaptiveCard";
+            card["version"] = "1.5";
+            card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+            std::vector<glz::json_t> body;
+
+            // 1. Header Container
+            {
+                glz::json_t header;
+                header["type"] = "Container";
+                header["style"] = "emphasis";
+
+                glz::json_t col_set;
+                col_set["type"] = "ColumnSet";
+                std::vector<glz::json_t> columns;
+
+                // Column 1: Emoji icon
+                {
+                    glz::json_t col;
+                    col["type"] = "Column";
+                    col["width"] = "auto";
+                    std::vector<glz::json_t> items;
+                    glz::json_t tb;
+                    tb["type"] = "TextBlock";
+                    tb["text"] = "\xF0\x9F\x8E\x99\xEF\xB8\x8F"; // 🎙️
+                    tb["size"] = "Large";
+                    items.push_back(std::move(tb));
+                    col["items"] = std::move(items);
+                    columns.push_back(std::move(col));
+                }
+
+                // Column 2: Title and Subtitle
+                {
+                    glz::json_t col;
+                    col["type"] = "Column";
+                    col["width"] = "stretch";
+                    std::vector<glz::json_t> items;
+
+                    glz::json_t tb_title;
+                    tb_title["type"] = "TextBlock";
+                    tb_title["text"] = "RadioCut On-Demand Archive";
+                    tb_title["weight"] = "Bolder";
+                    tb_title["size"] = "Large";
+                    items.push_back(std::move(tb_title));
+
+                    glz::json_t tb_sub;
+                    tb_sub["type"] = "TextBlock";
+                    tb_sub["text"] = selected_station;
+                    tb_sub["isSubtle"] = true;
+                    tb_sub["size"] = "Small";
+                    items.push_back(std::move(tb_sub));
+
+                    col["items"] = std::move(items);
+                    columns.push_back(std::move(col));
+                }
+
+                // Column 3: Playback speed badge
+                {
+                    glz::json_t col;
+                    col["type"] = "Column";
+                    col["width"] = "auto";
+                    std::vector<glz::json_t> items;
+
+                    glz::json_t tb;
+                    tb["type"] = "TextBlock";
+                    std::string speed_text;
+                    if (std::abs(playback_speed - std::round(playback_speed)) < 0.001f) {
+                        speed_text = std::format("{:.1f}x Speed", playback_speed);
+                    } else {
+                        speed_text = std::format("{:.2f}x Speed", playback_speed);
+                        if (speed_text.ends_with("0x Speed")) {
+                            speed_text.erase(speed_text.size() - 8, 1);
+                        }
+                    }
+                    tb["text"] = speed_text;
+                    tb["weight"] = "Bolder";
+                    tb["color"] = "Accent";
+                    tb["size"] = "Small";
+                    items.push_back(std::move(tb));
+
+                    col["items"] = std::move(items);
+                    columns.push_back(std::move(col));
+                }
+
+                col_set["columns"] = std::move(columns);
+                std::vector<glz::json_t> header_items;
+                header_items.push_back(std::move(col_set));
+                header["items"] = std::move(header_items);
+                body.push_back(std::move(header));
+            }
+
+            // 2. Input Container (Date & ChoiceSet)
+            {
+                glz::json_t input_container;
+                input_container["type"] = "Container";
+                std::vector<glz::json_t> input_items;
+
+                glz::json_t input_date;
+                input_date["type"] = "Input.Date";
+                input_date["id"] = "cut_date";
+                input_date["label"] = "Broadcast Date";
+                input_date["value"] = broadcast_date;
+                input_items.push_back(std::move(input_date));
+
+                glz::json_t choice_set;
+                choice_set["type"] = "Input.ChoiceSet";
+                choice_set["id"] = "cut_hour";
+                choice_set["label"] = "Broadcast Hour";
+                choice_set["value"] = broadcast_hour;
+
+                std::vector<glz::json_t> choices;
+                choices.push_back(glz::json_t::object_t{
+                    {"title", "08:00 - 09:00 (Morning Overview)"},
+                    {"value", "08:00"}
+                });
+                choices.push_back(glz::json_t::object_t{
+                    {"title", "09:00 - 10:00 (Guest Interview)"},
+                    {"value", "09:00"}
+                });
+                choices.push_back(glz::json_t::object_t{
+                    {"title", "10:00 - 11:00 (Economic Analysis)"},
+                    {"value", "10:00"}
+                });
+                choice_set["choices"] = std::move(choices);
+                input_items.push_back(std::move(choice_set));
+
+                input_container["items"] = std::move(input_items);
+                body.push_back(std::move(input_container));
+            }
+
+            // 3. FactSet
+            {
+                glz::json_t fact_set;
+                fact_set["type"] = "FactSet";
+                std::vector<glz::json_t> facts;
+
+                facts.push_back(glz::json_t::object_t{
+                    {"title", "Segment Title:"},
+                    {"value", cut_title}
+                });
+                facts.push_back(glz::json_t::object_t{
+                    {"title", "Recorded On:"},
+                    {"value", recorded_on}
+                });
+                facts.push_back(glz::json_t::object_t{
+                    {"title", "Duration:"},
+                    {"value", duration_text}
+                });
+
+                fact_set["facts"] = std::move(facts);
+                body.push_back(std::move(fact_set));
+            }
+
+            card["body"] = std::move(body);
+
+            // 4. Actions
+            {
+                std::vector<glz::json_t> actions;
+                actions.push_back(glz::json_t::object_t{
+                    {"type", "Action.Execute"},
+                    {"title", "Play Cut"},
+                    {"verb", "radiocut_play"}
+                });
+                actions.push_back(glz::json_t::object_t{
+                    {"type", "Action.Execute"},
+                    {"title", "Download MP3"},
+                    {"verb", "radiocut_download"}
+                });
+                card["actions"] = std::move(actions);
+            }
+
+            std::string out;
+            static_cast<void>(glz::write_json(card, out));
+            return out;
+        }
+
+        /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+        void handle_action(std::string_view action_json) override {
+            if (action_json.empty()) return;
+
+            try {
+                std::string verb;
+                glz::json_t data{};
+                glz::json_t payload{};
+
+                auto err = glz::read_json(payload, std::string(action_json));
+                if (!err && payload.is_object()) {
+                    if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                        verb = payload["verb"].get<std::string>();
+                    } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                        verb = payload["action"].get<std::string>();
+                    }
+
+                    if (payload.contains("data") && payload["data"].is_object()) {
+                        data = payload["data"];
+                    } else {
+                        data = payload;
+                    }
+                } else {
+                    verb = std::string(action_json);
+                }
+
+                if (verb == "radiocut_play") {
+                    last_action_ = "radiocut_play";
+                    if (data.is_object()) {
+                        if (data.contains("station") && data["station"].holds<std::string>()) {
+                            selected_station = data["station"].get<std::string>();
+                        } else if (data.contains("selected_station") && data["selected_station"].holds<std::string>()) {
+                            selected_station = data["selected_station"].get<std::string>();
+                        }
+
+                        if (data.contains("date") && data["date"].holds<std::string>()) {
+                            broadcast_date = data["date"].get<std::string>();
+                        } else if (data.contains("cut_date") && data["cut_date"].holds<std::string>()) {
+                            broadcast_date = data["cut_date"].get<std::string>();
+                        }
+
+                        if (data.contains("hour") && data["hour"].holds<std::string>()) {
+                            broadcast_hour = data["hour"].get<std::string>();
+                        } else if (data.contains("cut_hour") && data["cut_hour"].holds<std::string>()) {
+                            broadcast_hour = data["cut_hour"].get<std::string>();
+                        }
+
+                        if (data.contains("title") && data["title"].holds<std::string>()) {
+                            cut_title = data["title"].get<std::string>();
+                        } else if (data.contains("cut_title") && data["cut_title"].holds<std::string>()) {
+                            cut_title = data["cut_title"].get<std::string>();
+                        }
+                    }
+                    is_playing_ = true;
+                    last_adaptive_parse_time_ = {};
+                } else if (verb == "radiocut_speed") {
+                    last_action_ = "radiocut_speed";
+                    if (data.is_object()) {
+                        if (data.contains("speed")) {
+                            if (data["speed"].holds<double>()) {
+                                playback_speed = static_cast<float>(data["speed"].get<double>());
+                            } else if (data["speed"].holds<std::string>()) {
+                                std::string s = data["speed"].get<std::string>();
+                                if (!s.empty() && (s.back() == 'x' || s.back() == 'X')) {
+                                    s.pop_back();
+                                }
+                                try {
+                                    playback_speed = std::stof(s);
+                                } catch (...) {}
+                            }
+                        } else if (data.contains("playback_speed")) {
+                            if (data["playback_speed"].holds<double>()) {
+                                playback_speed = static_cast<float>(data["playback_speed"].get<double>());
+                            } else if (data["playback_speed"].holds<std::string>()) {
+                                std::string s = data["playback_speed"].get<std::string>();
+                                if (!s.empty() && (s.back() == 'x' || s.back() == 'X')) {
+                                    s.pop_back();
+                                }
+                                try {
+                                    playback_speed = std::stof(s);
+                                } catch (...) {}
+                            }
+                        }
+                    }
+                    last_adaptive_parse_time_ = {};
+                } else if (verb == "radiocut_download") {
+                    last_action_ = "radiocut_download";
+                    is_downloading_ = true;
+                    last_adaptive_parse_time_ = {};
+                } else if (verb == "toggle_adaptive_view") {
+                    last_action_ = "toggle_adaptive_view";
+                    adaptive_view_mode = !adaptive_view_mode;
+                    last_adaptive_parse_time_ = {};
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[radiocut] Action error: " << e.what() << std::endl;
+            } catch (...) {}
+        }
+
+        [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+        void set_adaptive_view_mode(bool v) noexcept { adaptive_view_mode = v; }
+
+        [[nodiscard]] const std::string& get_selected_station() const noexcept { return selected_station; }
+        [[nodiscard]] const std::string& get_broadcast_date() const noexcept { return broadcast_date; }
+        [[nodiscard]] const std::string& get_broadcast_hour() const noexcept { return broadcast_hour; }
+        [[nodiscard]] const std::string& get_cut_title() const noexcept { return cut_title; }
+        [[nodiscard]] float get_playback_speed() const noexcept { return playback_speed; }
+        [[nodiscard]] bool is_playing() const noexcept { return is_playing_; }
+        [[nodiscard]] bool is_downloading() const noexcept { return is_downloading_; }
+        [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
+
         bool render() override {
-            return render_window([this]() {
+            rouen::ui::imgui_ui_context_impl ui;
+            return render(ui);
+        }
+
+        bool render(rouen::ui::ui_context& ui) override {
+            return render_window([this, &ui]() {
+                // Presentation mode selector
+                ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+                ui.separator();
+
+                if (adaptive_view_mode) {
+                    auto now = std::chrono::steady_clock::now();
+                    auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                    if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                        try {
+                            adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                            adaptive_error_.clear();
+                        } catch (const std::exception& e) {
+                            adaptive_error_ = e.what();
+                        }
+                        last_adaptive_parse_time_ = now;
+                    }
+
+                    if (!adaptive_error_.empty()) {
+                        ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                    } else {
+                        adaptive_renderer_.render(
+                            adaptive_bound_, adaptive_input_state_,
+                            helpers::adaptive_cards::renderer::action_callbacks{
+                                .open_url = [](const std::string& url) {
+                                    static_cast<void>(rouen::platform::open_url(url));
+                                },
+                                .on_submit = [this](const std::string& payload) {
+                                    handle_action(payload);
+                                }
+                            },
+                            helpers::adaptive_cards::render_config{
+                                .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                                .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                                .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                            }
+                        );
+                    }
+                    return;
+                }
                 ImGui::PushStyleColor(ImGuiCol_Header, colors[1]);
                 
                 // Search Input Field
@@ -315,6 +656,27 @@ namespace rouen::cards {
         }
         
     private:
+        // Adaptive Card presentation override state
+        bool adaptive_view_mode{false};
+        mutable helpers::adaptive_cards::parser adaptive_parser_{};
+        mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+        mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+        mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+        std::string adaptive_error_{};
+        std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+
+        // State synchronization variables
+        std::string selected_station{"Radio Con Vos FM 89.9 \u2022 Reynaldo Sietecase"};
+        std::string broadcast_date{"2026-10-06"};
+        std::string broadcast_hour{"08:00"};
+        std::string cut_title{"Entrevista central sobre desarrollo tecnol\u00f3gico"};
+        std::string recorded_on{"Tuesday, October 6, 2026 at 08:24"};
+        std::string duration_text{"18 minutes 40 seconds"};
+        float playback_speed{1.25f};
+        bool is_playing_{false};
+        bool is_downloading_{false};
+        std::string last_action_{};
+
         char search_buffer[256] = "";
         std::vector<radiocut_cut> cuts;
         std::mutex data_mutex;
