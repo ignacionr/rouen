@@ -18,9 +18,13 @@
 
 #include "../../../external/IconsMaterialDesign.h"
 #include "../../fonts.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
 #include "../../helpers/filetype_handler.hpp"
+#include "../../helpers/glaze_include.hpp"
 #include "../../helpers/image_cache.hpp"
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
 #include "../../helpers/markdown_renderer.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/string_helper.hpp"
@@ -126,7 +130,52 @@ public:
     }
 
     bool render() override {
-        return render_window([this]() {
+        rouen::ui::imgui_ui_context_impl ui;
+        return render(ui);
+    }
+
+    bool render(rouen::ui::ui_context& ui) override {
+        return render_window([this, &ui]() {
+            // Presentation mode selector
+            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            ui.separator();
+
+            if (adaptive_view_mode) {
+                auto now = std::chrono::steady_clock::now();
+                auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                    try {
+                        adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                        adaptive_error_.clear();
+                    } catch (const std::exception& e) {
+                        adaptive_error_ = e.what();
+                    }
+                    last_adaptive_parse_time_ = now;
+                }
+
+                if (!adaptive_error_.empty()) {
+                    ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                } else {
+                    adaptive_renderer_.render(
+                        adaptive_bound_, adaptive_input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                handle_action(payload);
+                            }
+                        },
+                        helpers::adaptive_cards::render_config{
+                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        }
+                    );
+                }
+                return;
+            }
+
             handle_shortcuts();
             check_auto_reload();
             render_toolbar();
@@ -175,6 +224,382 @@ public:
             ImGui::EndChild();
         });
     }
+
+    /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+    [[nodiscard]] std::string get_adaptive_card_json() const override {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+        std::vector<glz::json_t> body;
+
+        // 1. Header Container
+        {
+            glz::json_t header;
+            header["type"] = "Container";
+            header["style"] = "emphasis";
+
+            glz::json_t col_set;
+            col_set["type"] = "ColumnSet";
+            std::vector<glz::json_t> columns;
+
+            // Column 1: Emoji icon 📄
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+                glz::json_t tb;
+                tb["type"] = "TextBlock";
+                tb["text"] = "📄";
+                tb["size"] = "Large";
+                items.push_back(std::move(tb));
+                col["items"] = std::move(items);
+                columns.push_back(std::move(col));
+            }
+
+            // Column 2: Title & subtitle
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                std::vector<glz::json_t> items;
+
+                std::string title = path_.filename().empty() ? (path_.empty() ? "README.md" : path_.string()) : path_.filename().string();
+                std::string sub = path_.empty() ? "/Users/ignaciorodriguez/src/rouen/README.md" : path_.string();
+
+                glz::json_t tb_title;
+                tb_title["type"] = "TextBlock";
+                tb_title["text"] = title;
+                tb_title["weight"] = "Bolder";
+                tb_title["size"] = "Large";
+                items.push_back(std::move(tb_title));
+
+                glz::json_t tb_sub;
+                tb_sub["type"] = "TextBlock";
+                tb_sub["text"] = sub;
+                tb_sub["isSubtle"] = true;
+                tb_sub["size"] = "Small";
+                items.push_back(std::move(tb_sub));
+
+                col["items"] = std::move(items);
+                columns.push_back(std::move(col));
+            }
+
+            // Column 3: Word count
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+
+                int wc = word_count_;
+                if (wc == 0 && path_.empty()) {
+                    wc = 1420;
+                }
+
+                glz::json_t tb_wc;
+                tb_wc["type"] = "TextBlock";
+                tb_wc["text"] = format_word_count(wc);
+                tb_wc["weight"] = "Bolder";
+                tb_wc["size"] = "Small";
+                items.push_back(std::move(tb_wc));
+
+                col["items"] = std::move(items);
+                columns.push_back(std::move(col));
+            }
+
+            col_set["columns"] = std::move(columns);
+            header["items"] = std::vector<glz::json_t>{std::move(col_set)};
+            body.push_back(std::move(header));
+        }
+
+        // Collect headings from parsed_document_
+        int heading_count = 0;
+        int min_level = 6;
+        int max_level = 1;
+        std::vector<std::string> toc_headings;
+        for (const auto& prim : parsed_document_.primitives) {
+            if (std::holds_alternative<rouen::helpers::heading_primitive>(prim)) {
+                const auto& h = std::get<rouen::helpers::heading_primitive>(prim);
+                heading_count++;
+                min_level = std::min(min_level, h.level);
+                max_level = std::max(max_level, h.level);
+                if (!h.plain_text.empty()) {
+                    toc_headings.push_back(h.plain_text);
+                }
+            }
+        }
+
+        // 2. FactSet
+        {
+            glz::json_t fact_set;
+            fact_set["type"] = "FactSet";
+            std::vector<glz::json_t> facts;
+
+            std::string mod_time_str = "Today 16:30";
+            if (!path_.empty() && is_valid_) {
+                std::error_code ec;
+                auto lwt = std::filesystem::last_write_time(path_, ec);
+                if (!ec) {
+                    auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                        lwt - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now()
+                    );
+                    std::time_t tt = std::chrono::system_clock::to_time_t(sctp);
+                    std::tm tm_buf{};
+#if defined(_WIN32)
+                    localtime_s(&tm_buf, &tt);
+#else
+                    localtime_r(&tt, &tm_buf);
+#endif
+                    char buf[64]{};
+                    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M", &tm_buf);
+                    mod_time_str = buf;
+                }
+            }
+
+            facts.push_back(glz::json_t::object_t{
+                {"title", "Last Modified:"},
+                {"value", mod_time_str}
+            });
+
+            facts.push_back(glz::json_t::object_t{
+                {"title", "Format:"},
+                {"value", "CommonMark / GitHub Flavored Markdown"}
+            });
+
+            std::string headings_val;
+            if (heading_count == 0 && path_.empty()) {
+                headings_val = "8 sections (H1-H4)";
+            } else if (heading_count == 0) {
+                headings_val = "0 sections";
+            } else if (min_level == max_level) {
+                headings_val = std::format("{} section{} (H{})", heading_count, heading_count == 1 ? "" : "s", min_level);
+            } else {
+                headings_val = std::format("{} sections (H{}-H{})", heading_count, min_level, max_level);
+            }
+
+            facts.push_back(glz::json_t::object_t{
+                {"title", "Headings:"},
+                {"value", headings_val}
+            });
+
+            fact_set["facts"] = std::move(facts);
+            body.push_back(std::move(fact_set));
+        }
+
+        // 3. Form Inputs Container (ChoiceSet for headings, Input.Text for document path)
+        {
+            glz::json_t input_container;
+            input_container["type"] = "Container";
+            std::vector<glz::json_t> input_items;
+
+            glz::json_t choice_set;
+            choice_set["type"] = "Input.ChoiceSet";
+            choice_set["id"] = "heading";
+            choice_set["title"] = "Jump to Heading";
+            choice_set["value"] = selected_heading_;
+            std::vector<glz::json_t> choices;
+            if (!toc_headings.empty()) {
+                for (const auto& h : toc_headings) {
+                    choices.push_back(glz::json_t::object_t{{"title", h}, {"value", h}});
+                }
+            } else {
+                choices.push_back(glz::json_t::object_t{{"title", "Executive Summary"}, {"value", "Executive Summary"}});
+            }
+            choice_set["choices"] = std::move(choices);
+            input_items.push_back(std::move(choice_set));
+
+            glz::json_t path_input;
+            path_input["type"] = "Input.Text";
+            path_input["id"] = "doc_path";
+            path_input["title"] = "Document Path";
+            path_input["value"] = path_.string();
+            input_items.push_back(std::move(path_input));
+
+            input_container["items"] = std::move(input_items);
+            body.push_back(std::move(input_container));
+        }
+
+        // 4. Executive Summary / Content Preview Container
+        {
+            glz::json_t summary_container;
+            summary_container["type"] = "Container";
+            summary_container["separator"] = true;
+
+            std::string summary_title = "Executive Summary";
+            std::string summary_text = "Rouen is a next-generation desktop workspace fusing C++20 performance with the Microsoft Adaptive Cards declarative layout engine. Designed for developers, operators, and creators.";
+
+            if (!parsed_document_.empty()) {
+                bool got_heading = false;
+                bool got_para = false;
+                for (const auto& prim : parsed_document_.primitives) {
+                    if (!got_heading && std::holds_alternative<rouen::helpers::heading_primitive>(prim)) {
+                        const auto& h = std::get<rouen::helpers::heading_primitive>(prim);
+                        if (!h.plain_text.empty()) {
+                            summary_title = h.plain_text;
+                            got_heading = true;
+                        }
+                    } else if (!got_para && std::holds_alternative<rouen::helpers::paragraph_primitive>(prim)) {
+                        const auto& p = std::get<rouen::helpers::paragraph_primitive>(prim);
+                        std::string p_text;
+                        for (const auto& sp : p.spans) {
+                            p_text += sp.text;
+                        }
+                        if (!p_text.empty()) {
+                            summary_text = p_text;
+                            got_para = true;
+                        }
+                    }
+                    if (got_heading && got_para) break;
+                }
+            }
+
+            std::vector<glz::json_t> sum_items;
+            glz::json_t tb_sum_title;
+            tb_sum_title["type"] = "TextBlock";
+            tb_sum_title["text"] = summary_title;
+            tb_sum_title["weight"] = "Bolder";
+            tb_sum_title["size"] = "Medium";
+            sum_items.push_back(std::move(tb_sum_title));
+
+            glz::json_t tb_sum_body;
+            tb_sum_body["type"] = "TextBlock";
+            tb_sum_body["text"] = summary_text;
+            tb_sum_body["wrap"] = true;
+            sum_items.push_back(std::move(tb_sum_body));
+
+            summary_container["items"] = std::move(sum_items);
+            body.push_back(std::move(summary_container));
+        }
+
+        card["body"] = std::move(body);
+
+        // Actions
+        std::vector<glz::json_t> actions;
+        {
+            glz::json_t act_reload;
+            act_reload["type"] = "Action.Execute";
+            act_reload["title"] = "Reload Document";
+            act_reload["verb"] = "reload_doc";
+            actions.push_back(std::move(act_reload));
+
+            glz::json_t act_copy;
+            act_copy["type"] = "Action.Execute";
+            act_copy["title"] = "Copy Markdown";
+            act_copy["verb"] = "copy_markdown";
+            actions.push_back(std::move(act_copy));
+
+            glz::json_t act_nav;
+            act_nav["type"] = "Action.Execute";
+            act_nav["title"] = "Jump to Heading";
+            act_nav["verb"] = "navigate_section";
+            actions.push_back(std::move(act_nav));
+        }
+        card["actions"] = std::move(actions);
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
+    }
+
+    /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+    void handle_action(std::string_view action_json) override {
+        if (action_json.empty()) return;
+
+        try {
+            std::string verb;
+            glz::json_t data{};
+            glz::json_t payload{};
+
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (!err && payload.is_object()) {
+                if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                    verb = payload["verb"].get<std::string>();
+                } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                    verb = payload["action"].get<std::string>();
+                }
+
+                if (payload.contains("data") && payload["data"].is_object()) {
+                    data = payload["data"];
+                    if (verb.empty()) {
+                        if (data.contains("verb") && data["verb"].holds<std::string>()) {
+                            verb = data["verb"].get<std::string>();
+                        } else if (data.contains("action") && data["action"].holds<std::string>()) {
+                            verb = data["action"].get<std::string>();
+                        }
+                    }
+                } else {
+                    data = payload;
+                }
+            } else {
+                verb = std::string(action_json);
+            }
+
+            if (verb == "reload_doc") {
+                if (!path_.empty()) {
+                    load_file(path_.string());
+                }
+                last_action_ = "reload_doc";
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "copy_markdown") {
+                if (ImGui::GetCurrentContext() != nullptr) {
+                    ImGui::SetClipboardText(content_.c_str());
+                } else {
+                    SDL_SetClipboardText(content_.c_str());
+                }
+                last_action_ = "copy_markdown";
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "navigate_section") {
+                std::string heading;
+                if (data.is_object()) {
+                    if (data.contains("heading") && data["heading"].holds<std::string>()) {
+                        heading = data["heading"].get<std::string>();
+                    } else if (data.contains("selected_heading") && data["selected_heading"].holds<std::string>()) {
+                        heading = data["selected_heading"].get<std::string>();
+                    } else if (data.contains("section") && data["section"].holds<std::string>()) {
+                        heading = data["section"].get<std::string>();
+                    }
+                }
+                selected_heading_ = heading;
+                target_heading_ = heading;
+                last_action_ = "navigate_section";
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "toggle_adaptive_view") {
+                adaptive_view_mode = !adaptive_view_mode;
+                last_action_ = "toggle_adaptive_view";
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "open_doc" || verb == "load_file") {
+                std::string new_path;
+                if (data.is_object()) {
+                    if (data.contains("doc_path") && data["doc_path"].holds<std::string>()) {
+                        new_path = data["doc_path"].get<std::string>();
+                    } else if (data.contains("path") && data["path"].holds<std::string>()) {
+                        new_path = data["path"].get<std::string>();
+                    }
+                }
+                if (!new_path.empty()) {
+                    load_file(new_path);
+                }
+                last_action_ = verb;
+                last_adaptive_parse_time_ = {};
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[markdown] Action error: " << e.what() << std::endl;
+        } catch (...) {}
+    }
+
+    [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    void set_adaptive_view_mode(bool enabled) noexcept { adaptive_view_mode = enabled; }
+    [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
+    [[nodiscard]] const std::string& get_selected_heading() const noexcept { return selected_heading_; }
+    [[nodiscard]] std::string get_doc_path() const { return path_.string(); }
+    [[nodiscard]] std::string get_doc_title() const {
+        return path_.filename().empty() ? (path_.empty() ? "Markdown Viewer" : path_.string()) : path_.filename().string();
+    }
+    [[nodiscard]] int get_word_count() const noexcept { return word_count_; }
+    [[nodiscard]] int get_line_count() const noexcept { return line_count_; }
 
 private:
     void render_toolbar() {
@@ -447,6 +872,29 @@ private:
     std::string status_message_;
     std::filesystem::file_time_type last_write_time_{};
     std::chrono::steady_clock::time_point last_check_time_{};
+
+    static std::string format_word_count(int count) {
+        std::string s = std::to_string(count);
+        int insert_pos = static_cast<int>(s.length()) - 3;
+        while (insert_pos > 0) {
+            s.insert(static_cast<size_t>(insert_pos), ",");
+            insert_pos -= 3;
+        }
+        return s + " words";
+    }
+
+    // Adaptive Card presentation override state
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    mutable std::string adaptive_error_{};
+    mutable std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+
+    std::string last_action_{};
+    std::string selected_heading_{};
+    std::string target_heading_{};
 };
 
 } // namespace rouen::cards

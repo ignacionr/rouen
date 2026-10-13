@@ -40,6 +40,7 @@
 #include "../src/cards/information/image_viewer.hpp"
 #include "../src/cards/information/mail/mail.hpp"
 #include "../src/cards/information/markdown_notes.hpp"
+#include "../src/cards/information/markdown_viewer.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -2864,3 +2865,119 @@ TEST(markdown_notesAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(notes.handle_action("{\"verb\":\"delete_note\",\"data\":null}"));
     EXPECT_NO_THROW(notes.handle_action("{\"verb\":\"delete_note\",\"data\":{\"note_id\":null}}"));
 }
+
+TEST(markdown_viewerAdaptiveTest, JsonSerialization) {
+    const auto temp_file = std::filesystem::temp_directory_path() / "rouen_test_markdown_viewer.md";
+    {
+        std::ofstream ofs(temp_file);
+        ofs << "# README.md\n\nRouen is a next-generation desktop workspace.\n\n## Overview\nSection overview.\n\n### Details\nDeep details.\n";
+    }
+
+    rouen::cards::markdown_viewer viewer{temp_file.string()};
+    std::string card_json = viewer.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_last_modified_fact = false;
+    bool found_format_fact = false;
+    bool found_headings_fact = false;
+    bool found_heading_input = false;
+    bool found_doc_path_input = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Last Modified:") found_last_modified_fact = true;
+                if (fact.title == "Format:") found_format_fact = true;
+                if (fact.title == "Headings:") found_headings_fact = true;
+            }
+        }
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.ChoiceSet" && child.id == "heading") {
+                    found_heading_input = true;
+                }
+                if (child.type == "Input.Text" && child.id == "doc_path") {
+                    found_doc_path_input = true;
+                }
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_last_modified_fact);
+    EXPECT_TRUE(found_format_fact);
+    EXPECT_TRUE(found_headings_fact);
+    EXPECT_TRUE(found_heading_input);
+    EXPECT_TRUE(found_doc_path_input);
+
+    bool found_reload_action = false;
+    bool found_copy_action = false;
+    bool found_navigate_action = false;
+
+    for (const auto& act : doc.actions) {
+        if (act.verb == "reload_doc") found_reload_action = true;
+        if (act.verb == "copy_markdown") found_copy_action = true;
+        if (act.verb == "navigate_section") found_navigate_action = true;
+    }
+
+    EXPECT_TRUE(found_reload_action);
+    EXPECT_TRUE(found_copy_action);
+    EXPECT_TRUE(found_navigate_action);
+
+    std::error_code ec;
+    std::filesystem::remove(temp_file, ec);
+}
+
+TEST(markdown_viewerAdaptiveTest, ActionDispatch) {
+    const auto temp_file = std::filesystem::temp_directory_path() / "rouen_test_markdown_viewer_dispatch.md";
+    {
+        std::ofstream ofs(temp_file);
+        ofs << "# Sample Document\n\nContent here.\n\n## Getting Started\nIntro.\n";
+    }
+
+    rouen::cards::markdown_viewer viewer{temp_file.string()};
+
+    // Initial state
+    EXPECT_FALSE(viewer.is_adaptive_view_mode());
+
+    // 1. reload_doc
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"reload_doc"})");
+    EXPECT_EQ(viewer.get_last_action(), "reload_doc");
+
+    // 2. copy_markdown
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"copy_markdown"})");
+    EXPECT_EQ(viewer.get_last_action(), "copy_markdown");
+
+    // 3. navigate_section
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"navigate_section","data":{"heading":"Getting Started"}})");
+    EXPECT_EQ(viewer.get_last_action(), "navigate_section");
+    EXPECT_EQ(viewer.get_selected_heading(), "Getting Started");
+
+    // 4. toggle_adaptive_view
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(viewer.is_adaptive_view_mode());
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(viewer.is_adaptive_view_mode());
+
+    std::error_code ec;
+    std::filesystem::remove(temp_file, ec);
+}
+
+TEST(markdown_viewerAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::markdown_viewer viewer{};
+    EXPECT_NO_THROW(viewer.handle_action(""));
+    EXPECT_NO_THROW(viewer.handle_action("not a json string"));
+    EXPECT_NO_THROW(viewer.handle_action("{"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"reload_doc\",\"data\":null}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"copy_markdown\",\"data\":null}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"navigate_section\",\"data\":null}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"navigate_section\",\"data\":{\"heading\":null}}"));
+}
+
