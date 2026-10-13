@@ -36,6 +36,7 @@
 #include "../src/cards/development/cmake.hpp"
 #include "../src/cards/development/diff_card.hpp"
 #include "../src/cards/information/directory_card.hpp"
+#include "../src/cards/information/image_viewer.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -2406,3 +2407,123 @@ TEST(github_ci_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(ci_card.handle_action("{\"verb\":\"cancel_run\",\"data\":null}"));
     EXPECT_NO_THROW(ci_card.handle_action("{\"verb\":\"refresh_ci\",\"data\":null}"));
 }
+
+TEST(image_viewerAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::image_viewer viewer{};
+    std::string card_json = viewer.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_image_element = false;
+    bool found_resolution_fact = false;
+    bool found_aspect_ratio_fact = false;
+    bool found_file_size_fact = false;
+    bool found_color_depth_fact = false;
+    bool found_zoom_factor_input = false;
+    bool found_angle_deg_input = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Image") {
+            found_image_element = true;
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Resolution:") found_resolution_fact = true;
+                if (fact.title == "Aspect Ratio:") found_aspect_ratio_fact = true;
+                if (fact.title == "File Size:") found_file_size_fact = true;
+                if (fact.title == "Color Depth:") found_color_depth_fact = true;
+            }
+        }
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.Number" && child.id == "zoom_factor") {
+                    found_zoom_factor_input = true;
+                }
+                if (child.type == "Input.ChoiceSet" && child.id == "angle_deg") {
+                    found_angle_deg_input = true;
+                }
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_image_element);
+    EXPECT_TRUE(found_resolution_fact);
+    EXPECT_TRUE(found_aspect_ratio_fact);
+    EXPECT_TRUE(found_file_size_fact);
+    EXPECT_TRUE(found_color_depth_fact);
+    EXPECT_TRUE(found_zoom_factor_input);
+    EXPECT_TRUE(found_angle_deg_input);
+
+    bool found_zoom_action = false;
+    bool found_fit_action = false;
+    bool found_rotate_action = false;
+
+    for (const auto& act : doc.actions) {
+        if (act.verb == "image_zoom") found_zoom_action = true;
+        if (act.verb == "image_fit") found_fit_action = true;
+        if (act.verb == "image_rotate") found_rotate_action = true;
+    }
+
+    EXPECT_TRUE(found_zoom_action);
+    EXPECT_TRUE(found_fit_action);
+    EXPECT_TRUE(found_rotate_action);
+}
+
+TEST(image_viewerAdaptiveTest, ActionDispatch) {
+    rouen::cards::image_viewer viewer{};
+
+    // Initial state
+    EXPECT_FALSE(viewer.is_adaptive_view_mode());
+    EXPECT_EQ(viewer.get_rotation_deg(), 0);
+    EXPECT_TRUE(viewer.is_fit_to_window());
+
+    // 1. image_zoom
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"image_zoom","data":{"zoom_factor":1.5}})");
+    EXPECT_EQ(viewer.get_last_action(), "image_zoom");
+    EXPECT_FLOAT_EQ(viewer.get_zoom_factor(), 1.5f);
+    EXPECT_FALSE(viewer.is_fit_to_window());
+
+    // 2. image_fit
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"image_fit"})");
+    EXPECT_EQ(viewer.get_last_action(), "image_fit");
+    EXPECT_TRUE(viewer.is_fit_to_window());
+
+    // 3. image_rotate (button click without data increments by 90)
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"image_rotate"})");
+    EXPECT_EQ(viewer.get_last_action(), "image_rotate");
+    EXPECT_EQ(viewer.get_rotation_deg(), 90);
+
+    // 4. image_rotate (choice data rotates to specified angle)
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"image_rotate","data":{"angle_deg":"180"}})");
+    EXPECT_EQ(viewer.get_last_action(), "image_rotate");
+    EXPECT_EQ(viewer.get_rotation_deg(), 180);
+
+    // 5. toggle_adaptive_view
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(viewer.is_adaptive_view_mode());
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(viewer.is_adaptive_view_mode());
+}
+
+TEST(image_viewerAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::image_viewer viewer{};
+    EXPECT_NO_THROW(viewer.handle_action(""));
+    EXPECT_NO_THROW(viewer.handle_action("not a json string"));
+    EXPECT_NO_THROW(viewer.handle_action("{"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"image_zoom\",\"data\":null}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"image_zoom\",\"data\":{\"zoom_factor\":null}}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"image_rotate\",\"data\":null}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"image_rotate\",\"data\":{\"angle_deg\":null}}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"image_fit\",\"data\":null}"));
+}
+
