@@ -27,6 +27,7 @@
 #include "../../external/IconsMaterialDesign.h"
 #include "../../fonts.hpp"
 #include "../../helpers/fetch.hpp"
+#include "../../helpers/glaze_include.hpp"
 #include "../../helpers/markdown_renderer.hpp"
 #include "../../helpers/media_player.hpp"
 #include "../../helpers/platform_utils.hpp"
@@ -739,6 +740,46 @@ namespace rouen::cards {
 
     bool media_companion::render(rouen::ui::ui_context& ui) {
         return render_window([this, &ui]() {
+            // Presentation mode selector
+            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            ui.separator();
+
+            if (adaptive_view_mode) {
+                auto now = std::chrono::steady_clock::now();
+                auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                    try {
+                        adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                        adaptive_error_.clear();
+                    } catch (const std::exception& e) {
+                        adaptive_error_ = e.what();
+                    }
+                    last_adaptive_parse_time_ = now;
+                }
+
+                if (!adaptive_error_.empty()) {
+                    ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                } else {
+                    adaptive_renderer_.render(
+                        adaptive_bound_, adaptive_input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                handle_action(payload);
+                            }
+                        },
+                        helpers::adaptive_cards::render_config{
+                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        }
+                    );
+                }
+                return;
+            }
+
             bool fetching = false;
             bool is_generating = false;
             std::string status;
@@ -1370,6 +1411,220 @@ namespace rouen::cards {
                 }
             )
         };
+    }
+
+    std::string media_companion::get_adaptive_card_json() const {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+        std::vector<glz::json_t> body;
+
+        // Container with emphasis style
+        glz::json_t container;
+        container["type"] = "Container";
+        container["style"] = "emphasis";
+
+        glz::json_t col_set;
+        col_set["type"] = "ColumnSet";
+        std::vector<glz::json_t> cols;
+
+        // Column 1: Emoji icon
+        glz::json_t col1;
+        col1["type"] = "Column";
+        col1["width"] = "auto";
+        std::vector<glz::json_t> col1_items;
+        glz::json_t tb_emoji;
+        tb_emoji["type"] = "TextBlock";
+        tb_emoji["text"] = "\xf0\x9f\x8e\xa7"; // 🎧
+        tb_emoji["size"] = "Large";
+        col1_items.push_back(std::move(tb_emoji));
+        col1["items"] = std::move(col1_items);
+        cols.push_back(std::move(col1));
+
+        // Column 2: Track title & Subtitle
+        glz::json_t col2;
+        col2["type"] = "Column";
+        col2["width"] = "stretch";
+        std::vector<glz::json_t> col2_items;
+
+        glz::json_t tb_title;
+        tb_title["type"] = "TextBlock";
+        tb_title["text"] = track_title;
+        tb_title["weight"] = "Bolder";
+        tb_title["size"] = "Large";
+        col2_items.push_back(std::move(tb_title));
+
+        glz::json_t tb_sub;
+        tb_sub["type"] = "TextBlock";
+        std::string subtitle;
+        if (!artist_name.empty() && !album_title.empty()) {
+            subtitle = std::format("{} \u2022 {}", artist_name, album_title);
+        } else if (!artist_name.empty()) {
+            subtitle = artist_name;
+        } else {
+            subtitle = album_title;
+        }
+        tb_sub["text"] = subtitle;
+        tb_sub["isSubtle"] = true;
+        tb_sub["size"] = "Small";
+        col2_items.push_back(std::move(tb_sub));
+        col2["items"] = std::move(col2_items);
+        cols.push_back(std::move(col2));
+
+        // Column 3: Format badge
+        glz::json_t col3;
+        col3["type"] = "Column";
+        col3["width"] = "auto";
+        std::vector<glz::json_t> col3_items;
+        glz::json_t tb_badge;
+        tb_badge["type"] = "TextBlock";
+        tb_badge["text"] = audio_format.empty() ? "Lossless FLAC" : audio_format;
+        tb_badge["weight"] = "Bolder";
+        tb_badge["color"] = "Accent";
+        tb_badge["size"] = "Small";
+        col3_items.push_back(std::move(tb_badge));
+        col3["items"] = std::move(col3_items);
+        cols.push_back(std::move(col3));
+
+        col_set["columns"] = std::move(cols);
+        std::vector<glz::json_t> cont_items;
+        cont_items.push_back(std::move(col_set));
+        container["items"] = std::move(cont_items);
+        body.push_back(std::move(container));
+
+        // FactSet
+        glz::json_t fact_set;
+        fact_set["type"] = "FactSet";
+        std::vector<glz::json_t> facts;
+
+        std::string next_val = queue_items.empty() ? "None" : queue_items.front();
+        facts.push_back(glz::json_t::object_t{
+            {"title", "Next in Queue:"},
+            {"value", next_val}
+        });
+
+        facts.push_back(glz::json_t::object_t{
+            {"title", "Track Progress:"},
+            {"value", track_progress}
+        });
+
+        std::string playlist_val = std::format("{} ({} tracks)", playlist_name, playlist_total_tracks);
+        facts.push_back(glz::json_t::object_t{
+            {"title", "Playlist:"},
+            {"value", playlist_val}
+        });
+
+        fact_set["facts"] = std::move(facts);
+        body.push_back(std::move(fact_set));
+
+        card["body"] = std::move(body);
+
+        // Actions
+        std::vector<glz::json_t> actions;
+        actions.push_back(glz::json_t::object_t{
+            {"type", "Action.Execute"},
+            {"title", "Previous"},
+            {"verb", "comp_prev"}
+        });
+        actions.push_back(glz::json_t::object_t{
+            {"type", "Action.Execute"},
+            {"title", "Play / Pause"},
+            {"verb", "comp_toggle_play"}
+        });
+        actions.push_back(glz::json_t::object_t{
+            {"type", "Action.Execute"},
+            {"title", "Next"},
+            {"verb", "comp_next"}
+        });
+        actions.push_back(glz::json_t::object_t{
+            {"type", "Action.Execute"},
+            {"title", "Shuffle"},
+            {"verb", "comp_toggle_shuffle"}
+        });
+        card["actions"] = std::move(actions);
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
+    }
+
+    void media_companion::handle_action(std::string_view action_json) {
+        if (action_json.empty()) return;
+
+        try {
+            std::string verb;
+            glz::json_t data{};
+            glz::json_t payload{};
+
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (!err && payload.is_object()) {
+                if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                    verb = payload["verb"].get<std::string>();
+                } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                    verb = payload["action"].get<std::string>();
+                }
+                if (payload.contains("data") && payload["data"].is_object()) {
+                    data = payload["data"];
+                } else {
+                    data = payload;
+                }
+            } else {
+                verb = std::string(action_json);
+            }
+
+            if (verb == "comp_toggle_play") {
+                last_action_ = "comp_toggle_play";
+                if (data.is_object() && data.contains("play") && data["play"].holds<bool>()) {
+                    is_playing_ = data["play"].get<bool>();
+                } else {
+                    is_playing_ = !is_playing_;
+                }
+            } else if (verb == "comp_toggle_shuffle") {
+                last_action_ = "comp_toggle_shuffle";
+                if (data.is_object() && data.contains("shuffle") && data["shuffle"].holds<bool>()) {
+                    shuffle_enabled = data["shuffle"].get<bool>();
+                } else {
+                    shuffle_enabled = !shuffle_enabled;
+                }
+            } else if (verb == "comp_next") {
+                last_action_ = "comp_next";
+                if (!queue_items.empty()) {
+                    history_items.push_back(track_title + (artist_name.empty() ? "" : " - " + artist_name));
+                    std::string next_track = queue_items.front();
+                    queue_items.erase(queue_items.begin());
+                    auto pos = next_track.find(" - ");
+                    if (pos != std::string::npos) {
+                        track_title = next_track.substr(0, pos);
+                        artist_name = next_track.substr(pos + 3);
+                    } else {
+                        track_title = next_track;
+                    }
+                }
+            } else if (verb == "comp_prev") {
+                last_action_ = "comp_prev";
+                if (!history_items.empty()) {
+                    queue_items.insert(queue_items.begin(), track_title + (artist_name.empty() ? "" : " - " + artist_name));
+                    std::string prev_track = history_items.back();
+                    history_items.pop_back();
+                    auto pos = prev_track.find(" - ");
+                    if (pos != std::string::npos) {
+                        track_title = prev_track.substr(0, pos);
+                        artist_name = prev_track.substr(pos + 3);
+                    } else {
+                        track_title = prev_track;
+                    }
+                } else {
+                    track_progress = "00:00 / 05:02 (0%)";
+                }
+            } else if (verb == "toggle_adaptive_view") {
+                last_action_ = "toggle_adaptive_view";
+                adaptive_view_mode = !adaptive_view_mode;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[media-companion] Action error: " << e.what() << std::endl;
+        }
     }
 
 } // namespace rouen::cards

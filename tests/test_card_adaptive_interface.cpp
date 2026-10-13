@@ -35,6 +35,7 @@
 #include "../src/cards/media/camera.hpp"
 #include "../src/cards/media/chess_replay.hpp"
 #include "../src/cards/media/media_card.hpp"
+#include "../src/cards/media/media_companion.hpp"
 #include "../src/cards/development/cmake.hpp"
 #include "../src/cards/development/diff_card.hpp"
 #include "../src/cards/information/directory_card.hpp"
@@ -3102,5 +3103,114 @@ TEST(media_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"media_seek\",\"data\":null}"));
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"media_seek\",\"data\":{\"seek_seconds\":\"invalid\"}}"));
 }
+
+TEST(media_companionAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::media_companion companion{};
+    std::string card_json = companion.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_next_queue = false;
+    bool found_track_progress = false;
+    bool found_playlist = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Next in Queue:") found_next_queue = true;
+                if (fact.title == "Track Progress:") found_track_progress = true;
+                if (fact.title == "Playlist:") found_playlist = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_next_queue);
+    EXPECT_TRUE(found_track_progress);
+    EXPECT_TRUE(found_playlist);
+
+    bool found_prev_action = false;
+    bool found_toggle_play_action = false;
+    bool found_next_action = false;
+    bool found_toggle_shuffle_action = false;
+
+    for (const auto& act : doc.actions) {
+        if (act.verb == "comp_prev") found_prev_action = true;
+        if (act.verb == "comp_toggle_play") found_toggle_play_action = true;
+        if (act.verb == "comp_next") found_next_action = true;
+        if (act.verb == "comp_toggle_shuffle") found_toggle_shuffle_action = true;
+    }
+
+    EXPECT_TRUE(found_prev_action);
+    EXPECT_TRUE(found_toggle_play_action);
+    EXPECT_TRUE(found_next_action);
+    EXPECT_TRUE(found_toggle_shuffle_action);
+}
+
+TEST(media_companionAdaptiveTest, ActionDispatch) {
+    rouen::cards::media_companion companion{};
+
+    // Initial state assertions
+    EXPECT_FALSE(companion.is_playing());
+    EXPECT_FALSE(companion.is_shuffle_enabled());
+    EXPECT_FALSE(companion.is_adaptive_view_mode());
+    EXPECT_EQ(companion.get_track_title(), "Clair de Lune");
+    EXPECT_EQ(companion.get_artist_name(), "Claude Debussy");
+
+    // 1. comp_toggle_play
+    companion.handle_action(R"({"type":"Action.Execute","verb":"comp_toggle_play"})");
+    EXPECT_TRUE(companion.is_playing());
+    EXPECT_EQ(companion.get_last_action(), "comp_toggle_play");
+
+    companion.handle_action(R"({"type":"Action.Execute","verb":"comp_toggle_play"})");
+    EXPECT_FALSE(companion.is_playing());
+    EXPECT_EQ(companion.get_last_action(), "comp_toggle_play");
+
+    // 2. comp_toggle_shuffle
+    companion.handle_action(R"({"type":"Action.Execute","verb":"comp_toggle_shuffle"})");
+    EXPECT_TRUE(companion.is_shuffle_enabled());
+    EXPECT_EQ(companion.get_last_action(), "comp_toggle_shuffle");
+
+    companion.handle_action(R"({"type":"Action.Execute","verb":"comp_toggle_shuffle"})");
+    EXPECT_FALSE(companion.is_shuffle_enabled());
+    EXPECT_EQ(companion.get_last_action(), "comp_toggle_shuffle");
+
+    // 3. comp_next
+    companion.handle_action(R"({"type":"Action.Execute","verb":"comp_next"})");
+    EXPECT_EQ(companion.get_last_action(), "comp_next");
+    EXPECT_EQ(companion.get_track_title(), "Gymnopédie No. 1");
+
+    // 4. comp_prev
+    companion.handle_action(R"({"type":"Action.Execute","verb":"comp_prev"})");
+    EXPECT_EQ(companion.get_last_action(), "comp_prev");
+    EXPECT_EQ(companion.get_track_title(), "Clair de Lune");
+
+    // 5. toggle_adaptive_view
+    companion.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(companion.is_adaptive_view_mode());
+    companion.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(companion.is_adaptive_view_mode());
+}
+
+TEST(media_companionAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::media_companion companion{};
+    EXPECT_NO_THROW(companion.handle_action(""));
+    EXPECT_NO_THROW(companion.handle_action("not a json string"));
+    EXPECT_NO_THROW(companion.handle_action("{"));
+    EXPECT_NO_THROW(companion.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(companion.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(companion.handle_action("{\"verb\":\"comp_next\",\"data\":null}"));
+    EXPECT_NO_THROW(companion.handle_action("{\"verb\":\"comp_prev\",\"data\":null}"));
+    EXPECT_NO_THROW(companion.handle_action("{\"verb\":\"comp_toggle_play\",\"data\":null}"));
+    EXPECT_NO_THROW(companion.handle_action("{\"verb\":\"comp_toggle_shuffle\",\"data\":null}"));
+}
+
 
 

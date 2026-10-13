@@ -1,11 +1,14 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
 #include "../../helpers/imgui_include.hpp"
 #include "../interface/card.hpp"
 
@@ -78,6 +81,23 @@ namespace rouen::cards {
 
         std::vector<card::mcp_function> get_mcp_functions() const override;
 
+        /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+        [[nodiscard]] std::string get_adaptive_card_json() const override;
+
+        /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+        void handle_action(std::string_view action_json) override;
+
+        [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+        [[nodiscard]] bool is_playing() const noexcept { return is_playing_; }
+        [[nodiscard]] bool is_shuffle_enabled() const noexcept { return shuffle_enabled; }
+        [[nodiscard]] const std::string& get_track_title() const noexcept { return track_title; }
+        [[nodiscard]] const std::string& get_artist_name() const noexcept { return artist_name; }
+        [[nodiscard]] const std::string& get_album_title() const noexcept { return album_title; }
+        [[nodiscard]] const std::string& get_track_progress() const noexcept { return track_progress; }
+        [[nodiscard]] const std::string& get_playlist_name() const noexcept { return playlist_name; }
+        [[nodiscard]] const std::vector<std::string>& get_queue_items() const noexcept { return queue_items; }
+        [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
+
     private:
         static void seek_to(double seconds);
 
@@ -89,6 +109,33 @@ namespace rouen::cards {
         int selected_point_index{0};
         int last_synced_point_index{-1};
         bool auto_sync_enabled{true};
+
+        // Adaptive Card presentation override state
+        bool adaptive_view_mode{false};
+        mutable helpers::adaptive_cards::parser adaptive_parser_{};
+        mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+        mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+        mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+        std::string adaptive_error_{};
+        std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+
+        // State Synchronization
+        std::string track_title{"Clair de Lune"};
+        std::string artist_name{"Claude Debussy"};
+        std::string album_title{"Suite bergamasque"};
+        std::string audio_format{"Lossless FLAC"};
+        std::string track_progress{"02:14 / 05:02 (44%)"};
+        std::string playlist_name{"Focus & Code Classical"};
+        int playlist_total_tracks{24};
+        std::vector<std::string> queue_items{
+            "Gymnopédie No. 1 - Erik Satie",
+            "Nocturne Op. 9 No. 2 - Frédéric Chopin",
+            "Canon in D - Johann Pachelbel"
+        };
+        std::vector<std::string> history_items{};
+        bool shuffle_enabled{false};
+        bool is_playing_{false};
+        std::string last_action_{};
     };
 
 } // namespace rouen::cards
