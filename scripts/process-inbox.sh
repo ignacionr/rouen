@@ -5,23 +5,24 @@
 
 set -o pipefail
 
-# 1. Environment & Path Normalization
-if [ -f "$HOME/.zprofile" ]; then
-    source "$HOME/.zprofile" 2>/dev/null || true
-fi
-if [ -f "$HOME/.zshrc" ]; then
-    source "$HOME/.zshrc" 2>/dev/null || true
-fi
-
-export PATH="$HOME/bin:$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/nix/var/nix/profiles/default/bin:$HOME/.nix-profile/bin:$PATH"
-export ANTIGRAVITY_ENV="production"
-
-# 2. Determine Repository Root & Paths
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# 1. Determine Repository Root & Script Paths FIRST (before sourcing other files)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 INBOX_DIR="$REPO_ROOT/inbox"
 RUN_DIR="$REPO_ROOT/.rouen"
 PID_FILE="$RUN_DIR/inbox_runner.pid"
 LOG_FILE="$RUN_DIR/inbox_runner.log"
+
+# 2. Environment & Path Normalization
+if [ -f "$HOME/.profile" ]; then
+    source "$HOME/.profile" 2>/dev/null || true
+fi
+if [ -f "$HOME/.bash_profile" ]; then
+    source "$HOME/.bash_profile" 2>/dev/null || true
+fi
+
+export PATH="$HOME/bin:$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/nix/var/nix/profiles/default/bin:$HOME/.nix-profile/bin:$PATH"
+export ANTIGRAVITY_ENV="production"
 
 # 3. Locate agy Binary
 find_agy() {
