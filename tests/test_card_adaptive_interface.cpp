@@ -19,6 +19,7 @@
 #include "../src/cards/system/about.hpp"
 #include "../src/cards/system/sysinfo.hpp"
 #include "../src/cards/system/cast_control.hpp"
+#include "../src/cards/system/dbrepair.hpp"
 #include "../src/cards/productivity/pomodoro.hpp"
 #include "../src/cards/production/adlib.hpp"
 #include "../src/cards/development/vcproject_card.hpp"
@@ -1526,6 +1527,108 @@ TEST(converterAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(conv.handle_action("{\"verb\":\"convert\",\"data\":null}"));
     EXPECT_NO_THROW(conv.handle_action("{\"verb\":\"convert\",\"data\":{\"category\":\"NonExistent\",\"input_value\":\"not_a_number\"}}"));
 }
+
+TEST(dbrepair_cardAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::dbrepair_card dbrepair{};
+    std::string card_json = dbrepair.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    // Verify all required FactSet fields and inputs exist
+    bool found_database_path = false;
+    bool found_file_size = false;
+    bool found_integrity_status = false;
+    bool found_last_compacted = false;
+    bool found_database_choice = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.ChoiceSet" && child.id == "database_choice") {
+                    found_database_choice = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Database Path:") found_database_path = true;
+                if (fact.title == "File Size:") found_file_size = true;
+                if (fact.title == "Integrity Status:") found_integrity_status = true;
+                if (fact.title == "Last Compacted:") found_last_compacted = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_database_path);
+    EXPECT_TRUE(found_file_size);
+    EXPECT_TRUE(found_integrity_status);
+    EXPECT_TRUE(found_last_compacted);
+    EXPECT_TRUE(found_database_choice);
+
+    // Verify actions exist
+    bool found_check_integrity = false;
+    bool found_vacuum = false;
+    bool found_backup = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "db_check_integrity") found_check_integrity = true;
+        if (act.verb == "db_vacuum") found_vacuum = true;
+        if (act.verb == "db_backup") found_backup = true;
+    }
+    EXPECT_TRUE(found_check_integrity);
+    EXPECT_TRUE(found_vacuum);
+    EXPECT_TRUE(found_backup);
+}
+
+TEST(dbrepair_cardAdaptiveTest, ActionDispatch) {
+    rouen::cards::dbrepair_card dbrepair{};
+
+    // Initial state assertions
+    EXPECT_FALSE(dbrepair.is_adaptive_view_mode());
+    EXPECT_FALSE(dbrepair.get_selected_database().empty());
+
+    // 1. db_check_integrity
+    dbrepair.handle_action(R"({"type":"Action.Execute","verb":"db_check_integrity","data":{"database_choice":"adaptive_cards.db"}})");
+    EXPECT_EQ(dbrepair.get_selected_database(), "adaptive_cards.db");
+    EXPECT_NE(dbrepair.get_integrity_status().find("ok"), std::string::npos);
+
+    // 2. db_vacuum
+    dbrepair.handle_action(R"({"type":"Action.Execute","verb":"db_vacuum","data":{"db_target":"rouen.db"}})");
+    EXPECT_EQ(dbrepair.get_selected_database(), "rouen.db");
+    EXPECT_FALSE(dbrepair.get_last_compacted().empty());
+
+    // 3. db_backup
+    dbrepair.handle_action(R"({"type":"Action.Execute","verb":"db_backup","data":{"db_target":"rss_feeds.db"}})");
+    EXPECT_EQ(dbrepair.get_selected_database(), "rss_feeds.db");
+    EXPECT_FALSE(dbrepair.get_last_backup_path().empty());
+    EXPECT_NE(dbrepair.get_last_backup_path().find("rss_feeds.db"), std::string::npos);
+
+    // 4. toggle_adaptive_view
+    dbrepair.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(dbrepair.is_adaptive_view_mode());
+    dbrepair.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(dbrepair.is_adaptive_view_mode());
+}
+
+TEST(dbrepair_cardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::dbrepair_card dbrepair{};
+    EXPECT_NO_THROW(dbrepair.handle_action(""));
+    EXPECT_NO_THROW(dbrepair.handle_action("not a json string"));
+    EXPECT_NO_THROW(dbrepair.handle_action("{"));
+    EXPECT_NO_THROW(dbrepair.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(dbrepair.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(dbrepair.handle_action("{\"verb\":\"db_check_integrity\",\"data\":null}"));
+    EXPECT_NO_THROW(dbrepair.handle_action("{\"verb\":\"db_vacuum\",\"data\":{\"database_choice\":\"nonexistent.db\"}}"));
+    EXPECT_NO_THROW(dbrepair.handle_action("{\"verb\":\"db_backup\",\"data\":{\"db_target\":\"nonexistent.db\"}}"));
+}
+
 
 
 
