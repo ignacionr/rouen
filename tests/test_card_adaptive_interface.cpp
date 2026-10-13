@@ -4001,6 +4001,115 @@ TEST(radiocutAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"radiocut_download\",\"data\":null}"));
 }
 
+TEST(rss_itemAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::rss_item card{"1"};
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_header = false;
+    bool found_podcast_fact = false;
+    bool found_format_fact = false;
+    bool found_filesize_fact = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "ColumnSet") {
+                    for (const auto& col : child.columns) {
+                        for (const auto& col_item : col.items) {
+                            if (col_item.text.find("CppCast") != std::string::npos ||
+                                col_item.text.find("RSS Item") != std::string::npos) {
+                                found_header = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Podcast:") found_podcast_fact = true;
+                if (fact.title == "Format:") found_format_fact = true;
+                if (fact.title == "File Size:") found_filesize_fact = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_header);
+    EXPECT_TRUE(found_podcast_fact);
+    EXPECT_TRUE(found_format_fact);
+    EXPECT_TRUE(found_filesize_fact);
+
+    bool found_play_action = false;
+    bool found_bookmark_action = false;
+    bool found_shownotes_action = false;
+
+    for (const auto& act : doc.actions) {
+        if (act.verb == "play_media") found_play_action = true;
+        if (act.verb == "bookmark_item") found_bookmark_action = true;
+        if (act.type == "Action.OpenUrl" || act.title == "Show Notes") found_shownotes_action = true;
+    }
+
+    EXPECT_TRUE(found_play_action);
+    EXPECT_TRUE(found_bookmark_action);
+    EXPECT_TRUE(found_shownotes_action);
+}
+
+TEST(rss_itemAdaptiveTest, ActionDispatch) {
+    rouen::cards::rss_item card{"1"};
+
+    // Initial state assertions
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+    EXPECT_FALSE(card.is_playing());
+    EXPECT_FALSE(card.is_bookmarked());
+
+    // 1. play_media
+    card.handle_action(R"({"type":"Action.Execute","verb":"play_media"})");
+    EXPECT_EQ(card.get_last_action(), "play_media");
+    EXPECT_TRUE(card.is_playing());
+
+    // 2. pause_media
+    card.handle_action(R"({"type":"Action.Execute","verb":"pause_media"})");
+    EXPECT_EQ(card.get_last_action(), "pause_media");
+    EXPECT_FALSE(card.is_playing());
+
+    // 3. bookmark_item
+    card.handle_action(R"({"type":"Action.Execute","verb":"bookmark_item"})");
+    EXPECT_EQ(card.get_last_action(), "bookmark_item");
+    EXPECT_TRUE(card.is_bookmarked());
+
+    card.handle_action(R"({"type":"Action.Execute","verb":"bookmark_item"})");
+    EXPECT_FALSE(card.is_bookmarked());
+
+    // 4. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(rss_itemAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::rss_item card{"1"};
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"play_media\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"pause_media\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"bookmark_item\",\"data\":null}"));
+}
+
+
 
 
 

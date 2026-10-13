@@ -1,12 +1,16 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 
 #include "../interface/card.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
 #include "../../helpers/media_player.hpp"
+#include "../../helpers/ui_context.hpp"
 #include "../../hosts/rss_host.hpp"
 
 namespace helpers {
@@ -23,19 +27,19 @@ public:
 
     void on_close() override;
     bool render() override;
+    bool render(rouen::ui::ui_context& ui) override;
     [[nodiscard]] std::string get_uri() const override;
-    [[nodiscard]] std::string get_adaptive_card_json() const override {
-        return std::format(
-            R"({{
-  "type": "AdaptiveCard",
-  "version": "1.5",
-  "body": [
-    {{"type": "TextBlock", "text": "{}", "weight": "Bolder", "size": "Large"}},
-    {{"type": "TextBlock", "text": "Link: {}", "isSubtle": true}}
-  ]
-}})",
-            item_title.empty() ? "RSS Item" : item_title, item_link);
-    }
+
+    /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+    [[nodiscard]] std::string get_adaptive_card_json() const override;
+
+    /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+    void handle_action(std::string_view action_json) override;
+
+    [[nodiscard]] bool is_playing() const noexcept { return is_playing_; }
+    [[nodiscard]] bool is_bookmarked() const noexcept { return is_bookmarked_; }
+    [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
 
     void set_renderer(SDL_Renderer* r) noexcept;
     void clear_item_textures();
@@ -52,6 +56,19 @@ private:
     std::string item_title;
     bool item_loaded = false;
     bool auto_play = false;
+
+    bool is_playing_{false};
+    bool is_bookmarked_{false};
+    std::string last_action_{};
+
+    // Adaptive Card presentation override state
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    std::string adaptive_error_{};
+    std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
 
     std::shared_ptr<hosts::RSSHost> rss_host;
     hosts::RSSHost::FeedItem item;

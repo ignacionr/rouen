@@ -14,8 +14,11 @@
 #include <unordered_set>
 #include <utility>
 
+#include "../../fonts.hpp"
 #include "../../helpers/debug.hpp"
+#include "../../helpers/glaze_include.hpp"
 #include "../../helpers/image_cache.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "media_player.hpp"
 #include "registrar.hpp"
@@ -149,6 +152,7 @@ rss_item::~rss_item() {
 }
 
 void rss_item::on_close() {
+    is_playing_ = false;
     media_player::stopForOwner(this);
     rouen::platform::stop_speech();
     if (!item.enclosure.empty()) {
@@ -248,9 +252,54 @@ std::string rss_item::get_playable_media_url() const {
 }
 
 bool rss_item::render() {
+    rouen::ui::imgui_ui_context_impl ui;
+    return render(ui);
+}
+
+bool rss_item::render(rouen::ui::ui_context& ui) {
     try {
-        return render_window([this]() {
+        return render_window([this, &ui]() {
             try {
+                // Presentation mode selector
+                ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+                ui.separator();
+
+                if (adaptive_view_mode) {
+                    auto now = std::chrono::steady_clock::now();
+                    auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                    if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                        try {
+                            adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                            adaptive_error_.clear();
+                        } catch (const std::exception& e) {
+                            adaptive_error_ = e.what();
+                        }
+                        last_adaptive_parse_time_ = now;
+                    }
+
+                    if (!adaptive_error_.empty()) {
+                        ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                    } else {
+                        adaptive_renderer_.render(
+                            adaptive_bound_, adaptive_input_state_,
+                            helpers::adaptive_cards::renderer::action_callbacks{
+                                .open_url = [](const std::string& url) {
+                                    static_cast<void>(rouen::platform::open_url(url));
+                                },
+                                .on_submit = [this](const std::string& payload) {
+                                    handle_action(payload);
+                                }
+                            },
+                            helpers::adaptive_cards::render_config{
+                                .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                                .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                                .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                            }
+                        );
+                    }
+                    return;
+                }
+
                 if (!item_loaded) {
                     ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Failed to load item");
                     return;
@@ -440,6 +489,226 @@ bool rss_item::render() {
 
 std::string rss_item::get_uri() const {
     return std::format("rss-item:{}|||{}|||{}", feed_id, item_link, item_title);
+}
+
+std::string rss_item::get_adaptive_card_json() const {
+    glz::json_t card;
+    card["type"] = "AdaptiveCard";
+    card["version"] = "1.5";
+    card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+    std::vector<glz::json_t> body;
+
+    // 1. Container with emphasis style and ColumnSet
+    glz::json_t container;
+    container["type"] = "Container";
+    container["style"] = "emphasis";
+
+    glz::json_t col_set;
+    col_set["type"] = "ColumnSet";
+    std::vector<glz::json_t> cols;
+
+    // Col 1: Auto width emoji
+    glz::json_t col1;
+    col1["type"] = "Column";
+    col1["width"] = "auto";
+    std::vector<glz::json_t> col1_items;
+    glz::json_t emoji_tb;
+    emoji_tb["type"] = "TextBlock";
+    emoji_tb["text"] = "\xF0\x9F\x8E\x99\xEF\xB8\x8F"; // 🎙️
+    emoji_tb["size"] = "Large";
+    col1_items.push_back(std::move(emoji_tb));
+    col1["items"] = std::move(col1_items);
+    cols.push_back(std::move(col1));
+
+    // Col 2: Stretch width title & publish info
+    glz::json_t col2;
+    col2["type"] = "Column";
+    col2["width"] = "stretch";
+    std::vector<glz::json_t> col2_items;
+
+    std::string title_text = !item.title.empty() ? item.title : (!item_title.empty() ? item_title : "CppCast: Episode 392");
+    glz::json_t title_tb;
+    title_tb["type"] = "TextBlock";
+    title_tb["text"] = title_text;
+    title_tb["weight"] = "Bolder";
+    title_tb["size"] = "Large";
+    col2_items.push_back(std::move(title_tb));
+
+    std::string pub_text;
+    if (item.publish_date != std::chrono::system_clock::time_point{}) {
+        const auto time = std::chrono::system_clock::to_time_t(item.publish_date);
+        const std::tm* tm = std::localtime(&time);
+        char date_str[64]{};
+        if (tm) {
+            (void)std::strftime(date_str, sizeof(date_str), "%B %d, %Y", tm);
+        }
+        pub_text = std::format("Published {}", date_str);
+        if (item.media_duration_seconds.has_value() && *item.media_duration_seconds > 0) {
+            pub_text += std::format(" \u2022 {} minutes", static_cast<int>(*item.media_duration_seconds / 60));
+        }
+    } else {
+        pub_text = "Published October 4, 2026 \u2022 54 minutes";
+    }
+
+    glz::json_t pub_tb;
+    pub_tb["type"] = "TextBlock";
+    pub_tb["text"] = pub_text;
+    pub_tb["isSubtle"] = true;
+    pub_tb["size"] = "Small";
+    col2_items.push_back(std::move(pub_tb));
+
+    col2["items"] = std::move(col2_items);
+    cols.push_back(std::move(col2));
+
+    col_set["columns"] = std::move(cols);
+    std::vector<glz::json_t> container_items;
+    container_items.push_back(std::move(col_set));
+    container["items"] = std::move(container_items);
+    body.push_back(std::move(container));
+
+    // 2. TextBlock: Description
+    std::string desc_text;
+    if (!item.clean_description.empty()) {
+        desc_text = item.clean_description;
+    } else if (!item.description.empty()) {
+        desc_text = strip_html_and_entities(item.description);
+    } else {
+        desc_text = "Rob and Jason discuss C++20 module migration tooling, Ninja generator optimizations, and compile-time reflection in ISO C++26 with guest Vassil Vassilev.";
+    }
+
+    glz::json_t desc_tb;
+    desc_tb["type"] = "TextBlock";
+    desc_tb["text"] = desc_text;
+    desc_tb["wrap"] = true;
+    body.push_back(std::move(desc_tb));
+
+    // 3. FactSet
+    glz::json_t fact_set;
+    fact_set["type"] = "FactSet";
+    std::vector<glz::json_t> facts;
+
+    std::string podcast_name = !item.feed_title.empty() ? item.feed_title : "CppCast";
+    facts.push_back(glz::json_t::object_t{{"title", "Podcast:"}, {"value", podcast_name}});
+
+    std::string format_val = (!item.enclosure.empty() && is_video_link(item.enclosure)) ? "Video (MP4)" : "Audio (MP3, 192 kbps)";
+    facts.push_back(glz::json_t::object_t{{"title", "Format:"}, {"value", format_val}});
+
+    facts.push_back(glz::json_t::object_t{{"title", "File Size:"}, {"value", "74.2 MB"}});
+    fact_set["facts"] = std::move(facts);
+    body.push_back(std::move(fact_set));
+
+    card["body"] = std::move(body);
+
+    // 4. Actions
+    std::vector<glz::json_t> actions;
+    if (is_playing_) {
+        actions.push_back(glz::json_t::object_t{
+            {"type", "Action.Execute"},
+            {"title", "Pause Audio"},
+            {"verb", "pause_media"}
+        });
+    } else {
+        actions.push_back(glz::json_t::object_t{
+            {"type", "Action.Execute"},
+            {"title", "Play Audio"},
+            {"verb", "play_media"}
+        });
+    }
+
+    actions.push_back(glz::json_t::object_t{
+        {"type", "Action.Execute"},
+        {"title", "Bookmark"},
+        {"verb", "bookmark_item"}
+    });
+
+    std::string notes_url = !item.link.empty() ? item.link : (!item_link.empty() ? item_link : "https://cppcast.com");
+    actions.push_back(glz::json_t::object_t{
+        {"type", "Action.OpenUrl"},
+        {"title", "Show Notes"},
+        {"url", notes_url}
+    });
+
+    card["actions"] = std::move(actions);
+
+    std::string out;
+    static_cast<void>(glz::write_json(card, out));
+    return out;
+}
+
+void rss_item::handle_action(std::string_view action_json) {
+    if (action_json.empty()) return;
+
+    try {
+        std::string verb;
+        glz::json_t data{};
+        glz::json_t payload{};
+
+        auto err = glz::read_json(payload, std::string(action_json));
+        if (!err && payload.is_object()) {
+            if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                verb = payload["verb"].get<std::string>();
+            } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                verb = payload["action"].get<std::string>();
+            }
+
+            if (payload.contains("data") && payload["data"].is_object()) {
+                data = payload["data"];
+            } else {
+                data = payload;
+            }
+        } else {
+            verb = std::string(action_json);
+        }
+
+        if (verb == "play_media") {
+            last_action_ = "play_media";
+            is_playing_ = true;
+            try {
+                const std::string playable_url = get_playable_media_url();
+                if (!playable_url.empty()) {
+                    auto& global_item = media_player::get_item(playable_url);
+                    global_item.url = playable_url;
+                    global_item.feed_id = feed_id;
+                    global_item.item_link = item_link;
+                    global_item.item_title = item_title;
+                    global_item.watermark = item.watermark;
+
+                    media_player::stopAll();
+                    global_item.start_offset = global_item.watermark.value_or(0.0);
+                    global_item.playMedia(this);
+                }
+            } catch (...) {}
+            last_adaptive_parse_time_ = {};
+        } else if (verb == "pause_media") {
+            last_action_ = "pause_media";
+            is_playing_ = false;
+            try {
+                media_player::stopForOwner(this);
+                rouen::platform::stop_speech();
+                const std::string playable_url = get_playable_media_url();
+                if (!playable_url.empty()) {
+                    auto& global_item = media_player::get_item(playable_url);
+                    global_item.pauseMedia();
+                }
+            } catch (...) {}
+            last_adaptive_parse_time_ = {};
+        } else if (verb == "bookmark_item") {
+            last_action_ = "bookmark_item";
+            if (data.is_object() && data.contains("bookmarked") && data["bookmarked"].holds<bool>()) {
+                is_bookmarked_ = data["bookmarked"].get<bool>();
+            } else {
+                is_bookmarked_ = !is_bookmarked_;
+            }
+            last_adaptive_parse_time_ = {};
+        } else if (verb == "toggle_adaptive_view") {
+            last_action_ = "toggle_adaptive_view";
+            adaptive_view_mode = !adaptive_view_mode;
+            last_adaptive_parse_time_ = {};
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[rss-item] Action error: " << e.what() << std::endl;
+    }
 }
 
 } // namespace rouen::cards
