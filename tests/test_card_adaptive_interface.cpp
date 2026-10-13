@@ -38,6 +38,7 @@
 #include "../src/cards/development/diff_card.hpp"
 #include "../src/cards/information/directory_card.hpp"
 #include "../src/cards/information/image_viewer.hpp"
+#include "../src/cards/information/mail/mail.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -2627,5 +2628,122 @@ TEST(kpi_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"add_kpi\",\"data\":null}"));
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"refresh_kpis\",\"data\":null}"));
 }
+
+TEST(mailAdaptiveTest, JsonSerialization) {
+    rouen::cards::mail card{};
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_folder_choice = false;
+    bool found_reply_to_input = false;
+    bool found_reply_subject_input = false;
+    bool found_reply_body_input = false;
+    bool found_email_facts = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "FactSet") {
+            if (!elem.facts.empty()) {
+                found_email_facts = true;
+            }
+        }
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.ChoiceSet" && child.id == "mail_folder") {
+                    found_folder_choice = true;
+                }
+                if (child.type == "Input.Text" && child.id == "reply_to") {
+                    found_reply_to_input = true;
+                }
+                if (child.type == "Input.Text" && child.id == "reply_subject") {
+                    found_reply_subject_input = true;
+                }
+                if (child.type == "Input.Text" && child.id == "reply_body") {
+                    found_reply_body_input = true;
+                }
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_folder_choice);
+    EXPECT_TRUE(found_reply_to_input);
+    EXPECT_TRUE(found_reply_subject_input);
+    EXPECT_TRUE(found_reply_body_input);
+    EXPECT_TRUE(found_email_facts);
+
+    bool found_send_reply_action = false;
+    bool found_fetch_action = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "mail_send_reply") found_send_reply_action = true;
+        if (act.verb == "mail_fetch") found_fetch_action = true;
+    }
+    EXPECT_TRUE(found_send_reply_action);
+    EXPECT_TRUE(found_fetch_action);
+}
+
+TEST(mailAdaptiveTest, ActionDispatch) {
+    rouen::cards::mail card{};
+
+    // Initial state
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+    EXPECT_EQ(card.get_current_folder(), "INBOX");
+    EXPECT_EQ(card.get_unread_count(), 3u);
+    EXPECT_EQ(card.get_messages().size(), 3u);
+
+    // 1. mail_send_reply
+    card.handle_action(R"({"type":"Action.Execute","verb":"mail_send_reply","data":{"recipient":"linus@kernel.org","subject":"Re: Git 2.47","body":"Patch reviewed and approved."}})");
+    EXPECT_EQ(card.get_last_action(), "mail_send_reply");
+    EXPECT_EQ(card.get_last_reply_to(), "linus@kernel.org");
+    EXPECT_EQ(card.get_last_reply_subject(), "Re: Git 2.47");
+    EXPECT_EQ(card.get_last_reply_body(), "Patch reviewed and approved.");
+
+    // 2. mail_fetch
+    card.handle_action(R"({"type":"Action.Execute","verb":"mail_fetch","data":{"folder":"Archive"}})");
+    EXPECT_EQ(card.get_last_action(), "mail_fetch");
+    EXPECT_EQ(card.get_current_folder(), "Archive");
+    EXPECT_TRUE(card.is_messages_refreshed());
+
+    // 3. mail_mark_read
+    card.handle_action(R"({"type":"Action.Execute","verb":"mail_mark_read","data":{"message_id":"msg-101"}})");
+    EXPECT_EQ(card.get_last_action(), "mail_mark_read");
+    EXPECT_EQ(card.get_last_marked_message_id(), "msg-101");
+    EXPECT_EQ(card.get_unread_count(), 2u);
+
+    // 4. mail_delete
+    card.handle_action(R"({"type":"Action.Execute","verb":"mail_delete","data":{"message_id":"msg-102"}})");
+    EXPECT_EQ(card.get_last_action(), "mail_delete");
+    EXPECT_EQ(card.get_last_deleted_message_id(), "msg-102");
+    EXPECT_EQ(card.get_messages().size(), 2u);
+    EXPECT_EQ(card.get_unread_count(), 1u);
+
+    // 5. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(mailAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::mail card{};
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"mail_fetch\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"mail_fetch\",\"data\":{\"folder\":null}}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"mail_send_reply\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"mail_send_reply\",\"data\":{\"recipient\":null,\"subject\":null,\"body\":null}}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"mail_mark_read\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"mail_mark_read\",\"data\":{\"message_id\":null}}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"mail_delete\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"mail_delete\",\"data\":{\"message_id\":null}}"));
+}
+
 
 
