@@ -63,17 +63,24 @@ rss::rss() {
     rss_host = getHost();
 
     // Register handler for cache invalidation messages
+    auto alive = alive_;
     registrar::add<std::function<void(std::string const&)>>(
         "invalidate_freshness_cache",
         std::make_shared<std::function<void(std::string const&)>>(
-            [this](std::string const& feed_url) {
-                this->invalidate_freshness_cache(feed_url);
+            [this, alive](std::string const& feed_url) {
+                if (*alive) {
+                    this->invalidate_freshness_cache(feed_url);
+                }
             }
         )
     );
 }
 
 rss::~rss() {
+    if (alive_) {
+        *alive_ = false;
+    }
+    registrar::remove<std::function<void(std::string const&)>>("invalidate_freshness_cache");
     on_close();
     clear_feed_textures();
 }
@@ -1086,7 +1093,8 @@ void rss::render_feed_list(const std::vector<std::shared_ptr<media::rss::feed>>&
         
         // 3. Draw freshness right after title
         std::string const freshness_text = get_freshness_text(feed, now);
-        ImGui::TextColored(text_color, "●");
+        const ImVec4 dot_color = get_freshness_color(feed, now);
+        ImGui::TextColored(dot_color, "●");
         ImGui::SameLine();
         ImGui::TextColored(text_color, "%s", freshness_text.c_str());
         
@@ -1139,6 +1147,7 @@ std::shared_ptr<hosts::RSSHost> rss::getHost() {
 }
 
 void rss::invalidate_freshness_cache(std::string_view feed_url) {
+    std::lock_guard<std::mutex> lock(freshness_cache_mutex_);
     if (feed_url.empty()) {
         RSS_TRACE("Invalidating all freshness cache entries");
         freshness_cache.clear();
@@ -1281,6 +1290,11 @@ std::vector<rss::AISearchResult> rss::parseAIFeedResponse(const std::string& res
 
 ImVec4 rss::get_freshness_color(const std::shared_ptr<media::rss::feed>& feed, 
                                const std::chrono::system_clock::time_point& now) const {
+    if (!feed) {
+        return colors[9];
+    }
+
+    std::lock_guard<std::mutex> lock(freshness_cache_mutex_);
     auto cache_it = freshness_cache.find(feed->source_link);
     bool should_refresh = true;
     

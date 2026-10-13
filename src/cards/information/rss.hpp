@@ -106,6 +106,8 @@ private:
     std::string selected_tag_ = "All";
     
     // Cache for feed freshness colors to avoid recalculating every frame
+    std::shared_ptr<std::atomic<bool>> alive_ = std::make_shared<std::atomic<bool>>(true);
+    mutable std::mutex freshness_cache_mutex_;
     mutable std::unordered_map<std::string, std::pair<ImVec4, std::chrono::system_clock::time_point>> freshness_cache;
     static constexpr size_t MAX_CACHE_SIZE = 1000;
     

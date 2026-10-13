@@ -112,10 +112,55 @@ TEST(CardAdaptiveInterface, CalendarCard) {
 }
 
 TEST(CardAdaptiveInterface, RSSCard) {
+    if (!registrar::try_get<std::function<bool()>>("quitting")) {
+        registrar::add<std::function<bool()>>("quitting", std::make_shared<std::function<bool()>>([]() { return false; }));
+    }
     rouen::cards::rss rss_card{};
     std::string rss_json = rss_card.get_adaptive_card_json();
     EXPECT_NE(rss_json.find("RSS Reader"), std::string::npos);
     rss_card.handle_action(R"({"verb":"refresh"})");
+}
+
+TEST(CardAdaptiveInterface, RSSFreshnessCacheConcurrency) {
+    if (!registrar::try_get<std::function<bool()>>("quitting")) {
+        registrar::add<std::function<bool()>>("quitting", std::make_shared<std::function<bool()>>([]() { return false; }));
+    }
+    auto rss_card = std::make_shared<rouen::cards::rss>();
+    std::atomic<bool> stop{false};
+    std::vector<std::thread> workers;
+
+    for (int i = 0; i < 4; ++i) {
+        workers.emplace_back([&]() {
+            while (!stop.load(std::memory_order_relaxed)) {
+                rss_card->invalidate_freshness_cache("https://example.com/feed.xml");
+                rss_card->invalidate_freshness_cache();
+            }
+        });
+    }
+
+    for (int i = 0; i < 4; ++i) {
+        workers.emplace_back([&]() {
+            while (!stop.load(std::memory_order_relaxed)) {
+                try {
+                    "invalidate_freshness_cache"_sfn("https://example.com/feed.xml");
+                } catch (...) {}
+            }
+        });
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    stop.store(true, std::memory_order_relaxed);
+
+    for (auto& t : workers) {
+        t.join();
+    }
+
+    rss_card.reset();
+    EXPECT_NO_THROW({
+        try {
+            "invalidate_freshness_cache"_sfn("https://example.com/feed.xml");
+        } catch (...) {}
+    });
 }
 
 TEST(CardAdaptiveInterface, RSSFeedCard) {
