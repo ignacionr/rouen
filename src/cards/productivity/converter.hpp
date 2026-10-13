@@ -1,4 +1,14 @@
+#pragma once
+
+#include <chrono>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
+
 #include "../interface/card.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
 
 namespace rouen::cards {
 
@@ -236,9 +246,36 @@ class converter : public card {
 public:
     converter();
     bool render() override;
+    bool render(rouen::ui::ui_context& ui) override;
     std::string get_uri() const override;
 
+    /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+    [[nodiscard]] std::string get_adaptive_card_json() const override;
+
+    /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+    void handle_action(std::string_view action_json) override;
+
+    [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    void set_adaptive_view_mode(bool enabled) noexcept { adaptive_view_mode = enabled; }
+
+    [[nodiscard]] std::string get_category() const;
+    [[nodiscard]] std::string get_from_unit() const;
+    [[nodiscard]] std::string get_to_unit() const;
+    [[nodiscard]] double get_input_value() const;
+    [[nodiscard]] const std::string& get_conversion_result() const noexcept { return conversion_result_; }
+    [[nodiscard]] const std::string& get_last_copied() const noexcept { return last_copied_; }
+
 private:
+    // Adaptive Card presentation override state
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    std::string adaptive_error_{};
+    std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+    std::string last_copied_{};
+
     std::vector<std::unique_ptr<conversion_category>> categories_;
     size_t current_category_index_ = 0;
     size_t from_unit_index_ = 0;

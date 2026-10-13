@@ -25,6 +25,7 @@
 #include "../src/cards/development/fs-directory.hpp"
 #include "../src/cards/development/git.hpp"
 #include "../src/cards/productivity/calculator.hpp"
+#include "../src/cards/productivity/converter.hpp"
 #include "../src/cards/media/camera.hpp"
 #include "../src/cards/media/chess_replay.hpp"
 #include "../src/cards/development/cmake.hpp"
@@ -1393,6 +1394,139 @@ TEST(cmake_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(cmake_card.handle_action("{\"verb\":\"configure\",\"data\":null}"));
     EXPECT_NO_THROW(cmake_card.handle_action("{\"verb\":\"build\",\"data\":null}"));
 }
+
+TEST(converterAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::converter conv{};
+    std::string card_json = conv.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    // Verify all required FactSet fields and inputs exist
+    bool found_category_input = false;
+    bool found_value_input = false;
+    bool found_from_unit_input = false;
+    bool found_to_unit_input = false;
+    bool found_category_fact = false;
+    bool found_from_unit_fact = false;
+    bool found_to_unit_fact = false;
+    bool found_result_fact = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.ChoiceSet" && child.id == "category") {
+                    found_category_input = true;
+                }
+                if (child.type == "Input.Number" && child.id == "input_value") {
+                    found_value_input = true;
+                }
+                if (child.type == "ColumnSet") {
+                    for (const auto& col : child.columns) {
+                        for (const auto& col_child : col.items) {
+                            if (col_child.type == "Input.ChoiceSet" && col_child.id == "from_unit") {
+                                found_from_unit_input = true;
+                            }
+                            if (col_child.type == "Input.ChoiceSet" && col_child.id == "to_unit") {
+                                found_to_unit_input = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Category:") found_category_fact = true;
+                if (fact.title == "From Unit:") found_from_unit_fact = true;
+                if (fact.title == "To Unit:") found_to_unit_fact = true;
+                if (fact.title == "Result:") found_result_fact = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_category_input);
+    EXPECT_TRUE(found_value_input);
+    EXPECT_TRUE(found_from_unit_input);
+    EXPECT_TRUE(found_to_unit_input);
+    EXPECT_TRUE(found_category_fact);
+    EXPECT_TRUE(found_from_unit_fact);
+    EXPECT_TRUE(found_to_unit_fact);
+    EXPECT_TRUE(found_result_fact);
+
+    // Verify actions
+    bool found_convert_act = false;
+    bool found_swap_act = false;
+    bool found_copy_act = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "convert") found_convert_act = true;
+        if (act.verb == "swap_units") found_swap_act = true;
+        if (act.verb == "copy_result") found_copy_act = true;
+    }
+    EXPECT_TRUE(found_convert_act);
+    EXPECT_TRUE(found_swap_act);
+    EXPECT_TRUE(found_copy_act);
+}
+
+TEST(converterAdaptiveTest, ActionDispatch) {
+    rouen::cards::converter conv{};
+
+    // Initial state assertions
+    EXPECT_EQ(conv.get_category(), "Length");
+    EXPECT_FALSE(conv.is_adaptive_view_mode());
+
+    // 1. Convert units: Length, Meters to Feet, input 100 -> 328.084 ft
+    conv.handle_action(R"({"type":"Action.Execute","verb":"convert","data":{"category":"Length","from_unit":"Meters","to_unit":"Feet","input_value":100}})");
+    EXPECT_EQ(conv.get_category(), "Length");
+    EXPECT_EQ(conv.get_from_unit(), "Meters");
+    EXPECT_EQ(conv.get_to_unit(), "Feet");
+    EXPECT_DOUBLE_EQ(conv.get_input_value(), 100.0);
+    EXPECT_NE(conv.get_conversion_result().find("328.084"), std::string::npos);
+    EXPECT_NE(conv.get_adaptive_card_json().find("328.084"), std::string::npos);
+
+    // 2. Swap units: Meters/Feet -> Feet/Meters
+    conv.handle_action(R"({"type":"Action.Execute","verb":"swap_units"})");
+    EXPECT_EQ(conv.get_from_unit(), "Feet");
+    EXPECT_EQ(conv.get_to_unit(), "Meters");
+    // Result recalculated for 100 Feet to Meters: 30.48 m
+    EXPECT_NE(conv.get_conversion_result().find("30.48"), std::string::npos);
+
+    // 3. Copy result
+    conv.handle_action(R"({"type":"Action.Execute","verb":"copy_result"})");
+    EXPECT_EQ(conv.get_last_copied(), conv.get_conversion_result());
+
+    // 4. Convert units with category switch: Temperature, Celsius to Fahrenheit, 100 C -> 212 F
+    conv.handle_action(R"({"type":"Action.Execute","verb":"convert","data":{"category":"Temperature","from_unit":"Celsius","to_unit":"Fahrenheit","input_value":100}})");
+    EXPECT_EQ(conv.get_category(), "Temperature");
+    EXPECT_EQ(conv.get_from_unit(), "Celsius");
+    EXPECT_EQ(conv.get_to_unit(), "Fahrenheit");
+    EXPECT_NE(conv.get_conversion_result().find("212"), std::string::npos);
+
+    // 5. Toggle adaptive view
+    conv.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(conv.is_adaptive_view_mode());
+    conv.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(conv.is_adaptive_view_mode());
+}
+
+TEST(converterAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::converter conv{};
+    EXPECT_NO_THROW(conv.handle_action(""));
+    EXPECT_NO_THROW(conv.handle_action("not a json string"));
+    EXPECT_NO_THROW(conv.handle_action("{"));
+    EXPECT_NO_THROW(conv.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(conv.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(conv.handle_action("{\"verb\":\"convert\",\"data\":null}"));
+    EXPECT_NO_THROW(conv.handle_action("{\"verb\":\"convert\",\"data\":{\"category\":\"NonExistent\",\"input_value\":\"not_a_number\"}}"));
+}
+
 
 
 
