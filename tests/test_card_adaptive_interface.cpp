@@ -16,6 +16,7 @@
 #include "../src/cards/information/rss.hpp"
 #include "../src/cards/information/rss_feed.hpp"
 #include "../src/cards/information/rss_item.hpp"
+#include "../src/cards/information/rss_smart_list.hpp"
 #include "../src/cards/information/ai_chat.hpp"
 #include "../src/cards/system/about.hpp"
 #include "../src/cards/system/sysinfo.hpp"
@@ -4108,6 +4109,138 @@ TEST(rss_itemAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"pause_media\",\"data\":null}"));
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"bookmark_item\",\"data\":null}"));
 }
+
+static void ensure_rss_smart_list_test_services() {
+    if (!registrar::try_get<std::function<bool()>>("quitting")) {
+        registrar::add<std::function<bool()>>("quitting", std::make_shared<std::function<bool()>>([]() { return false; }));
+    }
+    if (!registrar::try_get<std::function<void(const std::string&)>>("notify")) {
+        registrar::add<std::function<void(const std::string&)>>("notify", std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {}));
+    }
+    if (!registrar::try_get<std::function<void(const std::string&)>>("open_url")) {
+        registrar::add<std::function<void(const std::string&)>>("open_url", std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {}));
+    }
+    if (!registrar::try_get<std::function<void(const std::string&)>>("create_card")) {
+        registrar::add<std::function<void(const std::string&)>>("create_card", std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {}));
+    }
+}
+
+TEST(rss_smart_listAdaptiveTest, JsonSerialization) {
+    ensure_rss_smart_list_test_services();
+    rouen::cards::rss_smart_list card{"Modern C++"};
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_header = false;
+    bool found_rule_text = false;
+    bool found_unread_badge = false;
+    bool found_items_fact = false;
+    bool found_keywords_input = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "ColumnSet") {
+                    for (const auto& col : child.columns) {
+                        for (const auto& col_item : col.items) {
+                            if (col_item.text.find("RSS Smart List") != std::string::npos ||
+                                col_item.text.find("Modern C++") != std::string::npos) {
+                                found_header = true;
+                            }
+                            if (col_item.text.find("Rule:") != std::string::npos) {
+                                found_rule_text = true;
+                            }
+                            if (col_item.text.find("Unread") != std::string::npos) {
+                                found_unread_badge = true;
+                            }
+                        }
+                    }
+                }
+                if (child.type == "Input.Text" && child.id == "keywords") {
+                    found_keywords_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            if (!elem.facts.empty()) {
+                found_items_fact = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_header);
+    EXPECT_TRUE(found_rule_text);
+    EXPECT_TRUE(found_unread_badge);
+    EXPECT_TRUE(found_items_fact);
+    EXPECT_TRUE(found_keywords_input);
+
+    bool found_refresh_action = false;
+    bool found_mark_read_action = false;
+    bool found_update_filter_action = false;
+
+    for (const auto& act : doc.actions) {
+        if (act.verb == "smart_list_refresh") found_refresh_action = true;
+        if (act.verb == "smart_list_mark_read") found_mark_read_action = true;
+        if (act.verb == "smart_list_update_filter") found_update_filter_action = true;
+    }
+
+    EXPECT_TRUE(found_refresh_action);
+    EXPECT_TRUE(found_mark_read_action);
+    EXPECT_TRUE(found_update_filter_action);
+}
+
+TEST(rss_smart_listAdaptiveTest, ActionDispatch) {
+    ensure_rss_smart_list_test_services();
+    rouen::cards::rss_smart_list card{"Modern C++"};
+
+    // Initial state assertions
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+
+    // 1. smart_list_refresh
+    card.handle_action(R"({"type":"Action.Execute","verb":"smart_list_refresh"})");
+    EXPECT_EQ(card.get_last_action(), "smart_list_refresh");
+
+    // 2. smart_list_mark_read
+    card.handle_action(R"({"type":"Action.Execute","verb":"smart_list_mark_read"})");
+    EXPECT_EQ(card.get_last_action(), "smart_list_mark_read");
+    EXPECT_EQ(card.get_unread_count(), 0u);
+
+    // 3. smart_list_update_filter
+    card.handle_action(R"({"type":"Action.Execute","verb":"smart_list_update_filter","data":{"keywords":"c++20 OR modules"}})");
+    EXPECT_EQ(card.get_last_action(), "smart_list_update_filter");
+    EXPECT_EQ(card.get_filter_keywords(), "c++20 OR modules");
+
+    card.handle_action(R"({"verb":"smart_list_update_filter","keywords":"ninja OR cmake"})");
+    EXPECT_EQ(card.get_last_action(), "smart_list_update_filter");
+    EXPECT_EQ(card.get_filter_keywords(), "ninja OR cmake");
+
+    // 4. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(rss_smart_listAdaptiveTest, MalformedActionHandling) {
+    ensure_rss_smart_list_test_services();
+    rouen::cards::rss_smart_list card{"Modern C++"};
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"smart_list_refresh\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"smart_list_mark_read\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"smart_list_update_filter\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"smart_list_update_filter\",\"data\":{\"keywords\":null}}"));
+}
+
 
 
 

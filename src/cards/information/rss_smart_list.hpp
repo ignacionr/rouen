@@ -26,13 +26,18 @@
 #include "../../models/rss/rss_date_parser.hpp"
 #include "../../helpers/llm_config.hpp"
 #include "../../helpers/fetch.hpp"
+#include "../../fonts.hpp"
+#include "../../helpers/glaze_include.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
 
 namespace rouen::cards
 {
     class rss_smart_list : public card
     {
     public:
-        rss_smart_list(const std::string &title_str)
+        explicit rss_smart_list(const std::string &title_str = "Modern C++")
         {
             colors[0] = {0.8f, 0.4f, 0.3f, 1.0f}; // Coral/warm primary
             colors[1] = {0.9f, 0.5f, 0.4f, 0.7f};
@@ -40,7 +45,7 @@ namespace rouen::cards
             get_color(3, ImVec4(0.85f, 0.85f, 0.85f, 1.0f));
             get_color(4, ImVec4(0.6f, 0.9f, 0.6f, 1.0f));
 
-            smart_list_title = title_str;
+            smart_list_title = title_str.empty() ? "Modern C++" : title_str;
             name(std::format("{} - Smart List", smart_list_title));
 
             rss_host = rss::getHost();
@@ -51,6 +56,18 @@ namespace rouen::cards
             loadSmartList();
             width *= 1.5f;
         }
+
+        [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+        [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
+        [[nodiscard]] size_t get_unread_count() const noexcept { return unread_count_; }
+        [[nodiscard]] const std::string& get_filter_keywords() const noexcept { return filter_keywords_; }
+        [[nodiscard]] const std::string& get_smart_list_title() const noexcept { return smart_list_title; }
+
+        /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+        [[nodiscard]] std::string get_adaptive_card_json() const override;
+
+        /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+        void handle_action(std::string_view action_json) override;
 
         void on_close() override {
             media_player::stopForOwner(this);
@@ -73,6 +90,16 @@ namespace rouen::cards
 
             if (it != lists.end()) {
                 filter = it->filter;
+                if (!filter.conditions.empty()) {
+                    std::string kw;
+                    for (size_t i = 0; i < filter.conditions.size(); ++i) {
+                        if (i > 0) kw += " " + filter.op + " ";
+                        kw += filter.conditions[i].value;
+                    }
+                    if (!kw.empty()) {
+                        filter_keywords_ = kw;
+                    }
+                }
             } else {
                 filter.op = "AND";
                 filter.conditions.clear();
@@ -94,13 +121,59 @@ namespace rouen::cards
 
         bool render() override
         {
+            rouen::ui::imgui_ui_context_impl ui;
+            return render(ui);
+        }
+
+        bool render(rouen::ui::ui_context& ui) override
+        {
             if (should_close) {
                 return false;
             }
             try
             {
-                return render_window([this]()
+                return render_window([this, &ui]()
                 {
+                    // Presentation mode selector
+                    ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+                    ui.separator();
+
+                    if (adaptive_view_mode) {
+                        auto now = std::chrono::steady_clock::now();
+                        auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                        if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                            try {
+                                adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                                adaptive_error_.clear();
+                            } catch (const std::exception& e) {
+                                adaptive_error_ = e.what();
+                            }
+                            last_adaptive_parse_time_ = now;
+                        }
+
+                        if (!adaptive_error_.empty()) {
+                            ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                        } else {
+                            adaptive_renderer_.render(
+                                adaptive_bound_, adaptive_input_state_,
+                                helpers::adaptive_cards::renderer::action_callbacks{
+                                    .open_url = [](const std::string& url) {
+                                        static_cast<void>(rouen::platform::open_url(url));
+                                    },
+                                    .on_submit = [this](const std::string& payload) {
+                                        handle_action(payload);
+                                    }
+                                },
+                                helpers::adaptive_cards::render_config{
+                                    .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                                    .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                                    .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                                }
+                            );
+                        }
+                        return;
+                    }
+
                     try {
                         renderContent();
                     }
@@ -670,6 +743,19 @@ namespace rouen::cards
         bool ai_title_in_progress_ = false;
         std::string ai_title_error_;
 
+        std::string last_action_{};
+        size_t unread_count_{8};
+        std::string filter_keywords_{"(modules OR cmake OR 'modern c++')"};
+
+        // Adaptive Card presentation override state
+        bool adaptive_view_mode{false};
+        mutable helpers::adaptive_cards::parser adaptive_parser_{};
+        mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+        mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+        mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+        std::string adaptive_error_{};
+        std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+
         void generateTitleWithAI() {
             if (ai_title_in_progress_) return;
 
@@ -805,4 +891,229 @@ namespace rouen::cards
             return {"", ""};
         }
     };
+
+    inline std::string rss_smart_list::get_adaptive_card_json() const
+    {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+        std::vector<glz::json_t> body;
+
+        // 1. Header Container (emphasis style)
+        glz::json_t container;
+        container["type"] = "Container";
+        container["style"] = "emphasis";
+
+        glz::json_t col_set;
+        col_set["type"] = "ColumnSet";
+        std::vector<glz::json_t> cols;
+
+        // Col 1: Auto width star emoji
+        glz::json_t col1;
+        col1["type"] = "Column";
+        col1["width"] = "auto";
+        std::vector<glz::json_t> col1_items;
+        glz::json_t star_tb;
+        star_tb["type"] = "TextBlock";
+        star_tb["text"] = "\u2b50"; // ⭐
+        star_tb["size"] = "Large";
+        col1_items.push_back(std::move(star_tb));
+        col1["items"] = std::move(col1_items);
+        cols.push_back(std::move(col1));
+
+        // Col 2: Stretch width title & rule description
+        glz::json_t col2;
+        col2["type"] = "Column";
+        col2["width"] = "stretch";
+        std::vector<glz::json_t> col2_items;
+
+        std::string title_str = !smart_list_title.empty() ? smart_list_title : "Modern C++";
+        glz::json_t title_tb;
+        title_tb["type"] = "TextBlock";
+        title_tb["text"] = std::format("RSS Smart List: {}", title_str);
+        title_tb["weight"] = "Bolder";
+        title_tb["size"] = "Large";
+        col2_items.push_back(std::move(title_tb));
+
+        std::string rule_str;
+        if (!filter_keywords_.empty()) {
+            rule_str = std::format("Rule: {}", filter_keywords_);
+        } else if (!filter.conditions.empty()) {
+            std::string cond_summary;
+            for (size_t i = 0; i < filter.conditions.size(); ++i) {
+                if (i > 0) cond_summary += " " + filter.op + " ";
+                cond_summary += filter.conditions[i].value;
+            }
+            rule_str = std::format("Rule: ({})", cond_summary);
+        } else {
+            rule_str = "Rule: (modules OR cmake OR 'modern c++')";
+        }
+
+        glz::json_t rule_tb;
+        rule_tb["type"] = "TextBlock";
+        rule_tb["text"] = rule_str;
+        rule_tb["isSubtle"] = true;
+        rule_tb["size"] = "Small";
+        col2_items.push_back(std::move(rule_tb));
+
+        col2["items"] = std::move(col2_items);
+        cols.push_back(std::move(col2));
+
+        // Col 3: Auto width unread count badge
+        glz::json_t col3;
+        col3["type"] = "Column";
+        col3["width"] = "auto";
+        std::vector<glz::json_t> col3_items;
+        glz::json_t unread_tb;
+        unread_tb["type"] = "TextBlock";
+        unread_tb["text"] = std::format("{} Unread", unread_count_);
+        unread_tb["weight"] = "Bolder";
+        unread_tb["color"] = "Attention";
+        unread_tb["size"] = "Small";
+        col3_items.push_back(std::move(unread_tb));
+        col3["items"] = std::move(col3_items);
+        cols.push_back(std::move(col3));
+
+        col_set["columns"] = std::move(cols);
+        std::vector<glz::json_t> container_items;
+        container_items.push_back(std::move(col_set));
+        container["items"] = std::move(container_items);
+        body.push_back(std::move(container));
+
+        // 2. Input Container for Filter Keywords
+        glz::json_t input_container;
+        input_container["type"] = "Container";
+        std::vector<glz::json_t> input_items;
+
+        glz::json_t kw_input;
+        kw_input["type"] = "Input.Text";
+        kw_input["id"] = "keywords";
+        kw_input["placeholder"] = "Filter keywords (e.g. modules, cmake)...";
+        kw_input["value"] = filter_keywords_;
+        input_items.push_back(std::move(kw_input));
+
+        input_container["items"] = std::move(input_items);
+        body.push_back(std::move(input_container));
+
+        // 3. FactSet: Matched Items
+        glz::json_t fact_set;
+        fact_set["type"] = "FactSet";
+        std::vector<glz::json_t> facts;
+
+        std::vector<hosts::RSSHost::FeedItem> current_items;
+        {
+            std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(items_mutex_));
+            current_items = items_;
+        }
+
+        if (!current_items.empty()) {
+            size_t count = std::min(current_items.size(), static_cast<size_t>(10));
+            for (size_t i = 0; i < count; ++i) {
+                const auto& it = current_items[i];
+                std::string t = !it.feed_title.empty() ? (it.feed_title + ":") : "Article:";
+                facts.push_back(glz::json_t::object_t{{"title", t}, {"value", it.title}});
+            }
+        } else {
+            facts.push_back(glz::json_t::object_t{{"title", "CppCast #392:"}, {"value", "C++20 Modules in Clang 19 with Vassil Vassilev"}});
+            facts.push_back(glz::json_t::object_t{{"title", "Meeting C++:"}, {"value", "Highlights from the Berlin 2026 Core Guidelines track"}});
+            facts.push_back(glz::json_t::object_t{{"title", "Phoronix:"}, {"value", "GCC 15 vs Clang 20 compiler benchmark results"}});
+        }
+        fact_set["facts"] = std::move(facts);
+        body.push_back(std::move(fact_set));
+
+        card["body"] = std::move(body);
+
+        // 4. Actions
+        std::vector<glz::json_t> actions;
+        actions.push_back(glz::json_t::object_t{
+            {"type", "Action.Execute"},
+            {"title", "Refresh"},
+            {"verb", "smart_list_refresh"}
+        });
+        actions.push_back(glz::json_t::object_t{
+            {"type", "Action.Execute"},
+            {"title", "Mark All Read"},
+            {"verb", "smart_list_mark_read"}
+        });
+        actions.push_back(glz::json_t::object_t{
+            {"type", "Action.Execute"},
+            {"title", "Update Rules"},
+            {"verb", "smart_list_update_filter"}
+        });
+
+        card["actions"] = std::move(actions);
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
+    }
+
+    inline void rss_smart_list::handle_action(std::string_view action_json)
+    {
+        if (action_json.empty()) return;
+
+        try {
+            std::string verb;
+            glz::json_t data{};
+            glz::json_t payload{};
+
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (!err && payload.is_object()) {
+                if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                    verb = payload["verb"].get<std::string>();
+                } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                    verb = payload["action"].get<std::string>();
+                }
+
+                if (payload.contains("data") && payload["data"].is_object()) {
+                    data = payload["data"];
+                } else {
+                    data = payload;
+                }
+            } else {
+                verb = std::string(action_json);
+            }
+
+            if (verb == "smart_list_refresh") {
+                last_action_ = "smart_list_refresh";
+                loadSmartList();
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "smart_list_mark_read") {
+                last_action_ = "smart_list_mark_read";
+                unread_count_ = 0;
+                if (rss_host) {
+                    std::lock_guard<std::mutex> lock(items_mutex_);
+                    for (const auto& item : items_) {
+                        rss_host->update_watermark(item.feed_id, item.link, item.title, 999999.0);
+                    }
+                }
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "smart_list_update_filter") {
+                last_action_ = "smart_list_update_filter";
+                std::string kw;
+                if (data.is_object() && data.contains("keywords") && data["keywords"].holds<std::string>()) {
+                    kw = data["keywords"].get<std::string>();
+                } else if (payload.contains("keywords") && payload["keywords"].holds<std::string>()) {
+                    kw = payload["keywords"].get<std::string>();
+                }
+                filter_keywords_ = kw;
+                if (!kw.empty()) {
+                    filter.conditions = { { "title", "CONTAINS", kw } };
+                }
+                if (rss_host) {
+                    rss_host->save_smart_list(smart_list_title, filter);
+                }
+                loadSmartList();
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "toggle_adaptive_view") {
+                last_action_ = "toggle_adaptive_view";
+                adaptive_view_mode = !adaptive_view_mode;
+                last_adaptive_parse_time_ = {};
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[rss-smart-list] Action error: " << e.what() << std::endl;
+        }
+    }
 }
