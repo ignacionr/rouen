@@ -222,6 +222,22 @@ bool rouen_mesh_host::initialize(const config& cfg) {
     // Load persisted user-configured custom virtual routes
     load_custom_routes();
 
+    // Register mesh registry access functions with registrar
+    registrar::add<std::function<std::optional<std::string>(const std::string&)>>(
+        "mesh_get_registry_value",
+        std::make_shared<std::function<std::optional<std::string>(const std::string&)>>(
+            [this](const std::string& key) { return get_registry_value(key); }
+        )
+    );
+    registrar::add<std::function<void(const std::string&, const std::string&, bool)>>(
+        "mesh_set_registry_value",
+        std::make_shared<std::function<void(const std::string&, const std::string&, bool)>>(
+            [this](const std::string& key, const std::string& val, bool eph) {
+                set_registry_value(key, val, eph);
+            }
+        )
+    );
+
     status_message_ = "Ready to connect.";
     return true;
 }
@@ -364,6 +380,15 @@ void rouen_mesh_host::on_ws_connected(struct mg_connection* c) {
     refresh_peer_services();
     refresh_server_routes();
     refresh_registry();
+
+    // Share configured weather key over mesh persistent registry if available
+    auto config_svc = helpers::ConfigService::instance();
+    if (config_svc) {
+        std::string weather_key = config_svc->get_env("OPENWEATHER_KEY");
+        if (!weather_key.empty()) {
+            set_registry_value("config/OPENWEATHER_KEY", weather_key, false /* persistent */);
+        }
+    }
 
     // Re-publish local presence to restore purged ephemeral presence entry on server
     if (services::presence_service::instance().is_running() &&
@@ -1402,6 +1427,11 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
                                         peer_services_[svc.client_id + ":" + svc.service] = svc;
                                     }
                                 }
+                            } else if (entry.key == "config/OPENWEATHER_KEY" && !entry.value.empty()) {
+                                auto config_svc = helpers::ConfigService::instance();
+                                if (config_svc && config_svc->get_env("OPENWEATHER_KEY").empty()) {
+                                    config_svc->set_env_value("OPENWEATHER_KEY", entry.value, true);
+                                }
                             }
                         }
                     }
@@ -1511,6 +1541,13 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
                             .updated_at_sec = now_sec,
                             .is_ephemeral = set_req.ephemeral
                         };
+
+                        if (set_req.key == "config/OPENWEATHER_KEY" && !set_req.value.empty()) {
+                            auto config_svc = helpers::ConfigService::instance();
+                            if (config_svc && config_svc->get_env("OPENWEATHER_KEY").empty()) {
+                                config_svc->set_env_value("OPENWEATHER_KEY", set_req.value, true);
+                            }
+                        }
                     }
                     process_incoming_notifications();
                 }

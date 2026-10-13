@@ -156,3 +156,10 @@ TEST(PersonaManagerLogic, RenamesAndDeletesReferences) {
     EXPECT_EQ(personas[0].allowed_personas.size(), 1u);
     EXPECT_EQ(personas[0].allowed_personas[0], "Bot B Revised");
 }
+
+TEST(WeatherHostTest, ApiKeyDetectionAndConsecutiveFailures) {
+    WeatherHost host;
+    // In our test environment, OPENWEATHER_KEY is set via .secrets / Nix
+    EXPECT_TRUE(host.hasApiKey());
+    EXPECT_EQ(host.getConsecutiveFailures(), 0);
+}

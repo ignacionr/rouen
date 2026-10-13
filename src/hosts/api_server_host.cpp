@@ -887,6 +887,16 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
         }
+    } else if (mg_match(hm->uri, mg_str("/api/mesh/registry"), nullptr) ||
+               mg_match(hm->uri, mg_str("/api/mesh/registry/*"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0 ||
+            mg_strcmp(hm->method, mg_str("POST")) == 0 ||
+            mg_strcmp(hm->method, mg_str("DELETE")) == 0) {
+            response = handle_mesh_registry(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
     } else if (mg_match(hm->uri, mg_str("/api/presence"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
             response = handle_presence_get(c, hm);
@@ -5540,6 +5550,56 @@ std::string api_server_host::handle_mesh_services(struct mg_connection* /*c*/, s
         (void)glz::write_json(services, json);
         return json;
     }
+}
+
+std::string api_server_host::handle_mesh_registry(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    auto& host = rouen_mesh_host::instance();
+    if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+        char prefix_buf[256] = {0};
+        mg_http_get_var(&hm->query, "prefix", prefix_buf, sizeof(prefix_buf));
+        std::string prefix(prefix_buf);
+
+        if (prefix.empty()) {
+            std::string uri(hm->uri.buf, hm->uri.len);
+            auto pos = uri.find("/api/mesh/registry/");
+            if (pos != std::string::npos) {
+                prefix = uri.substr(pos + strlen("/api/mesh/registry/"));
+            }
+        }
+
+        auto entries = host.get_registry_entries(prefix);
+        std::string json;
+        if (glz::write_json(entries, json) == glz::error_code::none) {
+            return json;
+        }
+        return "{}";
+    } else if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        mesh::registry_set_dto req{};
+        req.ephemeral = false; // default to persistent for registry API sets unless specified
+        if (glz::read_json(req, body) == glz::error_code::none && !req.key.empty()) {
+            host.set_registry_value(req.key, req.value, req.ephemeral);
+            return std::format(R"({{"success":true,"key":"{}","ephemeral":{}}})", req.key, req.ephemeral ? "true" : "false");
+        }
+        return R"({"success":false,"error":"Invalid JSON payload: requires 'key' and 'value'"})";
+    } else if (mg_strcmp(hm->method, mg_str("DELETE")) == 0) {
+        char key_buf[256] = {0};
+        mg_http_get_var(&hm->query, "key", key_buf, sizeof(key_buf));
+        std::string key(key_buf);
+        if (key.empty()) {
+            std::string uri(hm->uri.buf, hm->uri.len);
+            auto pos = uri.find("/api/mesh/registry/");
+            if (pos != std::string::npos) {
+                key = uri.substr(pos + strlen("/api/mesh/registry/"));
+            }
+        }
+        if (!key.empty()) {
+            host.delete_registry_value(key);
+            return std::format(R"({{"success":true,"message":"Registry key '{}' deleted"}})", key);
+        }
+        return R"({"success":false,"error":"Missing key parameter"})";
+    }
+    return R"({"error":"Method not allowed"})";
 }
 
 std::string api_server_host::handle_mesh_proxy(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {

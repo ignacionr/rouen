@@ -682,8 +682,16 @@ public:
         } else {
             glz::json_t loading;
             loading["type"] = "TextBlock";
-            loading["text"] = "Fetching current weather data...";
-            loading["isSubtle"] = true;
+            if (!weather_host->hasApiKey()) {
+                loading["text"] = "⚠️ OpenWeather API key not configured. Please set OPENWEATHER_KEY in your environment or .env file.";
+                loading["color"] = "Attention";
+            } else if (weather_host->getConsecutiveFailures() > 0) {
+                loading["text"] = "⚠️ Failed to fetch weather data. Check location name or network connection.";
+                loading["color"] = "Attention";
+            } else {
+                loading["text"] = "Fetching current weather data...";
+                loading["isSubtle"] = true;
+            }
             body.push_back(std::move(loading));
         }
 
@@ -1001,7 +1009,15 @@ private:
         auto current_weather = weather_host->getCurrentWeather();
         
         if (!current_weather) {
-            ImGui::TextColored(colors[5], "Weather data loading...");
+            if (!weather_host->hasApiKey()) {
+                ImGui::TextColored(colors[4], "OpenWeather API key not configured");
+                ImGui::TextColored(colors[5], "Please set OPENWEATHER_KEY in your .env file");
+            } else if (weather_host->getConsecutiveFailures() > 0) {
+                ImGui::TextColored(colors[4], "Failed to fetch weather data");
+                ImGui::TextColored(colors[5], "Check location name or network connection");
+            } else {
+                ImGui::TextColored(colors[5], "Weather data loading...");
+            }
             return;
         }
         
@@ -1096,7 +1112,13 @@ private:
         auto forecast = weather_host->getForecast();
         
         if (!forecast) {
-            ImGui::TextColored(colors[5], "Forecast data loading...");
+            if (!weather_host->hasApiKey()) {
+                ImGui::TextColored(colors[4], "OpenWeather API key missing");
+            } else if (weather_host->getConsecutiveFailures() > 0) {
+                ImGui::TextColored(colors[4], "Forecast data unavailable");
+            } else {
+                ImGui::TextColored(colors[5], "Forecast data loading...");
+            }
             return;
         }
         

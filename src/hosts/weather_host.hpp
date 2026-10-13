@@ -15,6 +15,7 @@
 #include "../helpers/fetch.hpp"
 #include "../helpers/debug.hpp"
 #include "../helpers/config_service.hpp"
+#include "../registrar.hpp"
 
 namespace rouen::hosts {
 
@@ -136,291 +137,10 @@ namespace weather {
         std::vector<ForecastItem> list;
         City city;
     };
-}
-
-/**
- * Weather Host Controller
- * 
- * This class acts as a controller for weather data, managing the communication
- * between the UI (cards) and the OpenWeather API.
- * It provides methods for fetching current weather and forecast data.
- */
-class WeatherHost {
-public:
-    /**
-     * Constructor initializes the Weather host with a system runner
-     */
-    WeatherHost() 
-        : last_update_time_(std::chrono::steady_clock::now() - std::chrono::hours(2)), // Force initial update
-          consecutive_failures_(0),
-          backoff_minutes_(0)
-    {
-        WEATHER_INFO("WeatherHost: Initializing");
-        
-        // Get the API key from ConfigService (supports .env files and environment variables)
-        auto config = rouen::helpers::ConfigService::instance();
-        api_key_ = config->get_env("OPENWEATHER_KEY");
-        
-        if (api_key_.empty()) {
-            WEATHER_ERROR("WeatherHost: OpenWeather API key not found. Please set OPENWEATHER_KEY in your environment or .env file");
-            WEATHER_INFO("WeatherHost: You can get a free API key at: https://openweathermap.org/api");
-        } else {
-            WEATHER_INFO_FMT("WeatherHost: OpenWeather API key configured (length: {})", api_key_.length());
-        }
-        
-        // Default location - can be improved with geolocation
-        location_ = "Montevideo,UY";
-    }
-
-    /**
-     * Set the location for weather data
-     */
-    void setLocation(std::string_view location) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (location_ != location) {
-            location_ = location;
-            // Invalidate current data to force refresh on next request
-            current_weather_.reset();
-            forecast_.reset();
-        }
-    }
-
-    /**
-     * Get the current location
-     */
-    std::string getLocation() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return location_;
-    }
-
-    /**
-     * Check if the weather data needs to be updated
-     */
-    bool needsUpdate() const {
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::minutes>(now - last_update_time_).count();
-        
-        // If we're in a backoff period due to previous failures, respect it
-        if (consecutive_failures_ > 0 && elapsed < backoff_minutes_) {
-            WEATHER_INFO_FMT("WeatherHost: Skipping update due to backoff period ({} min remaining)", 
-                        backoff_minutes_ - elapsed);
-            return false;
-        }
-        
-        // Update weather every 30 minutes, or if we don't have data yet
-        return elapsed >= 30 || !current_weather_ || !forecast_;
-    }
-
-    /**
-     * Get the current weather data
-     */
-    const std::optional<weather::CurrentWeather> &getCurrentWeather() {
-        updateWeatherIfNeeded();
-        
-        std::lock_guard<std::mutex> lock(mutex_);
-        return current_weather_;
-    }
-
-    /**
-     * Get the weather forecast data
-     */
-    std::optional<weather::Forecast> getForecast() {
-        updateWeatherIfNeeded();
-        
-        std::lock_guard<std::mutex> lock(mutex_);
-        return forecast_;
-    }
-
-    /**
-     * Force a refresh of the weather data
-     */
-    void refreshWeather() {
-        fetchWeatherData();
-    }
-
-    /**
-     * Get access to the Weather host controller (needed for weather cards)
-     */
-    static std::shared_ptr<WeatherHost> getHost() {
-        static std::mutex host_mutex;
-        static std::shared_ptr<WeatherHost> shared_host = nullptr;
-        
-        std::lock_guard<std::mutex> lock(host_mutex);
-        
-        if (!shared_host) {
-            WEATHER_INFO("WeatherHost: Creating new shared WeatherHost instance");
-            shared_host = std::make_shared<WeatherHost>();
-        }
-        
-        return shared_host;
-    }
-
-private:
-    /**
-     * Update weather data if needed
-     */
-    void updateWeatherIfNeeded() {
-        if (needsUpdate()) {
-            fetchWeatherData();
-        }
-    }
-
-    /**
-     * Fetch weather data from the OpenWeather API
-     */
-    void fetchWeatherData() {
-        if (api_key_.empty()) {
-            return;
-        }
-        
-        last_update_time_ = std::chrono::steady_clock::now();
-        
-        // Current weather URL
-        std::string current_url = std::format(
-            "https://api.openweathermap.org/data/2.5/weather?q={}&appid={}&units=metric",
-            url_encode(location_), api_key_
-        );
-        
-        // Forecast URL
-        std::string forecast_url = std::format(
-            "https://api.openweathermap.org/data/2.5/forecast?q={}&appid={}&units=metric&cnt=5",
-            url_encode(location_), api_key_
-        );
-        
-        // Flag to track success of both API calls
-        std::atomic<bool> current_success = false;
-        std::atomic<bool> forecast_success = false;
-        
-        // Temporary storage for thread results
-        std::string current_data;
-        std::string forecast_data;
-        
-        // Fetch current weather
-        std::thread current_thread([current_url, &current_data, &current_success]() {
-            try {
-                http::fetch fetcher(60); // Increase timeout for potential delays
-                current_data = fetcher(current_url);
-                current_success = true;
-                WEATHER_INFO("WeatherHost: Fetched current weather data");
-            } catch (const std::exception& e) {
-                WEATHER_ERROR_FMT("WeatherHost: Failed to fetch current weather: {}", e.what());
-            }
-        });
-        
-        // Fetch forecast
-        std::thread forecast_thread([forecast_url, &forecast_data, &forecast_success]() {
-            try {
-                http::fetch fetcher(60); // Increase timeout for potential delays
-                forecast_data = fetcher(forecast_url);
-                forecast_success = true;
-                WEATHER_INFO("WeatherHost: Fetched forecast data");
-            } catch (const std::exception& e) {
-                WEATHER_ERROR_FMT("WeatherHost: Failed to fetch forecast: {}", e.what());
-            }
-        });
-        
-        // Wait for both threads to complete
-        current_thread.join();
-        forecast_thread.join();
-        
-        // Process results and update backoff state
-        std::lock_guard<std::mutex> lock(mutex_);
-        
-        // Parse current weather if fetch was successful
-        if (current_success) {
-            try {
-                weather::CurrentWeather data;
-                auto error = ::glz::read_json(data, current_data);
-                if (error) {
-                    WEATHER_ERROR_FMT("WeatherHost: Error parsing current weather data: {}", 
-                                ::glz::format_error(error, current_data));
-                    current_success = false;
-                } else {
-                    current_weather_ = std::move(data);
-                }
-            } catch (const std::exception& e) {
-                WEATHER_ERROR_FMT("WeatherHost: Exception parsing current weather data: {}", e.what());
-                current_success = false;
-            }
-        }
-        
-        // Parse forecast if fetch was successful
-        if (forecast_success) {
-            try {
-                weather::Forecast data;
-                auto error = ::glz::read_json(data, forecast_data);
-                if (error) {
-                    WEATHER_ERROR_FMT("WeatherHost: Error parsing forecast data: {}", 
-                                ::glz::format_error(error, forecast_data));
-                    forecast_success = false;
-                } else {
-                    forecast_ = std::move(data);
-                }
-            } catch (const std::exception& e) {
-                WEATHER_ERROR_FMT("WeatherHost: Exception parsing forecast data: {}", e.what());
-                forecast_success = false;
-            }
-        }
-        
-        // Update backoff state based on success or failure
-        if (current_success && forecast_success) {
-            // Successfully fetched both - reset backoff
-            if (consecutive_failures_ > 0) {
-                WEATHER_INFO("WeatherHost: API calls successful, resetting backoff");
-                consecutive_failures_ = 0;
-                backoff_minutes_ = 0;
-            }
-            // The weather name is available for card classes to use
-        } else {
-            // At least one API call failed - increase backoff
-            consecutive_failures_++;
-            
-            // Exponential backoff: 5, 10, 20, 40, 60, 60, ... minutes (capped at 60)
-            backoff_minutes_ = std::min(consecutive_failures_ < 2 ? 5 : backoff_minutes_ * 2, 60);
-            
-            WEATHER_WARN_FMT("WeatherHost: API call(s) failed, increased backoff to {} minutes after {} consecutive failures", 
-                       backoff_minutes_, consecutive_failures_);
-        }
-    }
-
-    mutable std::mutex mutex_;
-    std::string api_key_;
-    std::string location_;
-    std::optional<weather::CurrentWeather> current_weather_;
-    std::optional<weather::Forecast> forecast_;
-    std::chrono::steady_clock::time_point last_update_time_;
-    int consecutive_failures_;
-    int backoff_minutes_;
-
-    // Percent-encode a string for use in URL query parameters.
-    // We preserve comma to allow the "City,CountryCode" format.
-    static std::string url_encode(std::string_view s) {
-        std::ostringstream oss;
-        oss.fill('0');
-        oss << std::hex << std::uppercase;
-        for (char ch : s) {
-            const unsigned char c = static_cast<unsigned char>(ch);
-            // Unreserved characters according to RFC 3986 plus comma
-            if ((c >= 'A' && c <= 'Z') ||
-                (c >= 'a' && c <= 'z') ||
-                (c >= '0' && c <= '9') ||
-                c == '-' || c == '_' || c == '.' || c == '~' || c == ',') {
-                oss << static_cast<char>(c);
-            } else if (c == ' ') {
-                // Encode space as %20 (safer than '+')
-                oss << "%20";
-            } else {
-                oss << '%' << std::setw(2) << int(c);
-                oss << std::setw(0);
-            }
-        }
-        return oss.str();
-    }
-};
-
+} // namespace weather
 } // namespace rouen::hosts
 
-// Define glaze schemas for the weather structures
+// Define glaze schemas for the weather structures BEFORE WeatherHost methods instantiate glz::read
 template <>
 struct glz::meta<rouen::hosts::weather::Location> {
     using T = rouen::hosts::weather::Location;
@@ -546,7 +266,7 @@ template <>
 struct glz::meta<rouen::hosts::weather::CurrentWeather> {
     using T = rouen::hosts::weather::CurrentWeather;
     static constexpr auto values = glz::object(
-    "coord", &T::coord,
+        "coord", &T::coord,
         "weather", &T::weather,
         "base", &T::base,
         "main", &T::main,
@@ -561,20 +281,6 @@ struct glz::meta<rouen::hosts::weather::CurrentWeather> {
         "id", &T::id,
         "name", &T::name,
         "cod", &T::cod
-    );
-    static constexpr auto options = glz::opts{
-        .error_on_unknown_keys = false
-    };
-};
-
-template <>
-struct glz::meta<rouen::hosts::weather::Forecast> {
-    static constexpr auto values = glz::object(
-        "cod", &rouen::hosts::weather::Forecast::cod,
-        "message", &rouen::hosts::weather::Forecast::message,
-        "cnt", &rouen::hosts::weather::Forecast::cnt,
-        "list", &rouen::hosts::weather::Forecast::list,
-        "city", &rouen::hosts::weather::Forecast::city
     );
     static constexpr auto options = glz::opts{
         .error_on_unknown_keys = false
@@ -598,6 +304,17 @@ struct glz::meta<rouen::hosts::weather::City> {
 };
 
 template <>
+struct glz::meta<rouen::hosts::weather::ForecastItem::ForecastSys> {
+    using T = rouen::hosts::weather::ForecastItem::ForecastSys;
+    static constexpr auto values = glz::object(
+        "pod", &T::pod
+    );
+    static constexpr auto options = glz::opts{
+        .error_on_unknown_keys = false
+    };
+};
+
+template <>
 struct glz::meta<rouen::hosts::weather::ForecastItem> {
     static constexpr auto values = glz::object(
         "dt", &rouen::hosts::weather::ForecastItem::dt,
@@ -618,12 +335,369 @@ struct glz::meta<rouen::hosts::weather::ForecastItem> {
 };
 
 template <>
-struct glz::meta<rouen::hosts::weather::ForecastItem::ForecastSys> {
-    using T = rouen::hosts::weather::ForecastItem::ForecastSys;
+struct glz::meta<rouen::hosts::weather::Forecast> {
     static constexpr auto values = glz::object(
-        "pod", &T::pod
+        "cod", &rouen::hosts::weather::Forecast::cod,
+        "message", &rouen::hosts::weather::Forecast::message,
+        "cnt", &rouen::hosts::weather::Forecast::cnt,
+        "list", &rouen::hosts::weather::Forecast::list,
+        "city", &rouen::hosts::weather::Forecast::city
     );
     static constexpr auto options = glz::opts{
         .error_on_unknown_keys = false
     };
 };
+
+namespace rouen::hosts {
+
+/**
+ * Weather Host Controller
+ * 
+ * This class acts as a controller for weather data, managing the communication
+ * between the UI (cards) and the OpenWeather API.
+ * It provides methods for fetching current weather and forecast data.
+ */
+class WeatherHost {
+public:
+    /**
+     * Constructor initializes the Weather host with a system runner
+     */
+    WeatherHost() 
+        : last_update_time_(std::chrono::steady_clock::now() - std::chrono::hours(2)), // Force initial update
+          consecutive_failures_(0),
+          backoff_minutes_(0)
+    {
+        WEATHER_INFO("WeatherHost: Initializing");
+        
+        // Get the API key from ConfigService (supports .env files and environment variables)
+        auto config = rouen::helpers::ConfigService::instance();
+        api_key_ = config->get_env("OPENWEATHER_KEY");
+        
+        if (api_key_.empty()) {
+            WEATHER_ERROR("WeatherHost: OpenWeather API key not found. Please set OPENWEATHER_KEY in your environment or .env file");
+            WEATHER_INFO("WeatherHost: You can get a free API key at: https://openweathermap.org/api");
+        } else {
+            WEATHER_INFO_FMT("WeatherHost: OpenWeather API key configured (length: {})", api_key_.length());
+        }
+        
+        // Default location - can be improved with geolocation
+        location_ = "Montevideo,UY";
+    }
+
+    /**
+     * Set the location for weather data
+     */
+    void setLocation(std::string_view location) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (location_ != location) {
+            location_ = location;
+            // Invalidate current data to force refresh on next request
+            current_weather_.reset();
+            forecast_.reset();
+        }
+    }
+
+    /**
+     * Get the current location
+     */
+    std::string getLocation() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return location_;
+    }
+
+    /**
+     * Check if the weather data needs to be updated
+     */
+    bool needsUpdate() const {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::minutes>(now - last_update_time_).count();
+        
+        // If we're in a backoff period due to previous failures, respect it
+        if (consecutive_failures_ > 0 && elapsed < backoff_minutes_) {
+            WEATHER_INFO_FMT("WeatherHost: Skipping update due to backoff period ({} min remaining)", 
+                        backoff_minutes_ - elapsed);
+            return false;
+        }
+        
+        // Update weather every 30 minutes, or if we don't have data yet
+        return elapsed >= 30 || !current_weather_ || !forecast_;
+    }
+
+    /**
+     * Get the current weather data
+     */
+    const std::optional<weather::CurrentWeather> &getCurrentWeather() {
+        updateWeatherIfNeeded();
+        
+        std::lock_guard<std::mutex> lock(mutex_);
+        return current_weather_;
+    }
+
+    /**
+     * Get the weather forecast data
+     */
+    std::optional<weather::Forecast> getForecast() {
+        updateWeatherIfNeeded();
+        
+        std::lock_guard<std::mutex> lock(mutex_);
+        return forecast_;
+    }
+
+    /**
+     * Check if an OpenWeather API key is configured (via env or Mesh registry)
+     */
+    bool hasApiKey() const {
+        return !resolveApiKey().empty();
+    }
+
+    /**
+     * Resolve the OpenWeather API key from local config or Mesh registry
+     */
+    std::string resolveApiKey() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!api_key_.empty()) return api_key_;
+        auto config = rouen::helpers::ConfigService::instance();
+        if (config) {
+            std::string key = config->get_env("OPENWEATHER_KEY");
+            if (!key.empty()) return key;
+        }
+        auto get_reg_fn = registrar::try_get<std::function<std::optional<std::string>(const std::string&)>>("mesh_get_registry_value");
+        if (get_reg_fn && *get_reg_fn) {
+            auto reg = (*get_reg_fn)("config/OPENWEATHER_KEY");
+            if (reg && !reg->empty()) return *reg;
+        }
+        return "";
+    }
+
+    /**
+     * Get the count of consecutive API fetch failures
+     */
+    int getConsecutiveFailures() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return consecutive_failures_;
+    }
+
+    /**
+     * Force a refresh of the weather data
+     */
+    void refreshWeather() {
+        fetchWeatherData();
+    }
+
+    /**
+     * Get access to the Weather host controller (needed for weather cards)
+     */
+    static std::shared_ptr<WeatherHost> getHost() {
+        static std::mutex host_mutex;
+        static std::shared_ptr<WeatherHost> shared_host = nullptr;
+        
+        std::lock_guard<std::mutex> lock(host_mutex);
+        
+        if (!shared_host) {
+            WEATHER_INFO("WeatherHost: Creating new shared WeatherHost instance");
+            shared_host = std::make_shared<WeatherHost>();
+        }
+        
+        return shared_host;
+    }
+
+private:
+    /**
+     * Update weather data if needed
+     */
+    void updateWeatherIfNeeded() {
+        if (needsUpdate()) {
+            fetchWeatherData();
+        }
+    }
+
+    /**
+     * Fetch weather data from the OpenWeather API
+     */
+    void fetchWeatherData() {
+        std::string cur_key;
+        std::string cur_loc;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto config = rouen::helpers::ConfigService::instance();
+            if (config) {
+                std::string fresh_key = config->get_env("OPENWEATHER_KEY");
+                if (!fresh_key.empty()) {
+                    api_key_ = std::move(fresh_key);
+                }
+            }
+            if (api_key_.empty()) {
+                auto get_reg_fn = registrar::try_get<std::function<std::optional<std::string>(const std::string&)>>("mesh_get_registry_value");
+                if (get_reg_fn && *get_reg_fn) {
+                    auto reg = (*get_reg_fn)("config/OPENWEATHER_KEY");
+                    if (reg && !reg->empty()) {
+                        api_key_ = *reg;
+                    }
+                }
+            }
+            if (api_key_.empty()) {
+                WEATHER_ERROR("WeatherHost: OpenWeather API key not found. Please set OPENWEATHER_KEY in your environment, .env file, or Rouen Mesh registry");
+                return;
+            }
+            cur_key = api_key_;
+            cur_loc = location_;
+        }
+
+        // Broadcast to Mesh registry if Mesh is connected and registry does not have it yet
+        {
+            auto get_reg_fn = registrar::try_get<std::function<std::optional<std::string>(const std::string&)>>("mesh_get_registry_value");
+            auto set_reg_fn = registrar::try_get<std::function<void(const std::string&, const std::string&, bool)>>("mesh_set_registry_value");
+            if (get_reg_fn && *get_reg_fn && set_reg_fn && *set_reg_fn) {
+                auto reg = (*get_reg_fn)("config/OPENWEATHER_KEY");
+                if (!reg || reg->empty()) {
+                    (*set_reg_fn)("config/OPENWEATHER_KEY", cur_key, false /* persistent */);
+                }
+            }
+        }
+        
+        last_update_time_ = std::chrono::steady_clock::now();
+        
+        // Current weather URL
+        std::string current_url = std::format(
+            "https://api.openweathermap.org/data/2.5/weather?q={}&appid={}&units=metric",
+            url_encode(cur_loc), cur_key
+        );
+        
+        // Forecast URL
+        std::string forecast_url = std::format(
+            "https://api.openweathermap.org/data/2.5/forecast?q={}&appid={}&units=metric&cnt=5",
+            url_encode(cur_loc), cur_key
+        );
+        
+        // Flag to track success of both API calls
+        std::atomic<bool> current_success = false;
+        std::atomic<bool> forecast_success = false;
+        
+        // Temporary storage for thread results
+        std::string current_data;
+        std::string forecast_data;
+        
+        // Fetch current weather
+        std::thread current_thread([current_url, &current_data, &current_success]() {
+            try {
+                http::fetch fetcher(60); // Increase timeout for potential delays
+                current_data = fetcher(current_url);
+                current_success = true;
+                WEATHER_INFO("WeatherHost: Fetched current weather data");
+            } catch (const std::exception& e) {
+                WEATHER_ERROR_FMT("WeatherHost: Failed to fetch current weather: {}", e.what());
+            }
+        });
+        
+        // Fetch forecast
+        std::thread forecast_thread([forecast_url, &forecast_data, &forecast_success]() {
+            try {
+                http::fetch fetcher(60); // Increase timeout for potential delays
+                forecast_data = fetcher(forecast_url);
+                forecast_success = true;
+                WEATHER_INFO("WeatherHost: Fetched forecast data");
+            } catch (const std::exception& e) {
+                WEATHER_ERROR_FMT("WeatherHost: Failed to fetch forecast: {}", e.what());
+            }
+        });
+        
+        // Wait for both threads to complete
+        current_thread.join();
+        forecast_thread.join();
+        
+        // Process results and update backoff state
+        std::lock_guard<std::mutex> lock(mutex_);
+        
+        // Parse current weather if fetch was successful
+        if (current_success) {
+            try {
+                weather::CurrentWeather data;
+                auto error = ::glz::read<glz::opts{.error_on_unknown_keys = false}>(data, current_data);
+                if (error) {
+                    WEATHER_ERROR_FMT("WeatherHost: Error parsing current weather data: {}", 
+                                ::glz::format_error(error, current_data));
+                    current_success = false;
+                } else {
+                    current_weather_ = std::move(data);
+                }
+            } catch (const std::exception& e) {
+                WEATHER_ERROR_FMT("WeatherHost: Exception parsing current weather data: {}", e.what());
+                current_success = false;
+            }
+        }
+        
+        // Parse forecast if fetch was successful
+        if (forecast_success) {
+            try {
+                weather::Forecast data;
+                auto error = ::glz::read<glz::opts{.error_on_unknown_keys = false}>(data, forecast_data);
+                if (error) {
+                    WEATHER_ERROR_FMT("WeatherHost: Error parsing forecast data: {}", 
+                                ::glz::format_error(error, forecast_data));
+                    forecast_success = false;
+                } else {
+                    forecast_ = std::move(data);
+                }
+            } catch (const std::exception& e) {
+                WEATHER_ERROR_FMT("WeatherHost: Exception parsing forecast data: {}", e.what());
+                forecast_success = false;
+            }
+        }
+        
+        // Update backoff state based on success or failure
+        if (current_success && forecast_success) {
+            // Successfully fetched both - reset backoff
+            if (consecutive_failures_ > 0) {
+                WEATHER_INFO("WeatherHost: API calls successful, resetting backoff");
+                consecutive_failures_ = 0;
+                backoff_minutes_ = 0;
+            }
+            // The weather name is available for card classes to use
+        } else {
+            // At least one API call failed - increase backoff
+            consecutive_failures_++;
+            
+            // Exponential backoff: 5, 10, 20, 40, 60, 60, ... minutes (capped at 60)
+            backoff_minutes_ = std::min(consecutive_failures_ < 2 ? 5 : backoff_minutes_ * 2, 60);
+            
+            WEATHER_WARN_FMT("WeatherHost: API call(s) failed, increased backoff to {} minutes after {} consecutive failures", 
+                       backoff_minutes_, consecutive_failures_);
+        }
+    }
+
+    mutable std::mutex mutex_;
+    std::string api_key_;
+    std::string location_;
+    std::optional<weather::CurrentWeather> current_weather_;
+    std::optional<weather::Forecast> forecast_;
+    std::chrono::steady_clock::time_point last_update_time_;
+    int consecutive_failures_;
+    int backoff_minutes_;
+
+    // Percent-encode a string for use in URL query parameters.
+    // We preserve comma to allow the "City,CountryCode" format.
+    static std::string url_encode(std::string_view s) {
+        std::ostringstream oss;
+        oss.fill('0');
+        oss << std::hex << std::uppercase;
+        for (char ch : s) {
+            const unsigned char c = static_cast<unsigned char>(ch);
+            // Unreserved characters according to RFC 3986 plus comma
+            if ((c >= 'A' && c <= 'Z') ||
+                (c >= 'a' && c <= 'z') ||
+                (c >= '0' && c <= '9') ||
+                c == '-' || c == '_' || c == '.' || c == '~' || c == ',') {
+                oss << static_cast<char>(c);
+            } else if (c == ' ') {
+                // Encode space as %20 (safer than '+')
+                oss << "%20";
+            } else {
+                oss << '%' << std::setw(2) << int(c);
+                oss << std::setw(0);
+            }
+        }
+        return oss.str();
+    }
+};
+
+} // namespace rouen::hosts
