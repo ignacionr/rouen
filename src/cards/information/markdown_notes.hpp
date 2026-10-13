@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdlib>
 #include <cstdio>
 #include <filesystem>
 #include <format>
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -14,7 +16,11 @@
 #include <TextEditor.h>
 
 #include "../../fonts.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
+#include "../../helpers/glaze_include.hpp"
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
 #include "../../helpers/markdown_renderer.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../models/notes/notes_repository.hpp"
@@ -24,8 +30,8 @@ namespace rouen::cards {
 
 class markdown_notes : public card {
 public:
-    markdown_notes(std::string_view locator = {})
-        : repository_{} {
+    markdown_notes(std::string_view locator = {}, const std::string& db_path = {})
+        : repository_{db_path.empty() ? rouen::platform::get_user_data_path("notes.db").string() : db_path} {
         colors[0] = {0.22f, 0.42f, 0.65f, 1.0f};
         colors[1] = {0.28f, 0.51f, 0.76f, 0.72f};
         get_color(2, ImVec4{0.86f, 0.55f, 0.25f, 1.0f});
@@ -88,7 +94,52 @@ public:
     }
 
     bool render() override {
-        return render_window([this]() {
+        rouen::ui::imgui_ui_context_impl ui;
+        return render(ui);
+    }
+
+    bool render(rouen::ui::ui_context& ui) override {
+        return render_window([this, &ui]() {
+            // Presentation mode selector
+            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            ui.separator();
+
+            if (adaptive_view_mode) {
+                auto now = std::chrono::steady_clock::now();
+                auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                    try {
+                        adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                        adaptive_error_.clear();
+                    } catch (const std::exception& e) {
+                        adaptive_error_ = e.what();
+                    }
+                    last_adaptive_parse_time_ = now;
+                }
+
+                if (!adaptive_error_.empty()) {
+                    ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                } else {
+                    adaptive_renderer_.render(
+                        adaptive_bound_, adaptive_input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                handle_action(payload);
+                            }
+                        },
+                        helpers::adaptive_cards::render_config{
+                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        }
+                    );
+                }
+                return;
+            }
+
             handle_shortcuts();
             render_status_bar();
 
@@ -117,6 +168,354 @@ public:
             }
         });
     }
+
+    /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+    [[nodiscard]] std::string get_adaptive_card_json() const override {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+        std::vector<glz::json_t> body;
+
+        // 1. Header Container
+        {
+            glz::json_t header_container;
+            header_container["type"] = "Container";
+            header_container["style"] = "emphasis";
+
+            glz::json_t col_set;
+            col_set["type"] = "ColumnSet";
+            std::vector<glz::json_t> columns;
+
+            // Column 1: Emoji memo icon
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+                glz::json_t tb;
+                tb["type"] = "TextBlock";
+                tb["text"] = "📝";
+                tb["size"] = "Large";
+                items.push_back(std::move(tb));
+                col["items"] = std::move(items);
+                columns.push_back(std::move(col));
+            }
+
+            // Column 2: Title & subtitle
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                std::vector<glz::json_t> items;
+
+                glz::json_t tb_title;
+                tb_title["type"] = "TextBlock";
+                tb_title["text"] = "Markdown Notes Studio";
+                tb_title["weight"] = "Bolder";
+                tb_title["size"] = "Large";
+                items.push_back(std::move(tb_title));
+
+                glz::json_t tb_sub;
+                tb_sub["type"] = "TextBlock";
+                tb_sub["text"] = "Organized personal knowledge base";
+                tb_sub["isSubtle"] = true;
+                tb_sub["size"] = "Small";
+                items.push_back(std::move(tb_sub));
+
+                col["items"] = std::move(items);
+                columns.push_back(std::move(col));
+            }
+
+            // Column 3: Tag badge
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+
+                std::string tag_display;
+                std::string raw_tags = tags_buffer_.data();
+                if (!raw_tags.empty()) {
+                    std::stringstream ss(raw_tags);
+                    std::string item;
+                    while (std::getline(ss, item, ',')) {
+                        auto trimmed = models::notes::notes_repository::trim(item);
+                        if (!trimmed.empty()) {
+                            if (!tag_display.empty()) tag_display += " ";
+                            if (!trimmed.starts_with("#")) tag_display += "#";
+                            tag_display += trimmed;
+                        }
+                    }
+                }
+                if (tag_display.empty()) {
+                    tag_display = "#notes #mesh";
+                }
+
+                glz::json_t tb_tags;
+                tb_tags["type"] = "TextBlock";
+                tb_tags["text"] = tag_display;
+                tb_tags["weight"] = "Bolder";
+                tb_tags["color"] = "Accent";
+                tb_tags["size"] = "Small";
+                items.push_back(std::move(tb_tags));
+
+                col["items"] = std::move(items);
+                columns.push_back(std::move(col));
+            }
+
+            col_set["columns"] = std::move(columns);
+            header_container["items"] = std::vector<glz::json_t>{std::move(col_set)};
+            body.push_back(std::move(header_container));
+        }
+
+        // 2. FactSet
+        {
+            glz::json_t fact_set;
+            fact_set["type"] = "FactSet";
+            std::vector<glz::json_t> facts;
+
+            facts.push_back(glz::json_t::object_t{
+                {"title", "Note ID:"},
+                {"value", std::to_string(selected_note_id_)}
+            });
+
+            facts.push_back(glz::json_t::object_t{
+                {"title", "Status:"},
+                {"value", editor_.IsTextChanged() ? "Unsaved" : "Saved"}
+            });
+
+            facts.push_back(glz::json_t::object_t{
+                {"title", "Total Notes:"},
+                {"value", std::to_string(notes_cache_.size())}
+            });
+
+            facts.push_back(glz::json_t::object_t{
+                {"title", "Last Sync:"},
+                {"value", last_sync_timestamp_.empty() ? "never" : last_sync_timestamp_}
+            });
+
+            fact_set["facts"] = std::move(facts);
+            body.push_back(std::move(fact_set));
+        }
+
+        // 3. Form Inputs Container
+        {
+            glz::json_t input_container;
+            input_container["type"] = "Container";
+
+            std::vector<glz::json_t> items;
+
+            // Note Title Input
+            {
+                glz::json_t input_title;
+                input_title["type"] = "Input.Text";
+                input_title["id"] = "note_title";
+                input_title["label"] = "Note Title";
+                std::string cur_title = title_buffer_.data();
+                input_title["value"] = cur_title.empty() ? selected_note_title_ : cur_title;
+                items.push_back(std::move(input_title));
+            }
+
+            // Note Tags Input
+            {
+                glz::json_t input_tags;
+                input_tags["type"] = "Input.Text";
+                input_tags["id"] = "note_tags";
+                input_tags["label"] = "Tags (comma-separated)";
+                input_tags["value"] = std::string(tags_buffer_.data());
+                items.push_back(std::move(input_tags));
+            }
+
+            // Note Content Input
+            {
+                glz::json_t input_content;
+                input_content["type"] = "Input.Text";
+                input_content["id"] = "note_content";
+                input_content["label"] = "Markdown Content";
+                input_content["isMultiline"] = true;
+                input_content["value"] = get_current_note_content();
+                items.push_back(std::move(input_content));
+            }
+
+            input_container["items"] = std::move(items);
+            body.push_back(std::move(input_container));
+        }
+
+        card["body"] = std::move(body);
+
+        // Actions
+        std::vector<glz::json_t> actions;
+        {
+            glz::json_t act_save;
+            act_save["type"] = "Action.Execute";
+            act_save["title"] = "Save Note";
+            act_save["verb"] = "save_note";
+            actions.push_back(std::move(act_save));
+
+            glz::json_t act_new;
+            act_new["type"] = "Action.Execute";
+            act_new["title"] = "New Note";
+            act_new["verb"] = "new_note";
+            actions.push_back(std::move(act_new));
+
+            glz::json_t act_delete;
+            act_delete["type"] = "Action.Execute";
+            act_delete["title"] = "Delete Note";
+            act_delete["verb"] = "delete_note";
+            actions.push_back(std::move(act_delete));
+        }
+        card["actions"] = std::move(actions);
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
+    }
+
+    /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+    void handle_action(std::string_view action_json) override {
+        if (action_json.empty()) return;
+        try {
+            glz::json_t payload{};
+            std::string verb;
+            glz::json_t data{};
+
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (!err && payload.is_object()) {
+                if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                    verb = payload["verb"].get<std::string>();
+                } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                    verb = payload["action"].get<std::string>();
+                }
+
+                if (payload.contains("data") && payload["data"].is_object()) {
+                    data = payload["data"];
+                    if (verb.empty()) {
+                        if (data.contains("verb") && data["verb"].holds<std::string>()) {
+                            verb = data["verb"].get<std::string>();
+                        } else if (data.contains("action") && data["action"].holds<std::string>()) {
+                            verb = data["action"].get<std::string>();
+                        }
+                    }
+                } else {
+                    data = payload;
+                }
+            } else {
+                verb = std::string(action_json);
+            }
+
+            if (verb == "save_note") {
+                if (data.is_object()) {
+                    if (data.contains("title") && data["title"].holds<std::string>()) {
+                        set_title_buffer(data["title"].get<std::string>());
+                    } else if (data.contains("note_title") && data["note_title"].holds<std::string>()) {
+                        set_title_buffer(data["note_title"].get<std::string>());
+                    }
+
+                    if (data.contains("tags") && data["tags"].holds<std::string>()) {
+                        set_tags_buffer(data["tags"].get<std::string>());
+                    } else if (data.contains("note_tags") && data["note_tags"].holds<std::string>()) {
+                        set_tags_buffer(data["note_tags"].get<std::string>());
+                    }
+
+                    if (data.contains("content") && data["content"].holds<std::string>()) {
+                        editor_.SetText(data["content"].get<std::string>());
+                    } else if (data.contains("note_content") && data["note_content"].holds<std::string>()) {
+                        editor_.SetText(data["note_content"].get<std::string>());
+                    }
+                }
+                save_current_note();
+                last_action_ = "save_note";
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "new_note") {
+                clear_editor_for_new_note();
+                status_message_ = "New note buffer initialized";
+                last_action_ = "new_note";
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "delete_note") {
+                int note_id = 0;
+                if (data.is_object()) {
+                    if (data.contains("note_id")) {
+                        if (data["note_id"].holds<std::string>()) {
+                            try { note_id = std::stoi(data["note_id"].get<std::string>()); } catch (...) {}
+                        } else if (data["note_id"].holds<double>()) {
+                            note_id = static_cast<int>(data["note_id"].get<double>());
+                        }
+                    } else if (data.contains("id")) {
+                        if (data["id"].holds<std::string>()) {
+                            try { note_id = std::stoi(data["id"].get<std::string>()); } catch (...) {}
+                        } else if (data["id"].holds<double>()) {
+                            note_id = static_cast<int>(data["id"].get<double>());
+                        }
+                    }
+                }
+                if (note_id <= 0) {
+                    note_id = selected_note_id_;
+                }
+                if (note_id > 0) {
+                    if (repository_.delete_note(note_id)) {
+                        status_message_ = "Note deleted";
+                        if (selected_note_id_ == note_id) {
+                            clear_editor_for_new_note();
+                        }
+                        refresh_notes();
+                    }
+                }
+                last_action_ = "delete_note";
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "search_notes") {
+                std::string query;
+                if (data.is_object()) {
+                    if (data.contains("query") && data["query"].holds<std::string>()) {
+                        query = data["query"].get<std::string>();
+                    } else if (data.contains("search_term") && data["search_term"].holds<std::string>()) {
+                        query = data["search_term"].get<std::string>();
+                    } else if (data.contains("search") && data["search"].holds<std::string>()) {
+                        query = data["search"].get<std::string>();
+                    }
+
+                    if (data.contains("tag_filter") && data["tag_filter"].holds<std::string>()) {
+                        set_buffer(tag_filter_buffer_, data["tag_filter"].get<std::string>());
+                    }
+                }
+                set_buffer(search_buffer_, query);
+                notes_cache_ = repository_.list_notes(
+                    models::notes::notes_repository::trim(search_buffer_.data()),
+                    models::notes::notes_repository::trim(tag_filter_buffer_.data())
+                );
+                last_action_ = "search_notes";
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "toggle_adaptive_view") {
+                adaptive_view_mode = !adaptive_view_mode;
+                last_adaptive_parse_time_ = {};
+                last_action_ = "toggle_adaptive_view";
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[notes] Action error: " << e.what() << std::endl;
+        } catch (...) {}
+    }
+
+    [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    void set_adaptive_view_mode(bool enabled) noexcept { adaptive_view_mode = enabled; }
+
+    [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
+    [[nodiscard]] int get_current_note_id() const noexcept { return selected_note_id_; }
+    [[nodiscard]] std::string get_current_note_title() const {
+        std::string s = title_buffer_.data();
+        return s.empty() ? selected_note_title_ : s;
+    }
+    [[nodiscard]] std::string get_current_note_content() const {
+        std::string text = editor_.GetText();
+        while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) {
+            text.pop_back();
+        }
+        return text;
+    }
+    [[nodiscard]] std::string get_current_tags() const { return std::string(tags_buffer_.data()); }
+    [[nodiscard]] std::string get_search_query() const { return std::string(search_buffer_.data()); }
+    [[nodiscard]] size_t get_notes_count() const noexcept { return notes_cache_.size(); }
+    [[nodiscard]] bool is_dirty() const { return editor_.IsTextChanged(); }
 
 private:
     void render_status_bar() {
@@ -356,7 +755,10 @@ private:
             selected_note_title_ = title;
             status_message_ = "Note saved";
             refresh_notes();
-            editor_.SetText(editor_.GetText());
+            auto note = repository_.get_note_by_id(selected_note_id_);
+            if (note.has_value()) {
+                editor_.SetText(note->content);
+            }
         } catch (const std::exception& e) {
             status_message_ = std::format("Save failed: {}", e.what());
         }
@@ -392,7 +794,8 @@ private:
         }
     }
 
-    static void set_buffer(std::array<char, 512>& buffer, const std::string& value) {
+    template <size_t N>
+    static void set_buffer(std::array<char, N>& buffer, const std::string& value) {
         std::fill(buffer.begin(), buffer.end(), '\0');
         std::snprintf(buffer.data(), buffer.size(), "%s", value.c_str());
     }
@@ -633,6 +1036,17 @@ private:
     std::string last_sync_timestamp_;
 
     std::string status_message_;
+
+    // Adaptive Card presentation override state
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    mutable std::string adaptive_error_{};
+    mutable std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+
+    std::string last_action_{};
 };
 
 } // namespace rouen::cards

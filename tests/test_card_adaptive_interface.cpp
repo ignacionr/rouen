@@ -39,6 +39,7 @@
 #include "../src/cards/information/directory_card.hpp"
 #include "../src/cards/information/image_viewer.hpp"
 #include "../src/cards/information/mail/mail.hpp"
+#include "../src/cards/information/markdown_notes.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -2745,5 +2746,121 @@ TEST(mailAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"mail_delete\",\"data\":{\"message_id\":null}}"));
 }
 
+TEST(markdown_notesAdaptiveTest, JsonSerialization) {
+    rouen::cards::markdown_notes notes{};
+    std::string card_json = notes.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
 
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
 
+    bool found_note_id_fact = false;
+    bool found_status_fact = false;
+    bool found_title_input = false;
+    bool found_tags_input = false;
+    bool found_content_input = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.Text" && child.id == "note_title") {
+                    found_title_input = true;
+                }
+                if (child.type == "Input.Text" && child.id == "note_tags") {
+                    found_tags_input = true;
+                }
+                if (child.type == "Input.Text" && child.id == "note_content") {
+                    found_content_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Note ID:") found_note_id_fact = true;
+                if (fact.title == "Status:") found_status_fact = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_note_id_fact);
+    EXPECT_TRUE(found_status_fact);
+    EXPECT_TRUE(found_title_input);
+    EXPECT_TRUE(found_tags_input);
+    EXPECT_TRUE(found_content_input);
+
+    bool found_save_action = false;
+    bool found_new_action = false;
+    bool found_delete_action = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "save_note") found_save_action = true;
+        if (act.verb == "new_note") found_new_action = true;
+        if (act.verb == "delete_note") found_delete_action = true;
+    }
+    EXPECT_TRUE(found_save_action);
+    EXPECT_TRUE(found_new_action);
+    EXPECT_TRUE(found_delete_action);
+}
+
+TEST(markdown_notesAdaptiveTest, ActionDispatch) {
+    const auto temp_db = (std::filesystem::temp_directory_path() / "rouen_test_notes_action_dispatch.db").string();
+    std::error_code ec;
+    std::filesystem::remove(temp_db, ec);
+
+    rouen::cards::markdown_notes notes{"", temp_db};
+
+    // Initial state
+    EXPECT_FALSE(notes.is_adaptive_view_mode());
+
+    // 1. save_note
+    notes.handle_action(R"({"type":"Action.Execute","verb":"save_note","data":{"title":"Test Note Alpha","tags":"unit-test, c++20","content":"# Test Note\nThis is content."}})");
+    EXPECT_EQ(notes.get_last_action(), "save_note");
+    EXPECT_GT(notes.get_current_note_id(), 0);
+    EXPECT_EQ(notes.get_current_note_title(), "Test Note Alpha");
+    EXPECT_EQ(notes.get_current_note_content(), "# Test Note\nThis is content.");
+    EXPECT_EQ(notes.get_notes_count(), 1u);
+    const int created_id = notes.get_current_note_id();
+
+    // 2. search_notes
+    notes.handle_action(R"({"type":"Action.Execute","verb":"search_notes","data":{"query":"Alpha"}})");
+    EXPECT_EQ(notes.get_last_action(), "search_notes");
+    EXPECT_EQ(notes.get_search_query(), "Alpha");
+    EXPECT_EQ(notes.get_notes_count(), 1u);
+
+    // 3. new_note
+    notes.handle_action(R"({"type":"Action.Execute","verb":"new_note"})");
+    EXPECT_EQ(notes.get_last_action(), "new_note");
+    EXPECT_EQ(notes.get_current_note_id(), 0);
+    EXPECT_TRUE(notes.get_current_note_title().empty());
+    EXPECT_TRUE(notes.get_current_note_content().empty());
+
+    // 4. delete_note
+    notes.handle_action(std::format(R"({{"type":"Action.Execute","verb":"delete_note","data":{{"note_id":"{}"}}}})", created_id));
+    EXPECT_EQ(notes.get_last_action(), "delete_note");
+    EXPECT_EQ(notes.get_notes_count(), 0u);
+
+    // 5. toggle_adaptive_view
+    notes.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(notes.is_adaptive_view_mode());
+    notes.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(notes.is_adaptive_view_mode());
+
+    std::filesystem::remove(temp_db, ec);
+}
+
+TEST(markdown_notesAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::markdown_notes notes{};
+    EXPECT_NO_THROW(notes.handle_action(""));
+    EXPECT_NO_THROW(notes.handle_action("not a json string"));
+    EXPECT_NO_THROW(notes.handle_action("{"));
+    EXPECT_NO_THROW(notes.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(notes.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(notes.handle_action("{\"verb\":\"save_note\",\"data\":null}"));
+    EXPECT_NO_THROW(notes.handle_action("{\"verb\":\"save_note\",\"data\":{\"title\":null,\"content\":null,\"tags\":null}}"));
+    EXPECT_NO_THROW(notes.handle_action("{\"verb\":\"search_notes\",\"data\":null}"));
+    EXPECT_NO_THROW(notes.handle_action("{\"verb\":\"search_notes\",\"data\":{\"query\":null}}"));
+    EXPECT_NO_THROW(notes.handle_action("{\"verb\":\"delete_note\",\"data\":null}"));
+    EXPECT_NO_THROW(notes.handle_action("{\"verb\":\"delete_note\",\"data\":{\"note_id\":null}}"));
+}
