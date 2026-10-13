@@ -57,6 +57,7 @@
 #include "../src/cards/information/pdf_viewer.hpp"
 #include "../src/cards/information/solar_system.hpp"
 #include "../src/cards/information/telegram.hpp"
+#include "../src/cards/information/travel.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -4923,3 +4924,122 @@ TEST(terminalAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(term.handle_action("{\"verb\":\"term_clear\",\"data\":null}"));
     EXPECT_NO_THROW(term.handle_action("{\"verb\":\"term_sigint\",\"data\":null}"));
 }
+
+TEST(travelAdaptiveTest, JsonSerialization) {
+    rouen::cards::travel travel_card{};
+    std::string card_json = travel_card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_header_title = false;
+    bool found_gate_fact = false;
+    bool found_time_fact = false;
+    bool found_seat_fact = false;
+    bool found_hotel_fact = false;
+    bool found_type_input = false;
+    bool found_details_input = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& col_set : elem.items) {
+                if (col_set.type == "ColumnSet") {
+                    for (const auto& col : col_set.columns) {
+                        for (const auto& item : col.items) {
+                            if (item.type == "TextBlock") {
+                                if (item.text.find("Tokyo C++ Summit 2026") != std::string::npos) {
+                                    found_header_title = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (const auto& item : elem.items) {
+                if (item.type == "Input.ChoiceSet" && (item.id == "type" || item.id == "reservation_type")) {
+                    found_type_input = true;
+                }
+                if (item.type == "Input.Text" && (item.id == "details" || item.id == "reservation_details")) {
+                    found_details_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title.find("Terminal / Gate") != std::string::npos) found_gate_fact = true;
+                if (fact.title.find("Boarding Time") != std::string::npos) found_time_fact = true;
+                if (fact.title.find("Seat") != std::string::npos) found_seat_fact = true;
+                if (fact.title.find("Hotel") != std::string::npos) found_hotel_fact = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_header_title);
+    EXPECT_TRUE(found_gate_fact);
+    EXPECT_TRUE(found_time_fact);
+    EXPECT_TRUE(found_seat_fact);
+    EXPECT_TRUE(found_hotel_fact);
+    EXPECT_TRUE(found_type_input);
+    EXPECT_TRUE(found_details_input);
+
+    bool found_add_reservation_action = false;
+    bool found_open_url_action = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "add_reservation" || act.title.find("Add Reservation") != std::string::npos) {
+            found_add_reservation_action = true;
+        }
+        if (act.type == "Action.OpenUrl" || act.url.find("flightaware") != std::string::npos) {
+            found_open_url_action = true;
+        }
+    }
+    EXPECT_TRUE(found_add_reservation_action);
+    EXPECT_TRUE(found_open_url_action);
+}
+
+TEST(travelAdaptiveTest, ActionDispatch) {
+    rouen::cards::travel travel_card{};
+    EXPECT_FALSE(travel_card.is_adaptive_view_mode());
+
+    // 1. add_reservation (Hotel)
+    travel_card.handle_action(R"raw({"type":"Action.Execute","verb":"add_reservation","data":{"type":"Hotel","details":"Park Hyatt Tokyo (Confirmed #99281)"}})raw");
+    EXPECT_EQ(travel_card.get_last_action(), "add_reservation");
+    EXPECT_EQ(travel_card.get_hotel_name(), "Park Hyatt Tokyo (Confirmed #99281)");
+    EXPECT_NE(travel_card.get_adaptive_card_json().find("Park Hyatt Tokyo"), std::string::npos);
+
+    // 1b. add_reservation (Flight)
+    travel_card.handle_action(R"raw({"type":"Action.Execute","verb":"add_reservation","data":{"type":"Flight","details":"JL 001"}})raw");
+    EXPECT_EQ(travel_card.get_last_action(), "add_reservation");
+    EXPECT_EQ(travel_card.get_flight_number(), "JL 001");
+    EXPECT_NE(travel_card.get_adaptive_card_json().find("JL 001"), std::string::npos);
+
+    // 2. toggle_checklist
+    EXPECT_FALSE(travel_card.is_checklist_item_completed("adapt"));
+    travel_card.handle_action(R"raw({"type":"Action.Execute","verb":"toggle_checklist","data":{"item_id":"adapt"}})raw");
+    EXPECT_EQ(travel_card.get_last_action(), "toggle_checklist");
+    EXPECT_TRUE(travel_card.is_checklist_item_completed("adapt"));
+
+    travel_card.handle_action(R"raw({"type":"Action.Execute","verb":"toggle_checklist","data":{"item_id":"adapt"}})raw");
+    EXPECT_FALSE(travel_card.is_checklist_item_completed("adapt"));
+
+    // 3. toggle_adaptive_view
+    travel_card.handle_action(R"raw({"type":"Action.Execute","verb":"toggle_adaptive_view"})raw");
+    EXPECT_TRUE(travel_card.is_adaptive_view_mode());
+    travel_card.handle_action(R"raw({"type":"Action.Execute","verb":"toggle_adaptive_view"})raw");
+    EXPECT_FALSE(travel_card.is_adaptive_view_mode());
+}
+
+TEST(travelAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::travel travel_card{};
+    EXPECT_NO_THROW(travel_card.handle_action(""));
+    EXPECT_NO_THROW(travel_card.handle_action("not a json string"));
+    EXPECT_NO_THROW(travel_card.handle_action("{"));
+    EXPECT_NO_THROW(travel_card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(travel_card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(travel_card.handle_action("{\"verb\":\"add_reservation\",\"data\":null}"));
+    EXPECT_NO_THROW(travel_card.handle_action("{\"verb\":\"toggle_checklist\",\"data\":null}"));
+}
+

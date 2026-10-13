@@ -18,8 +18,26 @@
 #include "../../helpers/debug.hpp" // Add debug header
 #include "travel_plan.hpp"
 #include "../../../external/IconsMaterialDesign.h"
+#include "../../helpers/ui_context.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
+#include "../../helpers/glaze_include.hpp"
+#include "../../helpers/platform_utils.hpp"
+#include "../../fonts.hpp"
 
 namespace rouen::cards {
+
+struct checklist_item {
+    std::string id;
+    std::string task;
+    bool completed{false};
+};
+
+struct reservation_entry {
+    std::string type;
+    std::string details;
+};
 
 // Main Travel Plans card that displays all plans
 class travel : public card {
@@ -481,6 +499,11 @@ public:
     }
 
     bool render() override {
+        rouen::ui::imgui_ui_context_impl ui;
+        return render(ui);
+    }
+
+    bool render(rouen::ui::ui_context& ui) override {
         DB_INFO("Travel card: Render starting");
         
         // Check if we need to refresh our loading state
@@ -497,7 +520,47 @@ public:
             last_refresh_time = now;
         }
         
-        bool result = render_window([this]() {
+        bool result = render_window([this, &ui]() {
+            // Presentation mode selector
+            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            ui.separator();
+
+            if (adaptive_view_mode) {
+                auto now_t = std::chrono::steady_clock::now();
+                auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now_t - last_adaptive_parse_time_).count();
+                if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                    try {
+                        adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                        adaptive_error_.clear();
+                    } catch (const std::exception& e) {
+                        adaptive_error_ = e.what();
+                    }
+                    last_adaptive_parse_time_ = now_t;
+                }
+
+                if (!adaptive_error_.empty()) {
+                    ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                } else {
+                    adaptive_renderer_.render(
+                        adaptive_bound_, adaptive_input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                handle_action(payload);
+                            }
+                        },
+                        helpers::adaptive_cards::render_config{
+                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        }
+                    );
+                }
+                return;
+            }
+
             try {
                 // Add plan form section
                 render_add_plan();
@@ -689,16 +752,423 @@ public:
     std::string get_uri() const override {
         return "travel";
     }
-    
+
+    [[nodiscard]] std::string get_adaptive_card_json() const override {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+        std::vector<glz::json_t> body;
+
+        // 1. Header Container (emphasis)
+        {
+            glz::json_t container;
+            container["type"] = "Container";
+            container["style"] = "emphasis";
+
+            glz::json_t col_set;
+            col_set["type"] = "ColumnSet";
+
+            std::vector<glz::json_t> cols;
+
+            // Icon column
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+                glz::json_t icon;
+                icon["type"] = "TextBlock";
+                icon["text"] = "\u2708\ufe0f";
+                icon["size"] = "Large";
+                items.push_back(std::move(icon));
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            // Title and date column
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                std::vector<glz::json_t> items;
+
+                glz::json_t title;
+                title["type"] = "TextBlock";
+                title["text"] = trip_destination;
+                title["weight"] = "Bolder";
+                title["size"] = "Large";
+                items.push_back(std::move(title));
+
+                glz::json_t dates;
+                dates["type"] = "TextBlock";
+                dates["text"] = departure_date.starts_with("Trip dates:") ? departure_date : ("Trip dates: " + departure_date);
+                dates["isSubtle"] = true;
+                dates["size"] = "Small";
+                items.push_back(std::move(dates));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            col_set["columns"] = std::move(cols);
+            container["items"] = std::vector<glz::json_t>{std::move(col_set)};
+            body.push_back(std::move(container));
+        }
+
+        // 2. Boarding Pass Container (accent)
+        {
+            glz::json_t container;
+            container["type"] = "Container";
+            container["style"] = "accent";
+
+            glz::json_t col_set;
+            col_set["type"] = "ColumnSet";
+
+            std::vector<glz::json_t> cols;
+
+            // Origin column
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                std::vector<glz::json_t> items;
+
+                glz::json_t code;
+                code["type"] = "TextBlock";
+                code["text"] = origin_code;
+                code["weight"] = "Bolder";
+                code["size"] = "ExtraLarge";
+                items.push_back(std::move(code));
+
+                glz::json_t city;
+                city["type"] = "TextBlock";
+                city["text"] = origin_city;
+                city["isSubtle"] = true;
+                city["size"] = "Small";
+                items.push_back(std::move(city));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            // Arrow / Flight column
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+
+                glz::json_t arrow;
+                arrow["type"] = "TextBlock";
+                arrow["text"] = "\u2794";
+                arrow["size"] = "Large";
+                items.push_back(std::move(arrow));
+
+                glz::json_t flight;
+                flight["type"] = "TextBlock";
+                flight["text"] = flight_number;
+                flight["isSubtle"] = true;
+                flight["size"] = "Small";
+                items.push_back(std::move(flight));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            // Destination column
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                col["horizontalAlignment"] = "Right";
+                std::vector<glz::json_t> items;
+
+                glz::json_t code;
+                code["type"] = "TextBlock";
+                code["text"] = destination_code;
+                code["weight"] = "Bolder";
+                code["size"] = "ExtraLarge";
+                code["horizontalAlignment"] = "Right";
+                items.push_back(std::move(code));
+
+                glz::json_t city;
+                city["type"] = "TextBlock";
+                city["text"] = destination_city;
+                city["isSubtle"] = true;
+                city["size"] = "Small";
+                city["horizontalAlignment"] = "Right";
+                items.push_back(std::move(city));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            col_set["columns"] = std::move(cols);
+            container["items"] = std::vector<glz::json_t>{std::move(col_set)};
+            body.push_back(std::move(container));
+        }
+
+        // 3. FactSet
+        {
+            glz::json_t fact_set;
+            fact_set["type"] = "FactSet";
+
+            std::vector<glz::json_t> facts;
+            facts.push_back(glz::json_t{{"title", "Terminal / Gate:"}, {"value", terminal_gate}});
+            facts.push_back(glz::json_t{{"title", "Boarding Time:"}, {"value", boarding_time}});
+            facts.push_back(glz::json_t{{"title", "Seat:"}, {"value", seat}});
+            facts.push_back(glz::json_t{{"title", "Hotel:"}, {"value", hotel_name}});
+
+            for (const auto& res : reservations) {
+                facts.push_back(glz::json_t{{"title", res.type + ":"}, {"value", res.details}});
+            }
+
+            fact_set["facts"] = std::move(facts);
+            body.push_back(std::move(fact_set));
+        }
+
+        // 4. Inputs Container
+        {
+            glz::json_t input_container;
+            input_container["type"] = "Container";
+            input_container["separator"] = true;
+
+            std::vector<glz::json_t> items;
+
+            // Type choice
+            {
+                glz::json_t choice_set;
+                choice_set["type"] = "Input.ChoiceSet";
+                choice_set["id"] = "type";
+                choice_set["label"] = "Reservation Type";
+                choice_set["value"] = "Flight";
+
+                std::vector<glz::json_t> choices;
+                choices.push_back(glz::json_t{{"title", "Flight"}, {"value", "Flight"}});
+                choices.push_back(glz::json_t{{"title", "Hotel"}, {"value", "Hotel"}});
+                choices.push_back(glz::json_t{{"title", "Car Rental"}, {"value", "Car Rental"}});
+                choice_set["choices"] = std::move(choices);
+                items.push_back(std::move(choice_set));
+            }
+
+            // Details input
+            {
+                glz::json_t text_input;
+                text_input["type"] = "Input.Text";
+                text_input["id"] = "details";
+                text_input["placeholder"] = "Reservation details (e.g. Flight JL 001 / Conf #12345)";
+                items.push_back(std::move(text_input));
+            }
+
+            // Checklist item ID input
+            {
+                glz::json_t text_input;
+                text_input["type"] = "Input.Text";
+                text_input["id"] = "item_id";
+                text_input["placeholder"] = "Checklist item ID to toggle (e.g. adapt, esim)";
+                items.push_back(std::move(text_input));
+            }
+
+            input_container["items"] = std::move(items);
+            body.push_back(std::move(input_container));
+        }
+
+        card["body"] = std::move(body);
+
+        // 5. Actions
+        {
+            std::vector<glz::json_t> actions;
+
+            {
+                glz::json_t act;
+                act["type"] = "Action.Execute";
+                act["title"] = "Add Reservation";
+                act["verb"] = "add_reservation";
+                actions.push_back(std::move(act));
+            }
+            {
+                glz::json_t act;
+                act["type"] = "Action.Execute";
+                act["title"] = "Toggle Item";
+                act["verb"] = "toggle_checklist";
+                actions.push_back(std::move(act));
+            }
+            {
+                glz::json_t act;
+                act["type"] = "Action.OpenUrl";
+                act["title"] = "Flight Status";
+                act["url"] = "https://flightaware.com";
+                actions.push_back(std::move(act));
+            }
+
+            card["actions"] = std::move(actions);
+        }
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
+    }
+
+    void handle_action(std::string_view action_json) override {
+        if (action_json.empty()) return;
+
+        try {
+            glz::json_t payload{};
+            std::string verb;
+            glz::json_t data{};
+
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (!err && payload.is_object()) {
+                if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                    verb = payload["verb"].get<std::string>();
+                } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                    verb = payload["action"].get<std::string>();
+                }
+
+                if (payload.contains("data") && payload["data"].is_object()) {
+                    data = payload["data"];
+                } else {
+                    data = payload;
+                }
+            } else {
+                verb = std::string(action_json);
+            }
+
+            if (verb == "add_reservation") {
+                last_action_ = "add_reservation";
+                std::string res_type = "Flight";
+                std::string res_details;
+
+                if (data.is_object()) {
+                    if (data.contains("type") && data["type"].holds<std::string>()) {
+                        res_type = data["type"].get<std::string>();
+                    } else if (data.contains("reservation_type") && data["reservation_type"].holds<std::string>()) {
+                        res_type = data["reservation_type"].get<std::string>();
+                    }
+
+                    if (data.contains("details") && data["details"].holds<std::string>()) {
+                        res_details = data["details"].get<std::string>();
+                    } else if (data.contains("reservation_details") && data["reservation_details"].holds<std::string>()) {
+                        res_details = data["reservation_details"].get<std::string>();
+                    }
+                }
+
+                if (!res_details.empty()) {
+                    reservations.push_back({res_type, res_details});
+                    std::string lower_type = res_type;
+                    std::transform(lower_type.begin(), lower_type.end(), lower_type.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                    if (lower_type.find("hotel") != std::string::npos) {
+                        hotel_name = res_details;
+                    } else if (lower_type.find("flight") != std::string::npos) {
+                        flight_number = res_details;
+                    }
+                }
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "toggle_checklist") {
+                last_action_ = "toggle_checklist";
+                std::string item_id;
+
+                if (data.is_object()) {
+                    if (data.contains("item_id") && data["item_id"].holds<std::string>()) {
+                        item_id = data["item_id"].get<std::string>();
+                    } else if (data.contains("checklist_item_id") && data["checklist_item_id"].holds<std::string>()) {
+                        item_id = data["checklist_item_id"].get<std::string>();
+                    } else if (data.contains("id") && data["id"].holds<std::string>()) {
+                        item_id = data["id"].get<std::string>();
+                    }
+                }
+
+                if (!item_id.empty()) {
+                    bool found = false;
+                    for (auto& item : checklist) {
+                        if (item.id == item_id) {
+                            item.completed = !item.completed;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        checklist.push_back({item_id, item_id, true});
+                    }
+                }
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "toggle_adaptive_view") {
+                adaptive_view_mode = !adaptive_view_mode;
+                last_action_ = "toggle_adaptive_view";
+                last_adaptive_parse_time_ = {};
+            }
+        } catch (const std::exception& e) {
+            DB_ERROR_FMT("Travel card: Action error: {}", e.what());
+        }
+    }
+
+    [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    void set_adaptive_view_mode(bool v) noexcept { adaptive_view_mode = v; }
+
+    [[nodiscard]] const std::string& get_trip_destination() const noexcept { return trip_destination; }
+    void set_trip_destination(std::string_view dest) { trip_destination = dest; }
+
+    [[nodiscard]] const std::string& get_departure_date() const noexcept { return departure_date; }
+    void set_departure_date(std::string_view date) { departure_date = date; }
+
+    [[nodiscard]] const std::string& get_flight_number() const noexcept { return flight_number; }
+    void set_flight_number(std::string_view fn) { flight_number = fn; }
+
+    [[nodiscard]] const std::string& get_hotel_name() const noexcept { return hotel_name; }
+    void set_hotel_name(std::string_view hn) { hotel_name = hn; }
+
+    [[nodiscard]] const std::vector<checklist_item>& get_checklist() const noexcept { return checklist; }
+    [[nodiscard]] bool is_checklist_item_completed(std::string_view item_id) const {
+        for (const auto& item : checklist) {
+            if (item.id == item_id) return item.completed;
+        }
+        return false;
+    }
+
+    [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
+    [[nodiscard]] const std::vector<reservation_entry>& get_reservations() const noexcept { return reservations; }
+
 private:
     std::shared_ptr<hosts::TravelHost> travel_host;
     std::vector<long long> plans_to_delete;
     bool is_loading = false;
     std::chrono::steady_clock::time_point last_refresh_time;
-    
+
     // Date picker state
     int current_month;
     int current_year;
+
+    // Adaptive Card presentation override state
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    std::string adaptive_error_{};
+    std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+
+    // Synchronized card state
+    std::string trip_destination{"Tokyo C++ Summit 2026"};
+    std::string departure_date{"Nov 12 - Nov 20, 2026 (36 days away)"};
+    std::string flight_number{"NH 184"};
+    std::string hotel_name{"The Capitol Hotel Tokyu (Confirmed #849201)"};
+    std::string origin_code{"EZE"};
+    std::string origin_city{"Buenos Aires"};
+    std::string destination_code{"HND"};
+    std::string destination_city{"Tokyo Haneda"};
+    std::string terminal_gate{"Terminal 2, Gate B14"};
+    std::string boarding_time{"21:45 local time"};
+    std::string seat{"12A (Window)"};
+    std::vector<checklist_item> checklist{
+        {"pass", "Renew/Check Passport", true},
+        {"ins", "Travel Insurance Policy", true},
+        {"adapt", "Power Plugs & Adapters", false},
+        {"esim", "International eSIM Activation", false}
+    };
+    std::vector<reservation_entry> reservations;
+    std::string last_action_{};
 };
 
 } // namespace rouen::cards
