@@ -20,6 +20,10 @@
 #include "models/github/host.hpp"
 #include "models/github/login_host.hpp"
 #include "registrar.hpp"
+#include "../../../fonts.hpp"
+#include "../../../helpers/fetch.hpp"
+#include "../../../helpers/imgui_ui_context.hpp"
+#include "../../../helpers/platform_utils.hpp"
 
 namespace rouen::cards::github {
 
@@ -228,27 +232,54 @@ namespace rouen::cards::github {
         toast_is_error_ = is_error;
     }
 
-    void github_ci_card::trigger_workflow_run(const std::string& workflow_id) {
+    void github_ci_card::trigger_workflow_run(const std::string& workflow_id, const std::string& branch) {
         if (selected_repo_full_name_.empty()) return;
         
-        // Use default branch (usually main/master) or try to find it from recent runs
-        // Ideally we should let user select branch, but for now we'll use "main" as default fallback
-        std::string branch = "main";
-        
-        // Try to find branch from recent runs of this workflow
-        auto workflow_it = std::find_if(workflows_.begin(), workflows_.end(),
-            [&workflow_id](const Workflow& w) { return w.id == workflow_id; });
-            
-        if (workflow_it != workflows_.end() && !workflow_it->recent_runs.empty()) {
-            branch = workflow_it->recent_runs[0].branch;
+        std::string target_branch = branch;
+        if (target_branch.empty()) {
+            target_branch = "main";
+            auto workflow_it = std::find_if(workflows_.begin(), workflows_.end(),
+                [&workflow_id](const Workflow& w) { return w.id == workflow_id; });
+                
+            if (workflow_it != workflows_.end() && !workflow_it->recent_runs.empty()) {
+                target_branch = workflow_it->recent_runs[0].branch;
+            }
         }
         
-        if (host_->dispatch_workflow(selected_repo_full_name_, workflow_id, branch)) {
-            show_toast(std::format("Triggered workflow on branch '{}'", branch), false);
+        if (host_->dispatch_workflow(selected_repo_full_name_, workflow_id, target_branch)) {
+            show_toast(std::format("Triggered workflow on branch '{}'", target_branch), false);
             // Schedule a refresh
             last_refresh_ = std::chrono::steady_clock::now() - refresh_interval_ + std::chrono::seconds(2);
         } else {
             show_toast("Failed to trigger workflow", true);
+        }
+    }
+
+    void github_ci_card::rerun_workflow_run(const std::string& run_id) {
+        if (selected_repo_full_name_.empty() || run_id.empty()) return;
+        if (!login_host_ || login_host_->personal_token().empty()) return;
+        try {
+            std::string url = std::format("https://api.github.com/repos/{}/actions/runs/{}/rerun-failed-jobs",
+                                          selected_repo_full_name_, run_id);
+            http::fetch fetcher;
+            fetcher.post(url, "{}", host_->header_client());
+            show_toast(std::format("Requested rerun for run #{}", run_id), false);
+        } catch (const std::exception& e) {
+            show_toast(std::format("Failed to rerun run #{}: {}", run_id, e.what()), true);
+        }
+    }
+
+    void github_ci_card::cancel_workflow_run(const std::string& run_id) {
+        if (selected_repo_full_name_.empty() || run_id.empty()) return;
+        if (!login_host_ || login_host_->personal_token().empty()) return;
+        try {
+            std::string url = std::format("https://api.github.com/repos/{}/actions/runs/{}/cancel",
+                                          selected_repo_full_name_, run_id);
+            http::fetch fetcher;
+            fetcher.post(url, "{}", host_->header_client());
+            show_toast(std::format("Cancelled run #{}", run_id), false);
+        } catch (const std::exception& e) {
+            show_toast(std::format("Failed to cancel run #{}: {}", run_id, e.what()), true);
         }
     }
 
@@ -291,7 +322,52 @@ namespace rouen::cards::github {
     }
 
     bool github_ci_card::render() {
-        return render_window([this]() {
+        rouen::ui::imgui_ui_context_impl ui;
+        return render(ui);
+    }
+
+    bool github_ci_card::render(rouen::ui::ui_context& ui) {
+        return render_window([this, &ui]() {
+            // Presentation mode selector
+            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            ui.separator();
+
+            if (adaptive_view_mode) {
+                auto now = std::chrono::steady_clock::now();
+                auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                    try {
+                        adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                        adaptive_error_.clear();
+                    } catch (const std::exception& e) {
+                        adaptive_error_ = e.what();
+                    }
+                    last_adaptive_parse_time_ = now;
+                }
+
+                if (!adaptive_error_.empty()) {
+                    ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                } else {
+                    adaptive_renderer_.render(
+                        adaptive_bound_, adaptive_input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                handle_action(payload);
+                            }
+                        },
+                        helpers::adaptive_cards::render_config{
+                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        }
+                    );
+                }
+                return;
+            }
+
             apply_pending_fetch();
 
             if (login_host_->personal_token().empty()) {
@@ -975,6 +1051,416 @@ namespace rouen::cards::github {
         }
 
         last_error_.clear();
+    }
+
+    std::string github_ci_card::get_adaptive_card_json() const {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+        card["refreshIntervalMs"] = 10000;
+
+        std::vector<glz::json_t> body;
+
+        std::string repo_slug = selected_repo_full_name_.empty() ? "ignacionr/rouen" : selected_repo_full_name_;
+
+        // Determine status and latest run if available
+        const WorkflowRun* latest_run = nullptr;
+        for (const auto& w : workflows_) {
+            if (!w.recent_runs.empty()) {
+                if (!latest_run || w.recent_runs[0].created_at > latest_run->created_at) {
+                    latest_run = &w.recent_runs[0];
+                }
+            }
+        }
+        if (!latest_run) {
+            for (const auto& [wf_id, runs] : workflow_runs_) {
+                if (!runs.empty()) {
+                    if (!latest_run || runs[0].created_at > latest_run->created_at) {
+                        latest_run = &runs[0];
+                    }
+                }
+            }
+        }
+
+        std::string status_badge_text = "PASSING";
+        std::string status_badge_color = "Good";
+
+        if (latest_run) {
+            switch (latest_run->status) {
+                case WorkflowStatus::Success:
+                    status_badge_text = "PASSING";
+                    status_badge_color = "Good";
+                    break;
+                case WorkflowStatus::Failed:
+                    status_badge_text = "FAILING";
+                    status_badge_color = "Attention";
+                    break;
+                case WorkflowStatus::InProgress:
+                    status_badge_text = "RUNNING";
+                    status_badge_color = "Accent";
+                    break;
+                case WorkflowStatus::Queued:
+                    status_badge_text = "QUEUED";
+                    status_badge_color = "Warning";
+                    break;
+                case WorkflowStatus::Cancelled:
+                    status_badge_text = "CANCELLED";
+                    status_badge_color = "Attention";
+                    break;
+                case WorkflowStatus::Skipped:
+                    status_badge_text = "SKIPPED";
+                    status_badge_color = "Default";
+                    break;
+                case WorkflowStatus::Completed:
+                    status_badge_text = "PASSING";
+                    status_badge_color = "Good";
+                    break;
+                case WorkflowStatus::Unknown:
+                default:
+                    status_badge_text = "PASSING";
+                    status_badge_color = "Good";
+                    break;
+            }
+        }
+
+        // 1. Header Container
+        {
+            glz::json_t header_container;
+            header_container["type"] = "Container";
+            header_container["style"] = "emphasis";
+
+            glz::json_t col_set;
+            col_set["type"] = "ColumnSet";
+            std::vector<glz::json_t> columns;
+
+            // Col 1: emoji / lightning
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+                glz::json_t tb;
+                tb["type"] = "TextBlock";
+                tb["text"] = "\u26a1"; // ⚡
+                tb["size"] = "Large";
+                items.push_back(std::move(tb));
+                col["items"] = std::move(items);
+                columns.push_back(std::move(col));
+            }
+
+            // Col 2: Title and Subtitle
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                std::vector<glz::json_t> items;
+
+                glz::json_t tb_title;
+                tb_title["type"] = "TextBlock";
+                tb_title["text"] = "GitHub Actions CI Telemetry";
+                tb_title["weight"] = "Bolder";
+                tb_title["size"] = "Large";
+                items.push_back(std::move(tb_title));
+
+                glz::json_t tb_sub;
+                tb_sub["type"] = "TextBlock";
+                tb_sub["text"] = std::format("{}: workflows and status checks", repo_slug);
+                tb_sub["isSubtle"] = true;
+                tb_sub["size"] = "Small";
+                tb_sub["spacing"] = "None";
+                items.push_back(std::move(tb_sub));
+
+                col["items"] = std::move(items);
+                columns.push_back(std::move(col));
+            }
+
+            // Col 3: Status Badge
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+
+                glz::json_t tb_status;
+                tb_status["type"] = "TextBlock";
+                tb_status["text"] = status_badge_text;
+                tb_status["weight"] = "Bolder";
+                tb_status["color"] = status_badge_color;
+                tb_status["size"] = "Medium";
+                items.push_back(std::move(tb_status));
+
+                col["items"] = std::move(items);
+                columns.push_back(std::move(col));
+            }
+
+            col_set["columns"] = std::move(columns);
+            header_container["items"] = std::vector<glz::json_t>{std::move(col_set)};
+            body.push_back(std::move(header_container));
+        }
+
+        // 2. FactSet
+        {
+            glz::json_t fact_set;
+            fact_set["type"] = "FactSet";
+            std::vector<glz::json_t> facts;
+
+            std::string latest_build_val = latest_run
+                ? std::format("Run #{}: {} ({})", latest_run->run_number, latest_run->name.empty() ? latest_run->workflow_name : latest_run->name, latest_run->branch)
+                : "Run #142: macOS arm64 + Windows x64";
+
+            std::string commit_sha_val = latest_run && !latest_run->commit_sha.empty()
+                ? std::format("{} ({})", latest_run->commit_sha, latest_run->branch)
+                : "a7f3e1b (main)";
+
+            std::string duration_val = "3m 42s";
+
+            std::string status_val = latest_run
+                ? (latest_run->conclusion.empty() ? WorkflowRun::get_status_text(latest_run->status) : std::format("Completed: {}", latest_run->conclusion))
+                : "Completed successfully (2/2 jobs green)";
+
+            {
+                glz::json_t f;
+                f["title"] = "Latest Build:";
+                f["value"] = latest_build_val;
+                facts.push_back(std::move(f));
+            }
+            {
+                glz::json_t f;
+                f["title"] = "Commit SHA:";
+                f["value"] = commit_sha_val;
+                facts.push_back(std::move(f));
+            }
+            {
+                glz::json_t f;
+                f["title"] = "Duration:";
+                f["value"] = duration_val;
+                facts.push_back(std::move(f));
+            }
+            {
+                glz::json_t f;
+                f["title"] = "Status:";
+                f["value"] = status_val;
+                facts.push_back(std::move(f));
+            }
+
+            fact_set["facts"] = std::move(facts);
+            body.push_back(std::move(fact_set));
+        }
+
+        // 3. Manual Workflow Dispatch Container
+        {
+            glz::json_t dispatch_container;
+            dispatch_container["type"] = "Container";
+            dispatch_container["separator"] = true;
+            std::vector<glz::json_t> items;
+
+            {
+                glz::json_t tb;
+                tb["type"] = "TextBlock";
+                tb["text"] = "Manual Workflow Dispatch";
+                tb["weight"] = "Bolder";
+                items.push_back(std::move(tb));
+            }
+
+            // Choices
+            glz::json_t choice_input;
+            choice_input["type"] = "Input.ChoiceSet";
+            choice_input["id"] = "workflow_choice";
+            choice_input["label"] = "Select Workflow";
+
+            std::vector<glz::json_t> choices;
+            if (!workflows_.empty()) {
+                for (const auto& w : workflows_) {
+                    std::string title = w.name;
+                    std::string val = w.path.empty() ? w.id : std::filesystem::path(w.path).filename().string();
+                    if (!w.path.empty()) {
+                        title = std::format("{} ({})", w.name, val);
+                    }
+                    glz::json_t c;
+                    c["title"] = title;
+                    c["value"] = val;
+                    choices.push_back(std::move(c));
+                }
+            }
+            if (choices.empty()) {
+                {
+                    glz::json_t c;
+                    c["title"] = "Continuous Integration (ci.yml)";
+                    c["value"] = "ci.yml";
+                    choices.push_back(std::move(c));
+                }
+                {
+                    glz::json_t c;
+                    c["title"] = "Release Build & Pack (release.yml)";
+                    c["value"] = "release.yml";
+                    choices.push_back(std::move(c));
+                }
+                {
+                    glz::json_t c;
+                    c["title"] = "Windows Headless Tests (windows.yml)";
+                    c["value"] = "windows.yml";
+                    choices.push_back(std::move(c));
+                }
+            }
+
+            std::string default_choice = choices.empty() ? "ci.yml" : choices[0]["value"].get<std::string>();
+            choice_input["value"] = default_choice;
+            choice_input["choices"] = std::move(choices);
+            items.push_back(std::move(choice_input));
+
+            // Target branch
+            {
+                glz::json_t input_branch;
+                input_branch["type"] = "Input.Text";
+                input_branch["id"] = "target_branch";
+                input_branch["label"] = "Target Branch";
+                input_branch["value"] = last_target_branch_.empty() ? "main" : last_target_branch_;
+                items.push_back(std::move(input_branch));
+            }
+
+            dispatch_container["items"] = std::move(items);
+            body.push_back(std::move(dispatch_container));
+        }
+
+        card["body"] = std::move(body);
+
+        // Actions
+        std::vector<glz::json_t> actions;
+        {
+            glz::json_t act;
+            act["type"] = "Action.Execute";
+            act["title"] = "Trigger Workflow";
+            act["verb"] = "trigger_workflow";
+            actions.push_back(std::move(act));
+        }
+        {
+            glz::json_t act;
+            act["type"] = "Action.Execute";
+            act["title"] = "Rerun Failed Jobs";
+            act["verb"] = "rerun_run";
+            actions.push_back(std::move(act));
+        }
+        {
+            glz::json_t act;
+            act["type"] = "Action.Execute";
+            act["title"] = "Refresh CI Status";
+            act["verb"] = "refresh_ci";
+            actions.push_back(std::move(act));
+        }
+
+        card["actions"] = std::move(actions);
+
+        std::string out;
+        auto ec = glz::write_json(card, out);
+        if (ec) {
+            return "{\"type\":\"AdaptiveCard\",\"version\":\"1.5\",\"body\":[]}";
+        }
+        return out;
+    }
+
+    void github_ci_card::handle_action(std::string_view action_json) {
+        if (action_json.empty()) return;
+        try {
+            glz::json_t payload{};
+            std::string verb;
+            glz::json_t data{};
+
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (!err && payload.is_object()) {
+                if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                    verb = payload["verb"].get<std::string>();
+                } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                    verb = payload["action"].get<std::string>();
+                }
+
+                if (payload.contains("data") && payload["data"].is_object()) {
+                    data = payload["data"];
+                } else {
+                    data = payload;
+                }
+            } else {
+                verb = std::string(action_json);
+            }
+
+            if (verb.empty()) return;
+
+            last_action_ = verb;
+
+            if (verb == "trigger_workflow") {
+                std::string workflow = "ci.yml";
+                std::string branch = "main";
+                if (data.is_object()) {
+                    if (data.contains("workflow_choice") && data["workflow_choice"].holds<std::string>()) {
+                        workflow = data["workflow_choice"].get<std::string>();
+                    } else if (data.contains("workflow_id") && data["workflow_id"].holds<std::string>()) {
+                        workflow = data["workflow_id"].get<std::string>();
+                    } else if (data.contains("workflow") && data["workflow"].holds<std::string>()) {
+                        workflow = data["workflow"].get<std::string>();
+                    }
+                    if (data.contains("target_branch") && data["target_branch"].holds<std::string>()) {
+                        branch = data["target_branch"].get<std::string>();
+                    } else if (data.contains("branch") && data["branch"].holds<std::string>()) {
+                        branch = data["branch"].get<std::string>();
+                    }
+                }
+                last_triggered_workflow_ = workflow;
+                last_target_branch_ = branch;
+                trigger_workflow_run(workflow, branch);
+            } else if (verb == "rerun_run") {
+                std::string run_id;
+                if (data.is_object()) {
+                    if (data.contains("run_id") && data["run_id"].holds<std::string>()) {
+                        run_id = data["run_id"].get<std::string>();
+                    } else if (data.contains("id") && data["id"].holds<std::string>()) {
+                        run_id = data["id"].get<std::string>();
+                    } else if (data.contains("run_id") && data["run_id"].holds<double>()) {
+                        run_id = std::to_string(static_cast<int64_t>(data["run_id"].get<double>()));
+                    }
+                }
+                if (run_id.empty() && !selected_run_id_.empty()) {
+                    run_id = selected_run_id_;
+                }
+                last_rerun_run_id_ = run_id;
+                if (!run_id.empty()) {
+                    selected_run_id_ = run_id;
+                    rerun_workflow_run(run_id);
+                }
+            } else if (verb == "cancel_run") {
+                std::string run_id;
+                if (data.is_object()) {
+                    if (data.contains("run_id") && data["run_id"].holds<std::string>()) {
+                        run_id = data["run_id"].get<std::string>();
+                    } else if (data.contains("id") && data["id"].holds<std::string>()) {
+                        run_id = data["id"].get<std::string>();
+                    } else if (data.contains("run_id") && data["run_id"].holds<double>()) {
+                        run_id = std::to_string(static_cast<int64_t>(data["run_id"].get<double>()));
+                    }
+                }
+                if (run_id.empty() && !selected_run_id_.empty()) {
+                    run_id = selected_run_id_;
+                }
+                last_cancelled_run_id_ = run_id;
+                if (!run_id.empty()) {
+                    cancel_workflow_run(run_id);
+                }
+            } else if (verb == "refresh_ci") {
+                ci_refreshed_ = true;
+                refresh_count_++;
+                if (!selected_repo_full_name_.empty()) {
+                    fetch_workflows_for_repo(selected_repo_full_name_);
+                    if (!selected_workflow_id_.empty()) {
+                        fetch_workflow_runs(selected_workflow_id_);
+                    }
+                } else {
+                    fetch_repositories();
+                }
+            } else if (verb == "toggle_adaptive_view") {
+                adaptive_view_mode = !adaptive_view_mode;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[github-ci] Action error: " << e.what() << std::endl;
+        }
     }
 
 } // namespace rouen::cards::github

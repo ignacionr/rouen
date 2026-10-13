@@ -28,6 +28,7 @@
 #include "../src/cards/development/fs-directory.hpp"
 #include "../src/cards/development/git.hpp"
 #include "../src/cards/development/github/github_card.hpp"
+#include "../src/cards/development/github/ci_card.hpp"
 #include "../src/cards/productivity/calculator.hpp"
 #include "../src/cards/productivity/converter.hpp"
 #include "../src/cards/media/camera.hpp"
@@ -2297,15 +2298,111 @@ TEST(github_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"refresh_repo\",\"data\":null}"));
 }
 
+TEST(github_ci_cardAdaptiveTest, JsonSerialization) {
+    rouen::cards::github::github_ci_card ci_card{};
+    std::string card_json = ci_card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
 
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
 
+    bool found_latest_build_fact = false;
+    bool found_commit_sha_fact = false;
+    bool found_duration_fact = false;
+    bool found_status_fact = false;
+    bool found_workflow_choice_input = false;
+    bool found_target_branch_input = false;
 
+    for (const auto& elem : doc.body) {
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Latest Build:") found_latest_build_fact = true;
+                if (fact.title == "Commit SHA:") found_commit_sha_fact = true;
+                if (fact.title == "Duration:") found_duration_fact = true;
+                if (fact.title == "Status:") found_status_fact = true;
+            }
+        }
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.ChoiceSet" && child.id == "workflow_choice") {
+                    found_workflow_choice_input = true;
+                }
+                if (child.type == "Input.Text" && child.id == "target_branch") {
+                    found_target_branch_input = true;
+                }
+            }
+        }
+    }
 
+    EXPECT_TRUE(found_latest_build_fact);
+    EXPECT_TRUE(found_commit_sha_fact);
+    EXPECT_TRUE(found_duration_fact);
+    EXPECT_TRUE(found_status_fact);
+    EXPECT_TRUE(found_workflow_choice_input);
+    EXPECT_TRUE(found_target_branch_input);
 
+    bool found_trigger_workflow_action = false;
+    bool found_rerun_run_action = false;
+    bool found_refresh_ci_action = false;
 
+    for (const auto& act : doc.actions) {
+        if (act.verb == "trigger_workflow") found_trigger_workflow_action = true;
+        if (act.verb == "rerun_run") found_rerun_run_action = true;
+        if (act.verb == "refresh_ci") found_refresh_ci_action = true;
+    }
 
+    EXPECT_TRUE(found_trigger_workflow_action);
+    EXPECT_TRUE(found_rerun_run_action);
+    EXPECT_TRUE(found_refresh_ci_action);
+}
 
+TEST(github_ci_cardAdaptiveTest, ActionDispatch) {
+    rouen::cards::github::github_ci_card ci_card{};
 
+    // Initial state
+    EXPECT_FALSE(ci_card.is_adaptive_view_mode());
 
+    // 1. trigger_workflow
+    ci_card.handle_action(R"({"type":"Action.Execute","verb":"trigger_workflow","data":{"workflow_choice":"release.yml","target_branch":"develop"}})");
+    EXPECT_EQ(ci_card.get_last_action(), "trigger_workflow");
+    EXPECT_EQ(ci_card.get_last_triggered_workflow(), "release.yml");
+    EXPECT_EQ(ci_card.get_last_target_branch(), "develop");
 
+    // 2. rerun_run
+    ci_card.handle_action(R"({"type":"Action.Execute","verb":"rerun_run","data":{"run_id":"142"}})");
+    EXPECT_EQ(ci_card.get_last_action(), "rerun_run");
+    EXPECT_EQ(ci_card.get_last_rerun_run_id(), "142");
 
+    // 3. cancel_run
+    ci_card.handle_action(R"({"type":"Action.Execute","verb":"cancel_run","data":{"run_id":"142"}})");
+    EXPECT_EQ(ci_card.get_last_action(), "cancel_run");
+    EXPECT_EQ(ci_card.get_last_cancelled_run_id(), "142");
+
+    // 4. refresh_ci
+    ci_card.handle_action(R"({"type":"Action.Execute","verb":"refresh_ci"})");
+    EXPECT_EQ(ci_card.get_last_action(), "refresh_ci");
+    EXPECT_TRUE(ci_card.is_ci_refreshed());
+
+    // 5. toggle_adaptive_view
+    ci_card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(ci_card.is_adaptive_view_mode());
+    ci_card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(ci_card.is_adaptive_view_mode());
+}
+
+TEST(github_ci_cardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::github::github_ci_card ci_card{};
+    EXPECT_NO_THROW(ci_card.handle_action(""));
+    EXPECT_NO_THROW(ci_card.handle_action("not a json string"));
+    EXPECT_NO_THROW(ci_card.handle_action("{"));
+    EXPECT_NO_THROW(ci_card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(ci_card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(ci_card.handle_action("{\"verb\":\"trigger_workflow\",\"data\":null}"));
+    EXPECT_NO_THROW(ci_card.handle_action("{\"verb\":\"trigger_workflow\",\"data\":{\"workflow_choice\":null}}"));
+    EXPECT_NO_THROW(ci_card.handle_action("{\"verb\":\"rerun_run\",\"data\":null}"));
+    EXPECT_NO_THROW(ci_card.handle_action("{\"verb\":\"cancel_run\",\"data\":null}"));
+    EXPECT_NO_THROW(ci_card.handle_action("{\"verb\":\"refresh_ci\",\"data\":null}"));
+}

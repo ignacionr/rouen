@@ -15,6 +15,9 @@
 #include "../../../models/github/host.hpp"
 #include "../../../models/github/login_host.hpp"
 #include "../../../registrar.hpp"
+#include "../../../helpers/adaptive_cards/parser.hpp"
+#include "../../../helpers/adaptive_cards/renderer.hpp"
+#include "../../../helpers/ui_context.hpp"
 #include "../../../helpers/views/json_view.hpp"
 #include "../../../../external/IconsMaterialDesign.h"
 
@@ -82,6 +85,33 @@ namespace rouen::cards::github {
         
         std::string get_uri() const override;
         bool render() override;
+        bool render(rouen::ui::ui_context& ui) override;
+
+        /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+        [[nodiscard]] std::string get_adaptive_card_json() const override;
+
+        /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+        void handle_action(std::string_view action_json) override;
+
+        [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+        void set_adaptive_view_mode(bool v) noexcept { adaptive_view_mode = v; }
+        [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
+        [[nodiscard]] const std::string& get_last_triggered_workflow() const noexcept { return last_triggered_workflow_; }
+        [[nodiscard]] const std::string& get_last_target_branch() const noexcept { return last_target_branch_; }
+        [[nodiscard]] const std::string& get_last_rerun_run_id() const noexcept { return last_rerun_run_id_; }
+        [[nodiscard]] const std::string& get_last_cancelled_run_id() const noexcept { return last_cancelled_run_id_; }
+        [[nodiscard]] bool is_ci_refreshed() const noexcept { return ci_refreshed_; }
+        [[nodiscard]] int get_refresh_count() const noexcept { return refresh_count_; }
+
+        [[nodiscard]] const std::string& get_selected_repo() const noexcept { return selected_repo_full_name_; }
+        void set_selected_repo(std::string_view repo) { selected_repo_full_name_ = repo; }
+        [[nodiscard]] const std::string& get_selected_run_id() const noexcept { return selected_run_id_; }
+        void set_selected_run_id(std::string_view run_id) { selected_run_id_ = run_id; }
+        [[nodiscard]] bool is_polling() const noexcept { return auto_refresh_enabled_; }
+        void set_polling(bool polling) noexcept { auto_refresh_enabled_ = polling; }
+
+        [[nodiscard]] const std::vector<Workflow>& get_workflows() const noexcept { return workflows_; }
+        void set_workflows(std::vector<Workflow> w) { workflows_ = std::move(w); }
 
     private:
         void render_repository_selector();
@@ -104,7 +134,9 @@ namespace rouen::cards::github {
         void fetch_workflows_for_repo(const std::string& repo_full_name);
         void fetch_workflow_runs(const std::string& workflow_id);
         void fetch_workflow_jobs(const std::string& run_id);
-        void trigger_workflow_run(const std::string& workflow_id);
+        void trigger_workflow_run(const std::string& workflow_id, const std::string& branch = "");
+        void rerun_workflow_run(const std::string& run_id);
+        void cancel_workflow_run(const std::string& run_id);
         
         void auto_refresh_if_needed();
         bool should_auto_refresh() const;
@@ -169,6 +201,30 @@ namespace rouen::cards::github {
         // UI helpers
         helpers::views::json_view json_view_;
         bool initialized_{false};
+
+        // Adaptive Card presentation override state
+        bool adaptive_view_mode{false};
+        std::string last_action_{};
+        std::string last_triggered_workflow_{};
+        std::string last_target_branch_{};
+        std::string last_rerun_run_id_{};
+        std::string last_cancelled_run_id_{};
+        bool ci_refreshed_{false};
+        int refresh_count_{0};
+
+        mutable helpers::adaptive_cards::parser adaptive_parser_{};
+        mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+        mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+        mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+        std::string adaptive_error_{};
+        std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
     };
 
 } // namespace rouen::cards::github
+
+namespace rouen::cards {
+    using github::github_ci_card;
+    using github::Workflow;
+    using github::WorkflowRun;
+    using github::WorkflowStatus;
+}
