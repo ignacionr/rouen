@@ -55,6 +55,7 @@
 #include "../src/cards/information/number_series.hpp"
 #include "../src/cards/information/pdf_viewer.hpp"
 #include "../src/cards/information/solar_system.hpp"
+#include "../src/cards/information/telegram.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -4693,6 +4694,122 @@ TEST(sync_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"sync_resolve_conflicts\",\"data\":null}"));
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"sync_resolve_conflicts\",\"data\":{\"strategy\":null}}"));
 }
+
+TEST(telegram_cardAdaptiveTest, JsonSerialization) {
+    rouen::cards::telegram_card card{};
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_header_title = false;
+    bool found_status_badge = false;
+    bool found_message_input = false;
+    bool found_ignacio_fact = false;
+    bool found_dev_team_fact = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& col_set : elem.items) {
+                if (col_set.type == "ColumnSet") {
+                    for (const auto& col : col_set.columns) {
+                        for (const auto& item : col.items) {
+                            if (item.type == "TextBlock") {
+                                if (item.text.find("Telegram Bot Console") != std::string::npos) {
+                                    found_header_title = true;
+                                }
+                                if (item.text.find("ACTIVE") != std::string::npos) {
+                                    found_status_badge = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (const auto& item : elem.items) {
+                if (item.type == "Input.Text" && item.id == "tg_message_text") {
+                    found_message_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title.find("@ignacio") != std::string::npos) found_ignacio_fact = true;
+                if (fact.title.find("@dev_team") != std::string::npos) found_dev_team_fact = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_header_title);
+    EXPECT_TRUE(found_status_badge);
+    EXPECT_TRUE(found_message_input);
+    EXPECT_TRUE(found_ignacio_fact);
+    EXPECT_TRUE(found_dev_team_fact);
+
+    bool found_send_action = false;
+    bool found_command_action = false;
+    bool found_refresh_action = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "telegram_send") found_send_action = true;
+        if (act.verb == "telegram_command") found_command_action = true;
+        if (act.verb == "telegram_refresh") found_refresh_action = true;
+    }
+    EXPECT_TRUE(found_send_action);
+    EXPECT_TRUE(found_command_action);
+    EXPECT_TRUE(found_refresh_action);
+}
+
+TEST(telegram_cardAdaptiveTest, ActionDispatch) {
+    rouen::cards::telegram_card card{};
+    card.set_allow_network_io(false);
+
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+
+    // 1. telegram_send
+    card.handle_action(R"({"type":"Action.Execute","verb":"telegram_send","data":{"chat_id":"987654321","text":"Hello from Rouen Adaptive Card"}})");
+    EXPECT_EQ(card.get_last_action(), "telegram_send");
+    EXPECT_EQ(card.get_last_sent_chat_id(), "987654321");
+    EXPECT_EQ(card.get_last_sent_text(), "Hello from Rouen Adaptive Card");
+
+    // 1b. telegram_send with tg_message_text input key
+    card.handle_action(R"({"type":"Action.Execute","verb":"telegram_send","data":{"tg_message_text":"Message via input"}})");
+    EXPECT_EQ(card.get_last_action(), "telegram_send");
+    EXPECT_EQ(card.get_last_sent_text(), "Message via input");
+
+    // 2. telegram_command
+    card.handle_action(R"({"type":"Action.Execute","verb":"telegram_command","data":{"cmd":"/status"}})");
+    EXPECT_EQ(card.get_last_action(), "telegram_command");
+    EXPECT_EQ(card.get_last_command(), "/status");
+
+    // 3. telegram_refresh
+    card.handle_action(R"({"type":"Action.Execute","verb":"telegram_refresh"})");
+    EXPECT_EQ(card.get_last_action(), "telegram_refresh");
+    EXPECT_TRUE(card.get_refresh_triggered());
+
+    // 4. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(telegram_cardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::telegram_card card{};
+    card.set_allow_network_io(false);
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"telegram_send\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"telegram_command\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"telegram_refresh\",\"data\":null}"));
+}
+
 
 
 

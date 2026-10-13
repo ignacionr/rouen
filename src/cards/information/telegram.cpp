@@ -1,11 +1,14 @@
 #include "telegram.hpp"
 #include "../../fonts.hpp"
+#include "../../helpers/glaze_include.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
 #include "../../helpers/markdown_renderer.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/presence_service.hpp"
 #include "../../../external/IconsMaterialDesign.h"
 
 #include <cctype>
+#include <iostream>
 
 namespace rouen::cards {
 
@@ -41,15 +44,68 @@ telegram_card::telegram_card(std::string_view /*uri*/) {
     width = 1100.0f;
     requested_fps = 10;
 
+    bot_username_ = "RouenControlBot";
     host_ = rouen::hosts::telegram_host::get_host();
     if (host_) {
         std::string tok = host_->get_bot_token();
         snprintf(token_buf_, sizeof(token_buf_), "%s", tok.c_str());
+        std::string name = host_->get_bot_username();
+        if (!name.empty()) bot_username_ = name;
     }
+
+    message_feed_ = {
+        { "@ignacio:", "/status: Build server ws-ir-01 load is normal (Today 16:45)" },
+        { "@dev_team:", "Deployment completed to production (Today 15:20)" }
+    };
 }
 
 bool telegram_card::render() {
-    return render_window([this]() {
+    rouen::ui::imgui_ui_context_impl ui;
+    return render(ui);
+}
+
+bool telegram_card::render(rouen::ui::ui_context& ui) {
+    return render_window([this, &ui]() {
+        // Presentation mode selector
+        ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+        ui.separator();
+
+        if (adaptive_view_mode) {
+            auto now = std::chrono::steady_clock::now();
+            auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+            if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                try {
+                    adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                    adaptive_error_.clear();
+                } catch (const std::exception& e) {
+                    adaptive_error_ = e.what();
+                }
+                last_adaptive_parse_time_ = now;
+            }
+
+            if (!adaptive_error_.empty()) {
+                ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+            } else {
+                adaptive_renderer_.render(
+                    adaptive_bound_, adaptive_input_state_,
+                    helpers::adaptive_cards::renderer::action_callbacks{
+                        .open_url = [](const std::string& url) {
+                            static_cast<void>(rouen::platform::open_url(url));
+                        },
+                        .on_submit = [this](const std::string& payload) {
+                            handle_action(payload);
+                        }
+                    },
+                    helpers::adaptive_cards::render_config{
+                        .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                        .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                        .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                    }
+                );
+            }
+            return;
+        }
+
         render_content();
     });
 }
@@ -584,6 +640,345 @@ void telegram_card::render_bot_settings_tab() {
     ImGui::BulletText("2. Create a new bot using /newbot or use an existing bot.");
     ImGui::BulletText("3. Copy the HTTP API token provided by BotFather into the input above.");
     ImGui::BulletText("4. Click 'Save Token & Connect'. Rouen will start long-polling updates.");
+}
+
+std::string telegram_card::get_adaptive_card_json() const {
+    glz::json_t card;
+    card["type"] = "AdaptiveCard";
+    card["version"] = "1.5";
+    card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+    card["refreshIntervalMs"] = 5000;
+
+    std::vector<glz::json_t> body;
+
+    // 1. Header Container
+    {
+        glz::json_t container;
+        container["type"] = "Container";
+        container["style"] = "emphasis";
+
+        glz::json_t col_set;
+        col_set["type"] = "ColumnSet";
+        std::vector<glz::json_t> cols;
+
+        // Column 1: Emoji icon ✈️ (\u2708\ufe0f)
+        {
+            glz::json_t col;
+            col["type"] = "Column";
+            col["width"] = "auto";
+            std::vector<glz::json_t> col_items;
+            glz::json_t tb;
+            tb["type"] = "TextBlock";
+            tb["text"] = "\u2708\ufe0f";
+            tb["size"] = "Large";
+            col_items.push_back(std::move(tb));
+            col["items"] = std::move(col_items);
+            cols.push_back(std::move(col));
+        }
+
+        // Column 2: Title and Subtitle
+        {
+            glz::json_t col;
+            col["type"] = "Column";
+            col["width"] = "stretch";
+            std::vector<glz::json_t> col_items;
+
+            glz::json_t tb_title;
+            tb_title["type"] = "TextBlock";
+            tb_title["text"] = "Telegram Bot Console";
+            tb_title["weight"] = "Bolder";
+            tb_title["size"] = "Large";
+            col_items.push_back(std::move(tb_title));
+
+            std::string user = bot_username_;
+            if (host_ && !host_->get_bot_username().empty()) {
+                user = host_->get_bot_username();
+            }
+            if (user.empty()) user = "RouenControlBot";
+            if (!user.starts_with('@')) user = "@" + user;
+
+            bool active = is_polling_;
+            if (host_ && host_->get_status() == rouen::hosts::telegram_host::Status::Active) {
+                active = true;
+            }
+
+            glz::json_t tb_sub;
+            tb_sub["type"] = "TextBlock";
+            tb_sub["text"] = std::format("{} ({})", user, active ? "Online / Polling" : "Offline / Idle");
+            tb_sub["isSubtle"] = true;
+            tb_sub["size"] = "Small";
+            col_items.push_back(std::move(tb_sub));
+
+            col["items"] = std::move(col_items);
+            cols.push_back(std::move(col));
+        }
+
+        // Column 3: Status Badge
+        {
+            glz::json_t col;
+            col["type"] = "Column";
+            col["width"] = "auto";
+            std::vector<glz::json_t> col_items;
+
+            bool active = is_polling_;
+            if (host_ && host_->get_status() == rouen::hosts::telegram_host::Status::Active) {
+                active = true;
+            }
+
+            glz::json_t tb_status;
+            tb_status["type"] = "TextBlock";
+            tb_status["text"] = active ? "ACTIVE" : "INACTIVE";
+            tb_status["weight"] = "Bolder";
+            tb_status["color"] = active ? "Good" : "Attention";
+            tb_status["size"] = "Small";
+            col_items.push_back(std::move(tb_status));
+
+            col["items"] = std::move(col_items);
+            cols.push_back(std::move(col));
+        }
+
+        col_set["columns"] = std::move(cols);
+        std::vector<glz::json_t> container_items;
+        container_items.push_back(std::move(col_set));
+        container["items"] = std::move(container_items);
+        body.push_back(std::move(container));
+    }
+
+    // 2. FactSet
+    {
+        glz::json_t fact_set;
+        fact_set["type"] = "FactSet";
+        std::vector<glz::json_t> facts;
+
+        if (!message_feed_.empty()) {
+            for (const auto& item : message_feed_) {
+                std::string title = item.sender;
+                if (!title.ends_with(':')) title += ":";
+                facts.push_back(glz::json_t::object_t{
+                    {"title", std::move(title)},
+                    {"value", item.text}
+                });
+            }
+        } else if (host_) {
+            auto sessions = host_->get_sessions();
+            for (const auto& s : sessions) {
+                if (!s.last_message_text.empty()) {
+                    std::string sender = s.user_name.empty() ? ("Chat " + std::to_string(s.chat_id)) : s.user_name;
+                    if (!sender.starts_with('@')) sender = "@" + sender;
+                    if (!sender.ends_with(':')) sender += ":";
+                    facts.push_back(glz::json_t::object_t{
+                        {"title", std::move(sender)},
+                        {"value", s.last_message_text}
+                    });
+                }
+            }
+        }
+
+        if (facts.empty()) {
+            facts.push_back(glz::json_t::object_t{
+                {"title", "@ignacio:"},
+                {"value", "/status: Build server ws-ir-01 load is normal (Today 16:45)"}
+            });
+            facts.push_back(glz::json_t::object_t{
+                {"title", "@dev_team:"},
+                {"value", "Deployment completed to production (Today 15:20)"}
+            });
+        }
+
+        fact_set["facts"] = std::move(facts);
+        body.push_back(std::move(fact_set));
+    }
+
+    // 3. Input Container for Text Input
+    {
+        glz::json_t container;
+        container["type"] = "Container";
+        container["separator"] = true;
+        std::vector<glz::json_t> items;
+
+        glz::json_t input_text;
+        input_text["type"] = "Input.Text";
+        input_text["id"] = "tg_message_text";
+        input_text["placeholder"] = "Type message to send via bot...";
+        items.push_back(std::move(input_text));
+
+        container["items"] = std::move(items);
+        body.push_back(std::move(container));
+    }
+
+    card["body"] = std::move(body);
+
+    // 4. Actions
+    {
+        std::vector<glz::json_t> actions;
+
+        // Action 1: Send Message
+        {
+            glz::json_t act;
+            act["type"] = "Action.Execute";
+            act["title"] = "Send Message";
+            act["verb"] = "telegram_send";
+            actions.push_back(std::move(act));
+        }
+
+        // Action 2: Run /status
+        {
+            glz::json_t act;
+            act["type"] = "Action.Execute";
+            act["title"] = "Run /status";
+            act["verb"] = "telegram_command";
+            act["data"] = glz::json_t::object_t{{"cmd", "/status"}};
+            actions.push_back(std::move(act));
+        }
+
+        // Action 3: Poll Updates
+        {
+            glz::json_t act;
+            act["type"] = "Action.Execute";
+            act["title"] = "Poll Updates";
+            act["verb"] = "telegram_refresh";
+            actions.push_back(std::move(act));
+        }
+
+        card["actions"] = std::move(actions);
+    }
+
+    std::string out;
+    static_cast<void>(glz::write_json(card, out));
+    return out;
+}
+
+void telegram_card::handle_action(std::string_view action_json) {
+    if (action_json.empty()) return;
+
+    try {
+        glz::json_t payload{};
+        std::string verb;
+        glz::json_t data{};
+
+        auto err = glz::read_json(payload, std::string(action_json));
+        if (!err && payload.is_object()) {
+            if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                verb = payload["verb"].get<std::string>();
+            } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                verb = payload["action"].get<std::string>();
+            }
+
+            if (payload.contains("data") && payload["data"].is_object()) {
+                data = payload["data"];
+            } else {
+                data = payload;
+            }
+        } else {
+            verb = std::string(action_json);
+        }
+
+        if (verb == "telegram_send") {
+            last_action_ = "telegram_send";
+            std::string text;
+            std::string chat_id;
+
+            if (data.is_object()) {
+                if (data.contains("text") && data["text"].holds<std::string>()) {
+                    text = data["text"].get<std::string>();
+                } else if (data.contains("tg_message_text") && data["tg_message_text"].holds<std::string>()) {
+                    text = data["tg_message_text"].get<std::string>();
+                } else if (data.contains("message") && data["message"].holds<std::string>()) {
+                    text = data["message"].get<std::string>();
+                }
+
+                if (data.contains("chat_id")) {
+                    if (data["chat_id"].holds<std::string>()) {
+                        chat_id = data["chat_id"].get<std::string>();
+                    } else if (data["chat_id"].holds<double>()) {
+                        chat_id = std::to_string(static_cast<int64_t>(data["chat_id"].get<double>()));
+                    }
+                }
+            }
+
+            if (!text.empty()) {
+                last_sent_text_ = text;
+            }
+            if (!chat_id.empty()) {
+                last_sent_chat_id_ = chat_id;
+                last_chat_id_ = chat_id;
+            }
+
+            if (allow_network_io_ && host_) {
+                int64_t target_chat = 0;
+                try {
+                    if (!last_sent_chat_id_.empty()) {
+                        target_chat = std::stoll(last_sent_chat_id_);
+                    }
+                } catch (...) {}
+                if (target_chat == 0 && selected_chat_id_ != 0) {
+                    target_chat = selected_chat_id_;
+                }
+                if (target_chat != 0 && !last_sent_text_.empty()) {
+                    host_->send_manual_message(target_chat, last_sent_text_);
+                }
+            }
+
+            if (!last_sent_text_.empty()) {
+                message_feed_.push_back({
+                    .sender = "@" + (bot_username_.empty() ? "RouenControlBot" : bot_username_) + ":",
+                    .text = last_sent_text_
+                });
+            }
+
+            last_adaptive_parse_time_ = {};
+        } else if (verb == "telegram_command") {
+            last_action_ = "telegram_command";
+            std::string cmd = "/status";
+
+            if (data.is_object()) {
+                if (data.contains("cmd") && data["cmd"].holds<std::string>()) {
+                    cmd = data["cmd"].get<std::string>();
+                } else if (data.contains("command") && data["command"].holds<std::string>()) {
+                    cmd = data["command"].get<std::string>();
+                }
+            }
+
+            last_command_ = cmd;
+
+            if (allow_network_io_ && host_) {
+                int64_t target_chat = 0;
+                try {
+                    if (!last_sent_chat_id_.empty()) {
+                        target_chat = std::stoll(last_sent_chat_id_);
+                    }
+                } catch (...) {}
+                if (target_chat == 0 && selected_chat_id_ != 0) {
+                    target_chat = selected_chat_id_;
+                }
+                if (target_chat != 0) {
+                    host_->send_manual_message(target_chat, cmd);
+                }
+            }
+
+            message_feed_.push_back({
+                .sender = "@bot_operator:",
+                .text = cmd
+            });
+
+            last_adaptive_parse_time_ = {};
+        } else if (verb == "telegram_refresh") {
+            last_action_ = "telegram_refresh";
+            refresh_triggered_ = true;
+
+            if (allow_network_io_ && host_) {
+                host_->test_connection();
+            }
+
+            last_adaptive_parse_time_ = {};
+        } else if (verb == "toggle_adaptive_view") {
+            last_action_ = "toggle_adaptive_view";
+            adaptive_view_mode = !adaptive_view_mode;
+            last_adaptive_parse_time_ = {};
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[telegram] Action error: " << e.what() << std::endl;
+    }
 }
 
 } // namespace rouen::cards
