@@ -2,11 +2,24 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <cmath>
 #include <cstdlib>
 #include <algorithm>
+#include <chrono>
+#include <format>
+#include <iostream>
+#include <optional>
+#include <glaze/glaze.hpp>
+
+#include "../../fonts.hpp"
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
+#include "../../helpers/platform_utils.hpp"
+#include "../../../external/IconsMaterialDesign.h"
 
 #include "../interface/card.hpp"
 #include "../../models/radio.hpp"
@@ -17,6 +30,60 @@ namespace rouen::cards {
     
     class radio : public card {
     public:
+        struct adaptive_station_entry {
+            std::string id;
+            std::string title;
+            std::string name;
+            std::string country;
+            std::string stream_url;
+            int bitrate_kbps{128};
+            std::string broadcast;
+            std::string codec;
+        };
+
+        inline static const std::vector<adaptive_station_entry> default_adaptive_stations = {
+            {
+                .id = "bbc4",
+                .title = "BBC Radio 4 (UK - News & Spoken Word)",
+                .name = "BBC Radio 4",
+                .country = "London, United Kingdom",
+                .stream_url = "https://stream.live.vc.bbcmedia.co.uk/bbc_world_service",
+                .bitrate_kbps = 128,
+                .broadcast = "The World at One (Live News & Analysis)",
+                .codec = "MPEG-1 Audio Layer 3 (Stereo 44.1 kHz)"
+            },
+            {
+                .id = "kexp",
+                .title = "KEXP 90.3 FM (USA - Seattle Alternative)",
+                .name = "KEXP 90.3 FM",
+                .country = "Seattle, United States",
+                .stream_url = "https://live-aacplus-64.kexp.org/kexp64.aac",
+                .bitrate_kbps = 64,
+                .broadcast = "The Midday Show (Alternative & Indie)",
+                .codec = "AAC+ (Stereo 44.1 kHz)"
+            },
+            {
+                .id = "mitre",
+                .title = "Radio Mitre (Argentina - News)",
+                .name = "Radio Mitre",
+                .country = "Buenos Aires, Argentina",
+                .stream_url = "https://radiomitre.cienradios.com",
+                .bitrate_kbps = 128,
+                .broadcast = "Lanata Sin Filtro (Live Talk & News)",
+                .codec = "MPEG-1 Audio Layer 3 (Stereo 44.1 kHz)"
+            },
+            {
+                .id = "fip",
+                .title = "FIP (France - Eclectic Music)",
+                .name = "FIP",
+                .country = "Paris, France",
+                .stream_url = "https://icecast.radiofrance.fr/fip-hifi.aac",
+                .bitrate_kbps = 192,
+                .broadcast = "Club Jazzafip (Eclectic Groove)",
+                .codec = "AAC-LC (Stereo 48.0 kHz)"
+            }
+        };
+
         radio() {
             // Set custom colors for the radio card
             colors[0] = {0.5f, 0.3f, 0.7f, 1.0f}; // Purple primary color
@@ -47,7 +114,52 @@ namespace rouen::cards {
         }
 
         bool render() override {
-            return render_window([this]() {
+            rouen::ui::imgui_ui_context_impl ui;
+            return render(ui);
+        }
+
+        bool render(rouen::ui::ui_context& ui) override {
+            return render_window([this, &ui]() {
+                // Presentation mode selector
+                ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+                ui.separator();
+
+                if (adaptive_view_mode) {
+                    auto now = std::chrono::steady_clock::now();
+                    auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                    if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                        try {
+                            adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                            adaptive_error_.clear();
+                        } catch (const std::exception& e) {
+                            adaptive_error_ = e.what();
+                        }
+                        last_adaptive_parse_time_ = now;
+                    }
+
+                    if (!adaptive_error_.empty()) {
+                        ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                    } else {
+                        adaptive_renderer_.render(
+                            adaptive_bound_, adaptive_input_state_,
+                            helpers::adaptive_cards::renderer::action_callbacks{
+                                .open_url = [](const std::string& url) {
+                                    static_cast<void>(rouen::platform::open_url(url));
+                                },
+                                .on_submit = [this](const std::string& payload) {
+                                    handle_action(payload);
+                                }
+                            },
+                            helpers::adaptive_cards::render_config{
+                                .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                                .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                                .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                            }
+                        );
+                    }
+                    return;
+                }
+
                 if (!radio_model) {
                     ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Radio model not initialized");
                     return;
@@ -115,7 +227,7 @@ namespace rouen::cards {
                     draw_list->AddRect(dial_pos, ImVec2(dial_pos.x + dial_size.x, dial_pos.y + dial_size.y), IM_COL32(80, 54, 30, 255), 10.0f, 0, 2.5f);
                     
                     // Smoothly transition backlight intensity (grows to 1.0 when active, dims to 0.22 when stopped)
-                    bool playing_active = !current_playing_station.empty() && radio_model->isPlaying();
+                    bool playing_active = is_playing_ || (!current_playing_station.empty() && radio_model->isPlaying());
                     float target_light = playing_active ? 1.0f : 0.22f;
                     current_light += (target_light - current_light) * 0.12f;
                     
@@ -435,11 +547,17 @@ namespace rouen::cards {
                     if (ImGui::Button(power_btn_label.c_str(), ImVec2(-1, 32.0f))) {
                         if (playing_active) {
                             radio_model->stopCurrentStation();
+                            is_playing_ = false;
+                            station_status_ = "Stopped (Standby)";
                         } else if (closest_idx >= 0 && closest_idx < static_cast<int>(visible_stations.size())) {
                             target_needle_pos = (visible_stations.size() > 1) ? (static_cast<float>(closest_idx) / static_cast<float>(visible_stations.size() - 1)) : 0.5f;
                             tuning_knob_val = target_needle_pos;
-                            radio_model->playStation(visible_stations[static_cast<size_t>(closest_idx)]);
+                            const auto& sel_name = visible_stations[static_cast<size_t>(closest_idx)];
+                            select_station(sel_name);
+                            radio_model->playStation(sel_name);
                             radio_model->setVolume(saved_volume);
+                            is_playing_ = true;
+                            station_status_ = "Stream Healthy (Buffer: 2.4s)";
                         }
                     }
                     ImGui::PopStyleColor();
@@ -450,8 +568,12 @@ namespace rouen::cards {
                         if (closest_idx >= 0 && closest_idx < static_cast<int>(visible_stations.size())) {
                             target_needle_pos = (visible_stations.size() > 1) ? (static_cast<float>(closest_idx) / static_cast<float>(visible_stations.size() - 1)) : 0.5f;
                             tuning_knob_val = target_needle_pos;
-                            radio_model->playStation(visible_stations[static_cast<size_t>(closest_idx)]);
+                            const auto& sel_name = visible_stations[static_cast<size_t>(closest_idx)];
+                            select_station(sel_name);
+                            radio_model->playStation(sel_name);
                             radio_model->setVolume(saved_volume);
+                            is_playing_ = true;
+                            station_status_ = "Stream Healthy (Buffer: 2.4s)";
                         }
                     }
                     
@@ -459,7 +581,283 @@ namespace rouen::cards {
                 }
             });
         }
-        
+
+        /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+        [[nodiscard]] std::string get_adaptive_card_json() const override {
+            glz::json_t card;
+            card["type"] = "AdaptiveCard";
+            card["version"] = "1.5";
+            card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+            std::vector<glz::json_t> body;
+
+            // 1. Header Container
+            {
+                glz::json_t header;
+                header["type"] = "Container";
+                header["style"] = "emphasis";
+
+                glz::json_t col_set;
+                col_set["type"] = "ColumnSet";
+                std::vector<glz::json_t> columns;
+
+                // Column 1: Emoji icon
+                {
+                    glz::json_t col;
+                    col["type"] = "Column";
+                    col["width"] = "auto";
+                    std::vector<glz::json_t> items;
+                    glz::json_t tb;
+                    tb["type"] = "TextBlock";
+                    tb["text"] = "\xF0\x9F\x93\xBB"; // 📻
+                    tb["size"] = "Large";
+                    items.push_back(std::move(tb));
+                    col["items"] = std::move(items);
+                    columns.push_back(std::move(col));
+                }
+
+                // Column 2: Title & subtitle
+                {
+                    glz::json_t col;
+                    col["type"] = "Column";
+                    col["width"] = "stretch";
+                    std::vector<glz::json_t> items;
+
+                    glz::json_t tb_title;
+                    tb_title["type"] = "TextBlock";
+                    tb_title["text"] = "Global Internet Radio";
+                    tb_title["weight"] = "Bolder";
+                    tb_title["size"] = "Large";
+                    items.push_back(std::move(tb_title));
+
+                    glz::json_t tb_sub;
+                    tb_sub["type"] = "TextBlock";
+                    if (!station_country_.empty()) {
+                        tb_sub["text"] = std::format("{} ({})", station_name_, station_country_);
+                    } else {
+                        tb_sub["text"] = station_name_;
+                    }
+                    tb_sub["isSubtle"] = true;
+                    tb_sub["size"] = "Small";
+                    items.push_back(std::move(tb_sub));
+
+                    col["items"] = std::move(items);
+                    columns.push_back(std::move(col));
+                }
+
+                // Column 3: Bitrate badge
+                {
+                    glz::json_t col;
+                    col["type"] = "Column";
+                    col["width"] = "auto";
+                    std::vector<glz::json_t> items;
+
+                    glz::json_t tb;
+                    tb["type"] = "TextBlock";
+                    tb["text"] = std::format("{} kbps MP3", bitrate_kbps_);
+                    tb["weight"] = "Bolder";
+                    tb["color"] = is_playing() ? "Good" : "Default";
+                    tb["size"] = "Small";
+                    items.push_back(std::move(tb));
+
+                    col["items"] = std::move(items);
+                    columns.push_back(std::move(col));
+                }
+
+                col_set["columns"] = std::move(columns);
+                std::vector<glz::json_t> header_items;
+                header_items.push_back(std::move(col_set));
+                header["items"] = std::move(header_items);
+                body.push_back(std::move(header));
+            }
+
+            // 2. Station Selection Container
+            {
+                glz::json_t picker_container;
+                picker_container["type"] = "Container";
+                std::vector<glz::json_t> picker_items;
+
+                glz::json_t choice_set;
+                choice_set["type"] = "Input.ChoiceSet";
+                choice_set["id"] = "station_picker";
+                choice_set["label"] = "Select Station";
+                choice_set["value"] = station_id_;
+
+                std::vector<glz::json_t> choices;
+                for (const auto& st : default_adaptive_stations) {
+                    choices.push_back(glz::json_t::object_t{
+                        {"title", st.title},
+                        {"value", st.id}
+                    });
+                }
+                choice_set["choices"] = std::move(choices);
+                picker_items.push_back(std::move(choice_set));
+                picker_container["items"] = std::move(picker_items);
+                body.push_back(std::move(picker_container));
+            }
+
+            // 3. FactSet
+            {
+                glz::json_t fact_set;
+                fact_set["type"] = "FactSet";
+                std::vector<glz::json_t> facts;
+
+                facts.push_back(glz::json_t::object_t{
+                    {"title", "Currently Broadcasting:"},
+                    {"value", broadcasting_}
+                });
+                facts.push_back(glz::json_t::object_t{
+                    {"title", "Codec / Format:"},
+                    {"value", codec_format_}
+                });
+                facts.push_back(glz::json_t::object_t{
+                    {"title", "Station Status:"},
+                    {"value", station_status_}
+                });
+
+                fact_set["facts"] = std::move(facts);
+                body.push_back(std::move(fact_set));
+            }
+
+            card["body"] = std::move(body);
+
+            // 4. Actions
+            {
+                std::vector<glz::json_t> actions;
+                actions.push_back(glz::json_t::object_t{
+                    {"type", "Action.Execute"},
+                    {"title", "Play Station"},
+                    {"verb", "radio_play"}
+                });
+                actions.push_back(glz::json_t::object_t{
+                    {"type", "Action.Execute"},
+                    {"title", "Stop"},
+                    {"verb", "radio_stop"}
+                });
+                actions.push_back(glz::json_t::object_t{
+                    {"type", "Action.Execute"},
+                    {"title", "Toggle Favorite"},
+                    {"verb", "radio_toggle_fav"}
+                });
+                card["actions"] = std::move(actions);
+            }
+
+            std::string out;
+            static_cast<void>(glz::write_json(card, out));
+            return out;
+        }
+
+        /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+        void handle_action(std::string_view action_json) override {
+            if (action_json.empty()) return;
+
+            try {
+                std::string verb;
+                glz::json_t data{};
+                glz::json_t payload{};
+
+                auto err = glz::read_json(payload, std::string(action_json));
+                if (!err && payload.is_object()) {
+                    if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                        verb = payload["verb"].get<std::string>();
+                    } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                        verb = payload["action"].get<std::string>();
+                    }
+
+                    if (payload.contains("data") && payload["data"].is_object()) {
+                        data = payload["data"];
+                    } else {
+                        data = payload;
+                    }
+                } else {
+                    verb = std::string(action_json);
+                }
+
+                if (verb == "radio_play") {
+                    last_action_ = "radio_play";
+                    std::string target_st;
+                    if (data.is_object()) {
+                        if (data.contains("station_picker") && data["station_picker"].holds<std::string>()) {
+                            target_st = data["station_picker"].get<std::string>();
+                        } else if (data.contains("station_id") && data["station_id"].holds<std::string>()) {
+                            target_st = data["station_id"].get<std::string>();
+                        } else if (data.contains("station") && data["station"].holds<std::string>()) {
+                            target_st = data["station"].get<std::string>();
+                        }
+                    }
+                    if (!target_st.empty()) {
+                        select_station(target_st);
+                    }
+                    is_playing_ = true;
+                    station_status_ = "Stream Healthy (Buffer: 2.4s)";
+                    if (radio_model) {
+                        radio_model->playStation(station_name_);
+                    }
+                    last_adaptive_parse_time_ = {};
+                } else if (verb == "radio_stop") {
+                    last_action_ = "radio_stop";
+                    is_playing_ = false;
+                    station_status_ = "Stopped (Standby)";
+                    if (radio_model) {
+                        radio_model->stopCurrentStation();
+                    }
+                    last_adaptive_parse_time_ = {};
+                } else if (verb == "radio_toggle_fav") {
+                    last_action_ = "radio_toggle_fav";
+                    is_favorite_ = !is_favorite_;
+                    last_adaptive_parse_time_ = {};
+                } else if (verb == "toggle_adaptive_view") {
+                    last_action_ = "toggle_adaptive_view";
+                    adaptive_view_mode = !adaptive_view_mode;
+                    last_adaptive_parse_time_ = {};
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[radio] Action error: " << e.what() << std::endl;
+            } catch (...) {}
+        }
+
+        void select_station(const std::string& key) {
+            for (const auto& st : default_adaptive_stations) {
+                if (st.id == key || st.name == key || st.title == key) {
+                    station_id_ = st.id;
+                    station_name_ = st.name;
+                    station_country_ = st.country;
+                    stream_url_ = st.stream_url;
+                    bitrate_kbps_ = st.bitrate_kbps;
+                    broadcasting_ = st.broadcast;
+                    codec_format_ = st.codec;
+                    return;
+                }
+            }
+            if (radio_model) {
+                const auto* st_ptr = radio_model->getStation(key);
+                if (st_ptr) {
+                    station_id_ = key;
+                    station_name_ = st_ptr->name;
+                    station_country_ = "";
+                    stream_url_ = st_ptr->url;
+                    bitrate_kbps_ = 128;
+                    return;
+                }
+            }
+            station_id_ = key;
+            station_name_ = key;
+        }
+
+        [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+        void set_adaptive_view_mode(bool v) noexcept { adaptive_view_mode = v; }
+
+        [[nodiscard]] bool is_playing() const noexcept { return is_playing_; }
+        [[nodiscard]] bool is_favorite() const noexcept { return is_favorite_; }
+        void set_favorite(bool fav) noexcept { is_favorite_ = fav; }
+
+        [[nodiscard]] const std::string& get_station_id() const noexcept { return station_id_; }
+        [[nodiscard]] const std::string& get_station_name() const noexcept { return station_name_; }
+        [[nodiscard]] const std::string& get_station_country() const noexcept { return station_country_; }
+        [[nodiscard]] const std::string& get_stream_url() const noexcept { return stream_url_; }
+        [[nodiscard]] int get_bitrate_kbps() const noexcept { return bitrate_kbps_; }
+        [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
+
     private:
         std::unique_ptr<rouen::models::radio> radio_model;
         
@@ -474,6 +872,28 @@ namespace rouen::cards {
         bool initialized_volume = false;
         int saved_volume = 80;
         float current_light = 0.22f; // Backlight intensity variable (grows when playing, dims when stopped)
+
+        // Adaptive Card presentation override state
+        bool adaptive_view_mode{false};
+        mutable helpers::adaptive_cards::parser adaptive_parser_{};
+        mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+        mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+        mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+        std::string adaptive_error_{};
+        std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+
+        // State synchronization variables
+        std::string station_id_{"bbc4"};
+        std::string station_name_{"BBC Radio 4"};
+        std::string station_country_{"London, United Kingdom"};
+        std::string stream_url_{"https://stream.live.vc.bbcmedia.co.uk/bbc_world_service"};
+        int bitrate_kbps_{128};
+        bool is_favorite_{false};
+        std::string broadcasting_{"The World at One (Live News & Analysis)"};
+        std::string codec_format_{"MPEG-1 Audio Layer 3 (Stereo 44.1 kHz)"};
+        std::string station_status_{"Stream Healthy (Buffer: 2.4s)"};
+        bool is_playing_{false};
+        std::string last_action_{};
 
         // Vintage VU Signal strength meter draw helper
         void draw_vu_meter(ImDrawList* draw_list, const ImVec2& pos, const ImVec2& size, float signal) {

@@ -39,6 +39,7 @@
 #include "../src/cards/media/chess_replay.hpp"
 #include "../src/cards/media/media_card.hpp"
 #include "../src/cards/media/media_companion.hpp"
+#include "../src/cards/media/radio.hpp"
 #include "../src/cards/development/cmake.hpp"
 #include "../src/cards/development/diff_card.hpp"
 #include "../src/cards/information/directory_card.hpp"
@@ -3752,5 +3753,128 @@ TEST(process_panelAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(panel.handle_action("{\"verb\":\"proc_kill\",\"data\":{\"pid\":null}}"));
     EXPECT_NO_THROW(panel.handle_action("{\"verb\":\"proc_refresh\",\"data\":null}"));
 }
+
+TEST(radioAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::radio card{};
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_header = false;
+    bool found_station_picker = false;
+    bool found_broadcasting = false;
+    bool found_codec = false;
+    bool found_status = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "ColumnSet") {
+                    for (const auto& col : child.columns) {
+                        for (const auto& col_item : col.items) {
+                            if (col_item.text.find("Global Internet Radio") != std::string::npos) {
+                                found_header = true;
+                            }
+                        }
+                    }
+                }
+                if (child.type == "Input.ChoiceSet" && child.id == "station_picker") {
+                    found_station_picker = true;
+                    EXPECT_GE(child.choices.size(), 4u);
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Currently Broadcasting:") found_broadcasting = true;
+                if (fact.title == "Codec / Format:") found_codec = true;
+                if (fact.title == "Station Status:") found_status = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_header);
+    EXPECT_TRUE(found_station_picker);
+    EXPECT_TRUE(found_broadcasting);
+    EXPECT_TRUE(found_codec);
+    EXPECT_TRUE(found_status);
+
+    bool found_play_action = false;
+    bool found_stop_action = false;
+    bool found_fav_action = false;
+
+    for (const auto& act : doc.actions) {
+        if (act.verb == "radio_play") found_play_action = true;
+        if (act.verb == "radio_stop") found_stop_action = true;
+        if (act.verb == "radio_toggle_fav") found_fav_action = true;
+    }
+
+    EXPECT_TRUE(found_play_action);
+    EXPECT_TRUE(found_stop_action);
+    EXPECT_TRUE(found_fav_action);
+}
+
+TEST(radioAdaptiveTest, ActionDispatch) {
+    rouen::cards::radio card{};
+
+    // Initial state assertions
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+    EXPECT_FALSE(card.is_favorite());
+    EXPECT_EQ(card.get_station_id(), "bbc4");
+    EXPECT_EQ(card.get_station_name(), "BBC Radio 4");
+
+    // 1. radio_play with station_picker choice
+    card.handle_action(R"({"type":"Action.Execute","verb":"radio_play","data":{"station_picker":"kexp"}})");
+    EXPECT_EQ(card.get_last_action(), "radio_play");
+    EXPECT_EQ(card.get_station_id(), "kexp");
+    EXPECT_EQ(card.get_station_name(), "KEXP 90.3 FM");
+    EXPECT_TRUE(card.is_playing());
+
+    // 2. radio_toggle_fav
+    card.handle_action(R"({"type":"Action.Execute","verb":"radio_toggle_fav"})");
+    EXPECT_EQ(card.get_last_action(), "radio_toggle_fav");
+    EXPECT_TRUE(card.is_favorite());
+    card.handle_action(R"({"type":"Action.Execute","verb":"radio_toggle_fav"})");
+    EXPECT_FALSE(card.is_favorite());
+
+    // 3. radio_stop
+    card.handle_action(R"({"type":"Action.Execute","verb":"radio_stop"})");
+    EXPECT_EQ(card.get_last_action(), "radio_stop");
+    EXPECT_FALSE(card.is_playing());
+
+    // 4. radio_play with station_id alternative key
+    card.handle_action(R"({"type":"Action.Execute","verb":"radio_play","data":{"station_id":"mitre"}})");
+    EXPECT_EQ(card.get_station_id(), "mitre");
+    EXPECT_EQ(card.get_station_name(), "Radio Mitre");
+    EXPECT_TRUE(card.is_playing());
+
+    // 5. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(radioAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::radio card{};
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"radio_play\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"radio_play\",\"data\":{\"station_picker\":null}}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"radio_stop\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"radio_toggle_fav\",\"data\":null}"));
+}
+
 
 
