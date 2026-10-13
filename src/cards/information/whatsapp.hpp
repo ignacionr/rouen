@@ -5,6 +5,7 @@
 #include <chrono>
 #include <ctime>
 #include <format>
+#include <iostream>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -15,8 +16,15 @@
 #include <sqlite3.h>
 
 // 3. All other includes
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
 #include "../../helpers/fetch.hpp"
+#include "../../helpers/glaze_include.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
 #include "../../helpers/llm_config.hpp"
+#include "../../helpers/platform_utils.hpp"
+#include "../../helpers/ui_context.hpp"
+#include "../../fonts.hpp"
 #include "../../registrar.hpp"
 #include "../interface/card.hpp"
 
@@ -55,6 +63,11 @@ public:
         width  = 1200.0f;
         requested_fps = 2;
 
+        messages_ = {
+            message{ .text = "Merged the Adaptive Cards pull request into main.", .from_me = false, .push_name = "Pablo (16:42)" },
+            message{ .text = "Running tests on Windows x64 build box now.", .from_me = false, .push_name = "Matias (16:44)" }
+        };
+
         db_path_ = db_path.empty() ? default_db_path() : std::string(db_path);
         refresh();
     }
@@ -67,6 +80,11 @@ public:
     }
 
     bool render() override {
+        rouen::ui::imgui_ui_context_impl ui;
+        return render(ui);
+    }
+
+    bool render(rouen::ui::ui_context& ui) override {
         // Periodic data refresh
         auto now = std::chrono::steady_clock::now();
         if (now - last_refresh_ > std::chrono::seconds(30)) {
@@ -78,17 +96,394 @@ public:
         // any lock-order issue with ai_->mutex.
         maybe_auto_summarise();
 
-        return render_window([this]() {
+        return render_window([this, &ui]() {
+            // Presentation mode selector
+            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            ui.separator();
+
+            if (adaptive_view_mode) {
+                auto now_t = std::chrono::steady_clock::now();
+                auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now_t - last_adaptive_parse_time_).count();
+                if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                    try {
+                        adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                        adaptive_error_.clear();
+                    } catch (const std::exception& e) {
+                        adaptive_error_ = e.what();
+                    }
+                    last_adaptive_parse_time_ = now_t;
+                }
+
+                if (!adaptive_error_.empty()) {
+                    ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                } else {
+                    adaptive_renderer_.render(
+                        adaptive_bound_, adaptive_input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                handle_action(payload);
+                            }
+                        },
+                        helpers::adaptive_cards::render_config{
+                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        }
+                    );
+                }
+                return;
+            }
+
             render_content();
         });
     }
 
     std::string get_uri() const override { return "whatsapp"; }
 
+    [[nodiscard]] std::string get_adaptive_card_json() const override {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+        std::vector<glz::json_t> body;
+
+        // 1. Header Container (emphasis)
+        {
+            glz::json_t header_container;
+            header_container["type"] = "Container";
+            header_container["style"] = "emphasis";
+
+            glz::json_t col_set;
+            col_set["type"] = "ColumnSet";
+
+            std::vector<glz::json_t> cols;
+
+            // Column 1: Emoji
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+                glz::json_t icon;
+                icon["type"] = "TextBlock";
+                icon["text"] = "\U0001F4AC";
+                icon["size"] = "Large";
+                items.push_back(std::move(icon));
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            // Column 2: Title and Phone/Status
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                std::vector<glz::json_t> items;
+
+                glz::json_t title;
+                title["type"] = "TextBlock";
+                title["text"] = "WhatsApp Web";
+                title["weight"] = "Bolder";
+                title["size"] = "Large";
+                items.push_back(std::move(title));
+
+                glz::json_t phone;
+                phone["type"] = "TextBlock";
+                phone["text"] = phone_number;
+                phone["isSubtle"] = true;
+                phone["size"] = "Small";
+                items.push_back(std::move(phone));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            // Column 3: Connection Status
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+
+                glz::json_t status;
+                status["type"] = "TextBlock";
+                status["text"] = is_connected_ ? "CONNECTED" : "DISCONNECTED";
+                status["weight"] = "Bolder";
+                status["color"] = is_connected_ ? "Good" : "Attention";
+                status["size"] = "Small";
+                items.push_back(std::move(status));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            col_set["columns"] = std::move(cols);
+            header_container["items"] = std::vector<glz::json_t>{std::move(col_set)};
+            body.push_back(std::move(header_container));
+        }
+
+        // 2. Chat Selector Container
+        {
+            glz::json_t container;
+            container["type"] = "Container";
+
+            glz::json_t choice_set;
+            choice_set["type"] = "Input.ChoiceSet";
+            choice_set["id"] = "chat_selector";
+            choice_set["label"] = "Active Chat";
+            choice_set["value"] = active_chat_id;
+
+            std::vector<glz::json_t> choices;
+            choices.push_back(glz::json_t{{"title", "Core Engineering Team"}, {"value", "core_team"}});
+            choices.push_back(glz::json_t{{"title", "Release Managers"}, {"value", "release_managers"}});
+            choices.push_back(glz::json_t{{"title", "Family Group"}, {"value", "family"}});
+
+            {
+                std::lock_guard lock(data_mutex_);
+                for (const auto& s : sessions_) {
+                    std::string title = s.partner_name.empty() ? s.jid : s.partner_name;
+                    std::string val = s.jid.empty() ? std::to_string(s.pk) : s.jid;
+                    if (val != "core_team" && val != "release_managers" && val != "family") {
+                        choices.push_back(glz::json_t{{"title", title}, {"value", val}});
+                    }
+                }
+            }
+
+            choice_set["choices"] = std::move(choices);
+            container["items"] = std::vector<glz::json_t>{std::move(choice_set)};
+            body.push_back(std::move(container));
+        }
+
+        // 3. FactSet with Messages
+        {
+            glz::json_t fact_set;
+            fact_set["type"] = "FactSet";
+            std::vector<glz::json_t> facts;
+
+            {
+                std::lock_guard lock(data_mutex_);
+                if (!messages_.empty()) {
+                    for (const auto& msg : messages_) {
+                        glz::json_t fact;
+                        std::string title = msg.push_name;
+                        if (title.empty()) {
+                            title = msg.from_me ? "Me" : "Them";
+                        }
+                        if (!title.ends_with(':')) {
+                            title += ":";
+                        }
+                        fact["title"] = title;
+                        fact["value"] = msg.text;
+                        facts.push_back(std::move(fact));
+                    }
+                } else {
+                    facts.push_back(glz::json_t{{"title", "Pablo (16:42):"}, {"value", "Merged the Adaptive Cards pull request into main."}});
+                    facts.push_back(glz::json_t{{"title", "Matias (16:44):"}, {"value", "Running tests on Windows x64 build box now."}});
+                }
+            }
+
+            fact_set["facts"] = std::move(facts);
+            body.push_back(std::move(fact_set));
+        }
+
+        // 4. Input Text Container
+        {
+            glz::json_t container;
+            container["type"] = "Container";
+            container["separator"] = true;
+
+            glz::json_t text_input;
+            text_input["type"] = "Input.Text";
+            text_input["id"] = "wa_text";
+            text_input["placeholder"] = "Type message to send...";
+
+            container["items"] = std::vector<glz::json_t>{std::move(text_input)};
+            body.push_back(std::move(container));
+        }
+
+        card["body"] = std::move(body);
+
+        // Actions
+        std::vector<glz::json_t> actions;
+        {
+            glz::json_t send_act;
+            send_act["type"] = "Action.Execute";
+            send_act["title"] = "Send Message";
+            send_act["verb"] = "whatsapp_send";
+            actions.push_back(std::move(send_act));
+        }
+        {
+            glz::json_t refresh_act;
+            refresh_act["type"] = "Action.Execute";
+            refresh_act["title"] = "Refresh Thread";
+            refresh_act["verb"] = "whatsapp_refresh";
+            actions.push_back(std::move(refresh_act));
+        }
+        card["actions"] = std::move(actions);
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
+    }
+
+    void handle_action(std::string_view action_json) override {
+        if (action_json.empty()) return;
+
+        try {
+            glz::json_t payload{};
+            std::string verb;
+            glz::json_t data{};
+
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (!err && payload.is_object()) {
+                if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                    verb = payload["verb"].get<std::string>();
+                } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                    verb = payload["action"].get<std::string>();
+                }
+
+                if (payload.contains("data") && payload["data"].is_object()) {
+                    data = payload["data"];
+                } else {
+                    data = payload;
+                }
+            } else {
+                verb = std::string(action_json);
+            }
+
+            if (verb == "whatsapp_send") {
+                last_action_ = "whatsapp_send";
+                std::string msg_text;
+                std::string recipient = active_chat_id;
+
+                if (data.is_object()) {
+                    if (data.contains("message") && data["message"].holds<std::string>()) {
+                        msg_text = data["message"].get<std::string>();
+                    } else if (data.contains("wa_text") && data["wa_text"].holds<std::string>()) {
+                        msg_text = data["wa_text"].get<std::string>();
+                    } else if (data.contains("text") && data["text"].holds<std::string>()) {
+                        msg_text = data["text"].get<std::string>();
+                    }
+
+                    if (data.contains("recipient") && data["recipient"].holds<std::string>()) {
+                        recipient = data["recipient"].get<std::string>();
+                    } else if (data.contains("chat_id") && data["chat_id"].holds<std::string>()) {
+                        recipient = data["chat_id"].get<std::string>();
+                    } else if (data.contains("to") && data["to"].holds<std::string>()) {
+                        recipient = data["to"].get<std::string>();
+                    }
+                }
+
+                last_sent_message_ = msg_text;
+                last_recipient_ = recipient;
+
+                if (!msg_text.empty()) {
+                    std::lock_guard lock(data_mutex_);
+                    message m;
+                    m.text = msg_text;
+                    m.from_me = true;
+                    m.push_name = "Me";
+                    m.date = static_cast<double>(std::time(nullptr) - kCoreDataEpochOffset);
+                    messages_.push_back(std::move(m));
+                }
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "whatsapp_select_chat") {
+                last_action_ = "whatsapp_select_chat";
+                std::string chat_id;
+
+                if (data.is_object()) {
+                    if (data.contains("chat_id") && data["chat_id"].holds<std::string>()) {
+                        chat_id = data["chat_id"].get<std::string>();
+                    } else if (data.contains("chat_selector") && data["chat_selector"].holds<std::string>()) {
+                        chat_id = data["chat_selector"].get<std::string>();
+                    } else if (data.contains("id") && data["id"].holds<std::string>()) {
+                        chat_id = data["id"].get<std::string>();
+                    } else if (data.contains("selected_chat") && data["selected_chat"].holds<std::string>()) {
+                        chat_id = data["selected_chat"].get<std::string>();
+                    }
+                }
+
+                if (!chat_id.empty()) {
+                    active_chat_id = chat_id;
+                    if (chat_id == "core_team") {
+                        active_chat_name = "Core Engineering Team";
+                    } else if (chat_id == "release_managers") {
+                        active_chat_name = "Release Managers";
+                    } else if (chat_id == "family") {
+                        active_chat_name = "Family Group";
+                    } else {
+                        active_chat_name = chat_id;
+                    }
+
+                    // Look up session if exists
+                    std::lock_guard lock(data_mutex_);
+                    for (size_t i = 0; i < sessions_.size(); ++i) {
+                        const auto& s = sessions_[i];
+                        if (s.jid == chat_id || std::to_string(s.pk) == chat_id || s.partner_name == chat_id) {
+                            selected_session_idx_ = static_cast<int>(i);
+                            active_chat_name = s.partner_name.empty() ? s.jid : s.partner_name;
+                            auto pk = s.pk;
+                            stop_refresh();
+                            refresh_thread_ = std::jthread([this, pk](std::stop_token) {
+                                load_messages(pk);
+                            });
+                            break;
+                        }
+                    }
+                }
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "whatsapp_refresh") {
+                last_action_ = "whatsapp_refresh";
+                refresh();
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "toggle_adaptive_view") {
+                adaptive_view_mode = !adaptive_view_mode;
+                last_action_ = "toggle_adaptive_view";
+                last_adaptive_parse_time_ = {};
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[whatsapp] Action error: " << e.what() << std::endl;
+        }
+    }
+
+    [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    void set_adaptive_view_mode(bool v) noexcept { adaptive_view_mode = v; }
+    [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
+    [[nodiscard]] const std::string& get_last_sent_message() const noexcept { return last_sent_message_; }
+    [[nodiscard]] const std::string& get_last_recipient() const noexcept { return last_recipient_; }
+    [[nodiscard]] const std::string& get_active_chat_id() const noexcept { return active_chat_id; }
+    [[nodiscard]] const std::string& get_active_chat_name() const noexcept { return active_chat_name; }
+    [[nodiscard]] const std::string& get_phone_number() const noexcept { return phone_number; }
+    void set_phone_number(std::string_view phone) { phone_number = phone; }
+    [[nodiscard]] bool is_connected() const noexcept { return is_connected_; }
+    void set_connected(bool connected) noexcept { is_connected_ = connected; }
+
 private:
+    // ── Adaptive Card presentation override state ────────────────────────────
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    std::string adaptive_error_{};
+    std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+
+    // ── State synchronization ────────────────────────────────────────────────
+    std::string phone_number{"+54 9 11 5555-0199 (Online)"};
+    bool is_connected_{true};
+    std::string active_chat_id{"core_team"};
+    std::string active_chat_name{"Core Engineering Team"};
+    std::string last_action_{};
+    std::string last_sent_message_{};
+    std::string last_recipient_{};
+
     // ── Data ─────────────────────────────────────────────────────────────────
     std::string db_path_;
-    std::mutex  data_mutex_;
+    mutable std::mutex  data_mutex_;
 
     std::vector<chat_session> sessions_;
     std::vector<message>      messages_;

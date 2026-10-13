@@ -58,6 +58,7 @@
 #include "../src/cards/information/solar_system.hpp"
 #include "../src/cards/information/telegram.hpp"
 #include "../src/cards/information/travel.hpp"
+#include "../src/cards/information/whatsapp.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -5041,5 +5042,109 @@ TEST(travelAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(travel_card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
     EXPECT_NO_THROW(travel_card.handle_action("{\"verb\":\"add_reservation\",\"data\":null}"));
     EXPECT_NO_THROW(travel_card.handle_action("{\"verb\":\"toggle_checklist\",\"data\":null}"));
+}
+
+TEST(whatsappAdaptiveTest, JsonSerialization) {
+    rouen::cards::whatsapp wa_card{};
+    std::string card_json = wa_card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_header_title = false;
+    bool found_chat_selector = false;
+    bool found_facts = false;
+    bool found_text_input = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& col_set : elem.items) {
+                if (col_set.type == "ColumnSet") {
+                    for (const auto& col : col_set.columns) {
+                        for (const auto& item : col.items) {
+                            if (item.type == "TextBlock") {
+                                if (item.text.find("WhatsApp Web") != std::string::npos) {
+                                    found_header_title = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (const auto& item : elem.items) {
+                if (item.type == "Input.ChoiceSet" && item.id == "chat_selector") {
+                    found_chat_selector = true;
+                }
+                if (item.type == "Input.Text" && item.id == "wa_text") {
+                    found_text_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            if (!elem.facts.empty()) {
+                found_facts = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_header_title);
+    EXPECT_TRUE(found_chat_selector);
+    EXPECT_TRUE(found_facts);
+    EXPECT_TRUE(found_text_input);
+
+    bool found_send_action = false;
+    bool found_refresh_action = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "whatsapp_send" || act.title.find("Send Message") != std::string::npos) {
+            found_send_action = true;
+        }
+        if (act.verb == "whatsapp_refresh" || act.title.find("Refresh Thread") != std::string::npos) {
+            found_refresh_action = true;
+        }
+    }
+    EXPECT_TRUE(found_send_action);
+    EXPECT_TRUE(found_refresh_action);
+}
+
+TEST(whatsappAdaptiveTest, ActionDispatch) {
+    rouen::cards::whatsapp wa_card{};
+    EXPECT_FALSE(wa_card.is_adaptive_view_mode());
+
+    // 1. whatsapp_send
+    wa_card.handle_action(R"raw({"type":"Action.Execute","verb":"whatsapp_send","data":{"recipient":"core_team","message":"Hello from Adaptive Card!"}})raw");
+    EXPECT_EQ(wa_card.get_last_action(), "whatsapp_send");
+    EXPECT_EQ(wa_card.get_last_sent_message(), "Hello from Adaptive Card!");
+    EXPECT_EQ(wa_card.get_last_recipient(), "core_team");
+    EXPECT_NE(wa_card.get_adaptive_card_json().find("Hello from Adaptive Card!"), std::string::npos);
+
+    // 2. whatsapp_select_chat
+    wa_card.handle_action(R"raw({"type":"Action.Execute","verb":"whatsapp_select_chat","data":{"chat_id":"release_managers"}})raw");
+    EXPECT_EQ(wa_card.get_last_action(), "whatsapp_select_chat");
+    EXPECT_EQ(wa_card.get_active_chat_id(), "release_managers");
+
+    // 3. whatsapp_refresh
+    wa_card.handle_action(R"raw({"type":"Action.Execute","verb":"whatsapp_refresh"})raw");
+    EXPECT_EQ(wa_card.get_last_action(), "whatsapp_refresh");
+
+    // 4. toggle_adaptive_view
+    wa_card.handle_action(R"raw({"type":"Action.Execute","verb":"toggle_adaptive_view"})raw");
+    EXPECT_TRUE(wa_card.is_adaptive_view_mode());
+    wa_card.handle_action(R"raw({"type":"Action.Execute","verb":"toggle_adaptive_view"})raw");
+    EXPECT_FALSE(wa_card.is_adaptive_view_mode());
+}
+
+TEST(whatsappAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::whatsapp wa_card{};
+    EXPECT_NO_THROW(wa_card.handle_action(""));
+    EXPECT_NO_THROW(wa_card.handle_action("not a json string"));
+    EXPECT_NO_THROW(wa_card.handle_action("{"));
+    EXPECT_NO_THROW(wa_card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(wa_card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(wa_card.handle_action("{\"verb\":\"whatsapp_send\",\"data\":null}"));
+    EXPECT_NO_THROW(wa_card.handle_action("{\"verb\":\"whatsapp_select_chat\",\"data\":null}"));
 }
 
