@@ -30,6 +30,7 @@
 #include "../src/cards/system/settings.hpp"
 #include "../src/cards/system/subnet_scanner.hpp"
 #include "../src/cards/system/sync_card.hpp"
+#include "../src/cards/system/terminal.hpp"
 #include "../src/cards/productivity/pomodoro.hpp"
 #include "../src/cards/production/adlib.hpp"
 #include "../src/cards/development/vcproject_card.hpp"
@@ -4810,13 +4811,115 @@ TEST(telegram_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"telegram_refresh\",\"data\":null}"));
 }
 
+TEST(terminalAdaptiveTest, JsonSerialization) {
+    rouen::cards::terminal term{};
+    std::string card_json = term.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
 
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
 
+    bool found_header_icon = false;
+    bool found_header_title = false;
+    bool found_exit_code = false;
+    bool found_cmd_input = false;
+    bool found_output_block = false;
 
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& col_set : elem.items) {
+                if (col_set.type == "ColumnSet") {
+                    for (const auto& col : col_set.columns) {
+                        for (const auto& item : col.items) {
+                            if (item.type == "TextBlock") {
+                                if (item.text.find("💻") != std::string::npos || item.text.find("\U0001F4BB") != std::string::npos) {
+                                    found_header_icon = true;
+                                }
+                                if (item.text.find("Interactive Shell Terminal") != std::string::npos) {
+                                    found_header_title = true;
+                                }
+                                if (item.text.find("EXIT:") != std::string::npos) {
+                                    found_exit_code = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (const auto& item : elem.items) {
+                if (item.type == "Input.Text" && item.id == "command_line") {
+                    found_cmd_input = true;
+                }
+                if (item.type == "TextBlock" && item.text.find("Interactive Bash Terminal") != std::string::npos) {
+                    found_output_block = true;
+                }
+            }
+        }
+    }
 
+    EXPECT_TRUE(found_header_icon);
+    EXPECT_TRUE(found_header_title);
+    EXPECT_TRUE(found_exit_code);
+    EXPECT_TRUE(found_cmd_input);
+    EXPECT_TRUE(found_output_block);
 
+    bool found_exec_action = false;
+    bool found_clear_action = false;
+    bool found_sigint_action = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "term_exec") found_exec_action = true;
+        if (act.verb == "term_clear") found_clear_action = true;
+        if (act.verb == "term_sigint") found_sigint_action = true;
+    }
+    EXPECT_TRUE(found_exec_action);
+    EXPECT_TRUE(found_clear_action);
+    EXPECT_TRUE(found_sigint_action);
+}
 
+TEST(terminalAdaptiveTest, ActionDispatch) {
+    rouen::cards::terminal term{};
+    EXPECT_FALSE(term.is_adaptive_view_mode());
 
+    // 1. term_exec
+    term.handle_action(R"({"type":"Action.Execute","verb":"term_exec","data":{"command_line":"echo hello_terminal"}})");
+    EXPECT_EQ(term.get_last_action(), "term_exec");
+    EXPECT_EQ(term.get_last_command(), "echo hello_terminal");
 
+    // 1b. term_exec with cmd parameter
+    term.handle_action(R"({"type":"Action.Execute","verb":"term_exec","data":{"cmd":"pwd"}})");
+    EXPECT_EQ(term.get_last_action(), "term_exec");
+    EXPECT_EQ(term.get_last_command(), "pwd");
 
+    // 2. term_clear
+    term.handle_action(R"({"type":"Action.Execute","verb":"term_clear"})");
+    EXPECT_EQ(term.get_last_action(), "term_clear");
+    std::string card_json_cleared = term.get_adaptive_card_json();
+    EXPECT_NE(card_json_cleared.find("Terminal cleared."), std::string::npos);
 
+    // 3. term_sigint
+    term.handle_action(R"({"type":"Action.Execute","verb":"term_sigint"})");
+    EXPECT_EQ(term.get_last_action(), "term_sigint");
+    std::string card_json_sigint = term.get_adaptive_card_json();
+    EXPECT_NE(card_json_sigint.find("SIGINT"), std::string::npos);
+
+    // 4. toggle_adaptive_view
+    term.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(term.is_adaptive_view_mode());
+    term.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(term.is_adaptive_view_mode());
+}
+
+TEST(terminalAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::terminal term{};
+    EXPECT_NO_THROW(term.handle_action(""));
+    EXPECT_NO_THROW(term.handle_action("not a json string"));
+    EXPECT_NO_THROW(term.handle_action("{"));
+    EXPECT_NO_THROW(term.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(term.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(term.handle_action("{\"verb\":\"term_exec\",\"data\":null}"));
+    EXPECT_NO_THROW(term.handle_action("{\"verb\":\"term_clear\",\"data\":null}"));
+    EXPECT_NO_THROW(term.handle_action("{\"verb\":\"term_sigint\",\"data\":null}"));
+}

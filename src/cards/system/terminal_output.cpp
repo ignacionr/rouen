@@ -238,7 +238,7 @@ void TerminalOutput::set_partial_line(const std::string& text, OutputType type) 
     should_auto_scroll = true;
 }
 
-std::string TerminalOutput::get_all_text() {
+std::string TerminalOutput::get_all_text() const {
     std::lock_guard<std::mutex> const lock(output_mutex);
     std::string result;
     for (const auto& [text, type] : output_buffer) {

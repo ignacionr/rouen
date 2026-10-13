@@ -1,6 +1,9 @@
 #include "terminal.hpp"
 #include "../../registrar.hpp"
 #include "../../fonts.hpp"
+#include "../../helpers/glaze_include.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
+#include "../../helpers/platform_utils.hpp"
 #include "cards/system/terminal_output.hpp"
 #include <cstdlib>
 #include <cstring>
@@ -85,6 +88,13 @@ terminal::terminal(std::string_view initial_dir) {
         current_working_dir = std::string(initial_dir);
     }
     
+    const char* shell_env = std::getenv("SHELL");
+    if (shell_env && shell_env[0] != '\0') {
+        shell_path_ = shell_env;
+    } else {
+        shell_path_ = "/bin/zsh";
+    }
+    
     // Initialize the interactive bash session
     bash.initialize_bash_session(current_working_dir, output, is_command_running);
     
@@ -111,8 +121,48 @@ void terminal::test_stderr_output() {
                          bash.is_interactive(), show_sudo_prompt, sudo_command);
 }
 
-bool terminal::render() {
-    return render_window([this]() {
+bool terminal::render(rouen::ui::ui_context& ui) {
+    return render_window([this, &ui]() {
+        // Presentation mode selector
+        ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+        ui.separator();
+
+        if (adaptive_view_mode) {
+            auto now = std::chrono::steady_clock::now();
+            auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+            if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                try {
+                    adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                    adaptive_error_.clear();
+                } catch (const std::exception& e) {
+                    adaptive_error_ = e.what();
+                }
+                last_adaptive_parse_time_ = now;
+            }
+
+            if (!adaptive_error_.empty()) {
+                ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+            } else {
+                adaptive_renderer_.render(
+                    adaptive_bound_, adaptive_input_state_,
+                    helpers::adaptive_cards::renderer::action_callbacks{
+                        .open_url = [](const std::string& url) {
+                            static_cast<void>(rouen::platform::open_url(url));
+                        },
+                        .on_submit = [this](const std::string& payload) {
+                            handle_action(payload);
+                        }
+                    },
+                    helpers::adaptive_cards::render_config{
+                        .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                        .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                        .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                    }
+                );
+            }
+            return;
+        }
+
         rouen::fonts::with_font const fnt{rouen::fonts::FontType::Mono};
         // Calculate window dimensions
         const float window_width = ImGui::GetContentRegionAvail().x;
@@ -144,6 +194,11 @@ bool terminal::render() {
             render_command_input(window_width);
         }
     });
+}
+
+bool terminal::render() {
+    rouen::ui::imgui_ui_context_impl ui;
+    return render(ui);
 }
 
 void terminal::render_sudo_prompt(float window_width) {
@@ -286,29 +341,55 @@ void terminal::render_command_input(float window_width) {
             command_history.push_back(user_cmd);
             if (command_history.size() > 50) command_history.erase(command_history.begin());
             history_index = command_history.size();
-        } else if (is_command_running.load()) {
-            // A process is running in the foreground. Send the raw input to its stdin.
-            output.add_to_output(user_cmd, OutputType::Command);
-            if (bash.is_interactive()) {
-                bash.send_to_bash(user_cmd, true); // raw = true
-            }
-        } else {
-            bool const use_llm = ctrl_down;
+        } else if (ctrl_down && !is_command_running.load()) {
+            last_command_ = user_cmd;
             std::string actual_command;
-            commands.execute_command(input_buffer, use_llm, output, current_working_dir, 
+            commands.execute_command(input_buffer, true, output, current_working_dir, 
                                  command_history, history_index, is_command_running, 
                                  bash.is_interactive(), show_sudo_prompt, sudo_command, &actual_command);
             if (bash.is_interactive() && !show_sudo_prompt && !actual_command.empty()) {
-                // Normal commands should emit the completion marker so the UI can
-                // reliably clear the running state when the foreground job exits.
                 bash.send_to_bash(actual_command, false);
             }
+        } else {
+            execute_command_line(user_cmd);
         }
         input_buffer[0] = '\0';  // Clear the input
         focus_input = true;
     }
     
     ImGui::PopStyleColor();
+}
+
+void terminal::execute_command_line(std::string user_cmd) {
+    if (user_cmd.empty()) return;
+
+    last_command_ = user_cmd;
+
+    // Always update current_working_dir from bash before handling shortcuts, but only if no command is running
+    if (bash.is_interactive() && !is_command_running.load()) {
+        std::string const new_cwd = bash.get_cwd();
+        if (!new_cwd.empty()) current_working_dir = new_cwd;
+    }
+
+    if (handle_slash_command(user_cmd)) {
+        // Handled as slash command
+    } else if (is_command_running.load()) {
+        // A process is running in the foreground. Send the raw input to its stdin.
+        output.add_to_output(user_cmd, OutputType::Command);
+        if (bash.is_interactive()) {
+            bash.send_to_bash(user_cmd, true); // raw = true
+        }
+    } else {
+        std::string actual_command;
+        commands.execute_command(user_cmd, false, output, current_working_dir, 
+                             command_history, history_index, is_command_running, 
+                             bash.is_interactive(), show_sudo_prompt, sudo_command, &actual_command);
+        if (bash.is_interactive() && !show_sudo_prompt && !actual_command.empty()) {
+            // Normal commands should emit the completion marker so the UI can
+            // reliably clear the running state when the foreground job exits.
+            bash.send_to_bash(actual_command, false);
+        }
+    }
 }
 
 bool terminal::navigate_history(bool go_back, char* buffer, size_t buffer_size) {
@@ -485,6 +566,232 @@ std::string terminal::get_uri() const {
         return "terminal";
     }
     return std::format("terminal:{}", current_working_dir);
+}
+
+std::string terminal::get_recent_output() const {
+    return output.get_all_text();
+}
+
+std::string terminal::get_adaptive_card_json() const {
+    glz::json_t card;
+    card["type"] = "AdaptiveCard";
+    card["version"] = "1.5";
+    card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+    std::vector<glz::json_t> body;
+
+    // 1. Header Container
+    {
+        glz::json_t container;
+        container["type"] = "Container";
+        container["style"] = "emphasis";
+
+        glz::json_t col_set;
+        col_set["type"] = "ColumnSet";
+        std::vector<glz::json_t> cols;
+
+        // Column 1: Emoji icon
+        {
+            glz::json_t col;
+            col["type"] = "Column";
+            col["width"] = "auto";
+            std::vector<glz::json_t> col_items;
+            glz::json_t tb;
+            tb["type"] = "TextBlock";
+            tb["text"] = "💻";
+            tb["size"] = "Large";
+            col_items.push_back(std::move(tb));
+            col["items"] = std::move(col_items);
+            cols.push_back(std::move(col));
+        }
+
+        // Column 2: Title and Subtitle
+        {
+            glz::json_t col;
+            col["type"] = "Column";
+            col["width"] = "stretch";
+            std::vector<glz::json_t> col_items;
+
+            glz::json_t tb_title;
+            tb_title["type"] = "TextBlock";
+            tb_title["text"] = "Interactive Shell Terminal";
+            tb_title["weight"] = "Bolder";
+            tb_title["size"] = "Large";
+            col_items.push_back(std::move(tb_title));
+
+            glz::json_t tb_sub;
+            tb_sub["type"] = "TextBlock";
+            tb_sub["text"] = std::format("{} • {}", shell_path_, current_working_dir);
+            tb_sub["isSubtle"] = true;
+            tb_sub["size"] = "Small";
+            col_items.push_back(std::move(tb_sub));
+
+            col["items"] = std::move(col_items);
+            cols.push_back(std::move(col));
+        }
+
+        // Column 3: Status Badge / Exit Code
+        {
+            glz::json_t col;
+            col["type"] = "Column";
+            col["width"] = "auto";
+            std::vector<glz::json_t> col_items;
+
+            glz::json_t tb_exit;
+            tb_exit["type"] = "TextBlock";
+            tb_exit["text"] = std::format("EXIT: {}", last_exit_code_);
+            tb_exit["weight"] = "Bolder";
+            tb_exit["color"] = (last_exit_code_ == 0 ? "Good" : "Attention");
+            tb_exit["size"] = "Small";
+            col_items.push_back(std::move(tb_exit));
+
+            col["items"] = std::move(col_items);
+            cols.push_back(std::move(col));
+        }
+
+        col_set["columns"] = std::move(cols);
+        std::vector<glz::json_t> container_items;
+        container_items.push_back(std::move(col_set));
+        container["items"] = std::move(container_items);
+        body.push_back(std::move(container));
+    }
+
+    // 2. Output Container
+    {
+        glz::json_t container;
+        container["type"] = "Container";
+        container["style"] = "accent";
+        std::vector<glz::json_t> items;
+
+        std::string raw_output = get_recent_output();
+        if (raw_output.empty()) {
+            raw_output = "(No output)";
+        }
+
+        glz::json_t tb_output;
+        tb_output["type"] = "TextBlock";
+        tb_output["text"] = std::move(raw_output);
+        tb_output["fontType"] = "Monospace";
+        tb_output["wrap"] = true;
+        tb_output["size"] = "Small";
+        items.push_back(std::move(tb_output));
+
+        container["items"] = std::move(items);
+        body.push_back(std::move(container));
+    }
+
+    // 3. Command Input Container
+    {
+        glz::json_t container;
+        container["type"] = "Container";
+        container["separator"] = true;
+        std::vector<glz::json_t> items;
+
+        glz::json_t input;
+        input["type"] = "Input.Text";
+        input["id"] = "command_line";
+        input["placeholder"] = "Enter command to execute (e.g. git status)...";
+        items.push_back(std::move(input));
+
+        container["items"] = std::move(items);
+        body.push_back(std::move(container));
+    }
+
+    card["body"] = std::move(body);
+
+    // 4. Actions
+    {
+        std::vector<glz::json_t> actions;
+
+        {
+            glz::json_t act;
+            act["type"] = "Action.Execute";
+            act["title"] = "Execute";
+            act["verb"] = "term_exec";
+            actions.push_back(std::move(act));
+        }
+        {
+            glz::json_t act;
+            act["type"] = "Action.Execute";
+            act["title"] = "Clear Console";
+            act["verb"] = "term_clear";
+            actions.push_back(std::move(act));
+        }
+        {
+            glz::json_t act;
+            act["type"] = "Action.Execute";
+            act["title"] = "Interrupt (Ctrl+C)";
+            act["verb"] = "term_sigint";
+            actions.push_back(std::move(act));
+        }
+
+        card["actions"] = std::move(actions);
+    }
+
+    std::string out;
+    static_cast<void>(glz::write_json(card, out));
+    return out;
+}
+
+void terminal::handle_action(std::string_view action_json) {
+    if (action_json.empty()) return;
+
+    try {
+        glz::json_t payload{};
+        std::string verb;
+        glz::json_t data{};
+
+        auto err = glz::read_json(payload, std::string(action_json));
+        if (!err && payload.is_object()) {
+            if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                verb = payload["verb"].get<std::string>();
+            } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                verb = payload["action"].get<std::string>();
+            }
+
+            if (payload.contains("data") && payload["data"].is_object()) {
+                data = payload["data"];
+            } else {
+                data = payload;
+            }
+        } else {
+            verb = std::string(action_json);
+        }
+
+        if (verb == "term_exec") {
+            last_action_ = "term_exec";
+            std::string cmd;
+            if (data.is_object()) {
+                if (data.contains("command_line") && data["command_line"].holds<std::string>()) {
+                    cmd = data["command_line"].get<std::string>();
+                } else if (data.contains("cmd") && data["cmd"].holds<std::string>()) {
+                    cmd = data["cmd"].get<std::string>();
+                } else if (data.contains("command") && data["command"].holds<std::string>()) {
+                    cmd = data["command"].get<std::string>();
+                }
+            }
+
+            if (!cmd.empty()) {
+                execute_command_line(cmd);
+            }
+            last_adaptive_parse_time_ = {};
+        } else if (verb == "term_clear") {
+            last_action_ = "term_clear";
+            output.clear_terminal(current_working_dir);
+            last_adaptive_parse_time_ = {};
+        } else if (verb == "term_sigint") {
+            last_action_ = "term_sigint";
+            bash.send_sigint();
+            output.add_to_output("Sent Ctrl+C (SIGINT) to running process.", OutputType::System);
+            last_adaptive_parse_time_ = {};
+        } else if (verb == "toggle_adaptive_view") {
+            adaptive_view_mode = !adaptive_view_mode;
+            last_action_ = "toggle_adaptive_view";
+            last_adaptive_parse_time_ = {};
+        }
+    } catch (const std::exception& e) {
+        TERM_ERROR_FMT("Adaptive card action error: {}", e.what());
+    }
 }
 
 } // namespace rouen::cards

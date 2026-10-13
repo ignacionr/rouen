@@ -10,6 +10,9 @@
 #include <filesystem>
 
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/ui_context.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
 #include "../interface/card.hpp"
 #include "terminal_output.hpp"
 #include "terminal_bash.hpp"
@@ -37,15 +40,55 @@ public:
     ~terminal() override;
     
     bool render() override;
+    bool render(rouen::ui::ui_context& ui) override;
     std::string get_uri() const override;
     
+    /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+    [[nodiscard]] std::string get_adaptive_card_json() const override;
+
+    /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+    void handle_action(std::string_view action_json) override;
+
+    [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    void set_adaptive_view_mode(bool v) noexcept { adaptive_view_mode = v; }
+
+    [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
+    [[nodiscard]] const std::string& get_last_command() const noexcept { return last_command_; }
+
+    [[nodiscard]] const std::string& get_shell_path() const noexcept { return shell_path_; }
+    void set_shell_path(std::string_view path) { shell_path_ = path; }
+
+    [[nodiscard]] int get_last_exit_code() const noexcept { return last_exit_code_; }
+    void set_last_exit_code(int code) noexcept { last_exit_code_ = code; }
+
+    [[nodiscard]] const std::string& get_current_working_dir() const noexcept { return current_working_dir; }
+    void set_current_working_dir(std::string_view dir) { current_working_dir = dir; }
+
+    [[nodiscard]] std::string get_recent_output() const;
+    
 private:
+    void execute_command_line(std::string cmd);
     void render_sudo_prompt(float window_width);
     void render_command_input(float window_width);
     void test_stderr_output();
     bool navigate_history(bool go_back, char* buffer, size_t buffer_size);
     bool handle_slash_command(const std::string& cmd);
     
+    // Adaptive Card presentation override state
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    std::string adaptive_error_{};
+    std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+
+    // State synchronization
+    std::string shell_path_{"/bin/zsh"};
+    int last_exit_code_{0};
+    std::string last_action_{};
+    std::string last_command_{};
+
     std::string input_text;  // Stores the current input text (for history navigation)
     std::vector<std::string> command_history;
     size_t history_index = 0;
