@@ -20,6 +20,7 @@
 #include "../src/cards/system/sysinfo.hpp"
 #include "../src/cards/system/cast_control.hpp"
 #include "../src/cards/system/dbrepair.hpp"
+#include "../src/cards/system/display_card.hpp"
 #include "../src/cards/productivity/pomodoro.hpp"
 #include "../src/cards/production/adlib.hpp"
 #include "../src/cards/development/vcproject_card.hpp"
@@ -1855,6 +1856,114 @@ TEST(directory_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(dir.handle_action("{\"verb\":\"open_contact\",\"data\":{\"contact_id\":null}}"));
     EXPECT_NO_THROW(dir.handle_action("{\"verb\":\"add_contact\",\"data\":{\"name\":null}}"));
 }
+
+TEST(display_cardAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::display_card card{};
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_target_fps_input = false;
+    bool found_vsync_input = false;
+    bool found_native_res_fact = false;
+    bool found_renderer_fact = false;
+    bool found_active_scale_fact = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.ChoiceSet" && child.id == "target_fps") {
+                    found_target_fps_input = true;
+                }
+                if (child.type == "Input.Toggle" && (child.id == "vsync_toggle" || child.id == "vsync")) {
+                    found_vsync_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title.find("Native Resolution:") != std::string::npos) {
+                    found_native_res_fact = true;
+                }
+                if (fact.title.find("Renderer API:") != std::string::npos) {
+                    found_renderer_fact = true;
+                }
+                if (fact.title.find("Active Scale:") != std::string::npos) {
+                    found_active_scale_fact = true;
+                }
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_target_fps_input);
+    EXPECT_TRUE(found_vsync_input);
+    EXPECT_TRUE(found_native_res_fact);
+    EXPECT_TRUE(found_renderer_fact);
+    EXPECT_TRUE(found_active_scale_fact);
+
+    bool found_apply_act = false;
+    bool found_reset_act = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "display_apply") found_apply_act = true;
+        if (act.verb == "display_reset") found_reset_act = true;
+    }
+    EXPECT_TRUE(found_apply_act);
+    EXPECT_TRUE(found_reset_act);
+}
+
+TEST(display_cardAdaptiveTest, ActionDispatch) {
+    rouen::cards::display_card card{};
+
+    // Initial state assertions
+    EXPECT_EQ(card.get_target_fps(), 120);
+    EXPECT_FLOAT_EQ(card.get_ui_scale(), 2.0f);
+    EXPECT_TRUE(card.is_vsync_enabled());
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+
+    // 1. display_apply: mutate fps, scale, vsync
+    card.handle_action(R"({"type":"Action.Execute","verb":"display_apply","data":{"target_fps":"60","ui_scale":1.5,"vsync_toggle":"false"}})");
+    EXPECT_EQ(card.get_target_fps(), 60);
+    EXPECT_FLOAT_EQ(card.get_ui_scale(), 1.5f);
+    EXPECT_FALSE(card.is_vsync_enabled());
+
+    // 2. display_apply with direct numbers and vsync boolean
+    card.handle_action(R"({"type":"Action.Execute","verb":"display_apply","data":{"target_fps":30,"ui_scale":1.0,"vsync":true}})");
+    EXPECT_EQ(card.get_target_fps(), 30);
+    EXPECT_FLOAT_EQ(card.get_ui_scale(), 1.0f);
+    EXPECT_TRUE(card.is_vsync_enabled());
+
+    // 3. display_reset: restore defaults (native resolution & 60 FPS cap)
+    card.handle_action(R"({"type":"Action.Execute","verb":"display_reset"})");
+    EXPECT_EQ(card.get_target_fps(), 60);
+    EXPECT_TRUE(card.is_vsync_enabled());
+
+    // 4. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(display_cardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::display_card card{};
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"display_apply\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"display_apply\",\"data\":{\"target_fps\":\"invalid\",\"ui_scale\":\"not_a_num\"}}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"display_reset\",\"data\":{}}"));
+}
+
 
 
 
