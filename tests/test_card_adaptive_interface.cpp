@@ -34,6 +34,7 @@
 #include "../src/cards/productivity/converter.hpp"
 #include "../src/cards/media/camera.hpp"
 #include "../src/cards/media/chess_replay.hpp"
+#include "../src/cards/media/media_card.hpp"
 #include "../src/cards/development/cmake.hpp"
 #include "../src/cards/development/diff_card.hpp"
 #include "../src/cards/information/directory_card.hpp"
@@ -2980,4 +2981,126 @@ TEST(markdown_viewerAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"navigate_section\",\"data\":null}"));
     EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"navigate_section\",\"data\":{\"heading\":null}}"));
 }
+
+TEST(media_cardAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::media_card card{};
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_stream_source = false;
+    bool found_playback_time = false;
+    bool found_volume_level = false;
+    bool found_volume_slider = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Stream Source:") found_stream_source = true;
+                if (fact.title == "Playback Time:") found_playback_time = true;
+                if (fact.title == "Volume Level:") found_volume_level = true;
+            }
+        }
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.Number" && child.id == "volume_slider") {
+                    found_volume_slider = true;
+                }
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_stream_source);
+    EXPECT_TRUE(found_playback_time);
+    EXPECT_TRUE(found_volume_level);
+    EXPECT_TRUE(found_volume_slider);
+
+    bool found_play_action = false;
+    bool found_pause_action = false;
+    bool found_stop_action = false;
+
+    for (const auto& act : doc.actions) {
+        if (act.verb == "media_play") found_play_action = true;
+        if (act.verb == "media_pause") found_pause_action = true;
+        if (act.verb == "media_stop") found_stop_action = true;
+    }
+
+    EXPECT_TRUE(found_play_action);
+    EXPECT_TRUE(found_pause_action);
+    EXPECT_TRUE(found_stop_action);
+}
+
+TEST(media_cardAdaptiveTest, ActionDispatch) {
+    rouen::cards::media_card card{};
+
+    // Initial state assertions
+    EXPECT_FALSE(card.is_playing());
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+
+    // 1. media_play
+    card.handle_action(R"({"type":"Action.Execute","verb":"media_play"})");
+    EXPECT_TRUE(card.is_playing());
+    EXPECT_EQ(card.get_last_action(), "media_play");
+    std::string play_json = card.get_adaptive_card_json();
+    EXPECT_NE(play_json.find("PLAYING"), std::string::npos);
+
+    // 2. media_pause
+    card.handle_action(R"({"type":"Action.Execute","verb":"media_pause"})");
+    EXPECT_FALSE(card.is_playing());
+    EXPECT_TRUE(card.is_paused());
+    EXPECT_EQ(card.get_last_action(), "media_pause");
+    std::string pause_json = card.get_adaptive_card_json();
+    EXPECT_NE(pause_json.find("PAUSED"), std::string::npos);
+
+    // 3. media_stop
+    card.handle_action(R"({"type":"Action.Execute","verb":"media_stop"})");
+    EXPECT_FALSE(card.is_playing());
+    EXPECT_FALSE(card.is_paused());
+    EXPECT_EQ(card.get_current_position_ms(), 0);
+    EXPECT_EQ(card.get_last_action(), "media_stop");
+    std::string stop_json = card.get_adaptive_card_json();
+    EXPECT_NE(stop_json.find("STOPPED"), std::string::npos);
+
+    // 4. media_set_volume
+    card.handle_action(R"({"type":"Action.Execute","verb":"media_set_volume","data":{"volume":65}})");
+    EXPECT_EQ(card.get_volume(), 65);
+    EXPECT_EQ(card.get_last_action(), "media_set_volume");
+
+    card.handle_action(R"({"type":"Action.Execute","verb":"media_set_volume","data":{"volume_slider":90}})");
+    EXPECT_EQ(card.get_volume(), 90);
+
+    // 5. media_seek
+    card.handle_action(R"({"type":"Action.Execute","verb":"media_seek","data":{"seek_seconds":150}})");
+    EXPECT_EQ(card.get_current_position_ms(), 150000);
+    EXPECT_EQ(card.get_last_action(), "media_seek");
+
+    // 6. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(media_cardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::media_card card{};
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"media_play\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"media_set_volume\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"media_set_volume\",\"data\":{\"volume\":\"invalid\"}}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"media_seek\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"media_seek\",\"data\":{\"seek_seconds\":\"invalid\"}}"));
+}
+
 
