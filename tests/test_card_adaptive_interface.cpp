@@ -21,6 +21,7 @@
 #include "../src/cards/system/cast_control.hpp"
 #include "../src/cards/system/dbrepair.hpp"
 #include "../src/cards/system/display_card.hpp"
+#include "../src/cards/system/envvars.hpp"
 #include "../src/cards/productivity/pomodoro.hpp"
 #include "../src/cards/production/adlib.hpp"
 #include "../src/cards/development/vcproject_card.hpp"
@@ -1963,6 +1964,116 @@ TEST(display_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"display_apply\",\"data\":{\"target_fps\":\"invalid\",\"ui_scale\":\"not_a_num\"}}"));
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"display_reset\",\"data\":{}}"));
 }
+
+TEST(envvars_cardAdaptiveTest, JsonSerialization) {
+    rouen::cards::envvars_card card{};
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+    EXPECT_NE(card_json.find("Environment Variables Inspector"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_env_key_input = false;
+    bool found_env_val_input = false;
+    bool found_fact_set = false;
+    size_t fact_count = 0;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.Text" && child.id == "env_key") {
+                    found_env_key_input = true;
+                }
+                if (child.type == "Input.Text" && child.id == "env_val") {
+                    found_env_val_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            found_fact_set = true;
+            fact_count = elem.facts.size();
+        }
+    }
+
+    EXPECT_TRUE(found_env_key_input);
+    EXPECT_TRUE(found_env_val_input);
+    EXPECT_TRUE(found_fact_set);
+    EXPECT_GT(fact_count, 0u);
+
+    bool found_set_action = false;
+    bool found_export_action = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "env_set") found_set_action = true;
+        if (act.verb == "env_export") found_export_action = true;
+    }
+    EXPECT_TRUE(found_set_action);
+    EXPECT_TRUE(found_export_action);
+}
+
+TEST(envvars_cardAdaptiveTest, ActionDispatch) {
+    rouen::cards::envvars_card card{};
+
+    // Initial state assertions
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+
+    // 1. env_set: set new environment variable
+    card.handle_action(R"({"type":"Action.Execute","verb":"env_set","data":{"env_key":"ROUEN_UNIT_TEST_VAR","env_val":"Alpha42"}})");
+    EXPECT_EQ(card.get_last_action(), "env_set");
+    EXPECT_EQ(card.get_last_set_key(), "ROUEN_UNIT_TEST_VAR");
+    EXPECT_EQ(card.get_last_set_value(), "Alpha42");
+    EXPECT_TRUE(card.has_env_var("ROUEN_UNIT_TEST_VAR"));
+    EXPECT_EQ(card.get_env_var("ROUEN_UNIT_TEST_VAR"), "Alpha42");
+
+    std::string updated_json = card.get_adaptive_card_json();
+    EXPECT_NE(updated_json.find("ROUEN_UNIT_TEST_VAR"), std::string::npos);
+    EXPECT_NE(updated_json.find("Alpha42"), std::string::npos);
+
+    // 2. env_set with "key" and "value" field aliases
+    card.handle_action(R"({"type":"Action.Execute","verb":"env_set","data":{"key":"ROUEN_UNIT_TEST_VAR2","value":"Beta99"}})");
+    EXPECT_EQ(card.get_last_action(), "env_set");
+    EXPECT_EQ(card.get_last_set_key(), "ROUEN_UNIT_TEST_VAR2");
+    EXPECT_EQ(card.get_last_set_value(), "Beta99");
+    EXPECT_TRUE(card.has_env_var("ROUEN_UNIT_TEST_VAR2"));
+    EXPECT_EQ(card.get_env_var("ROUEN_UNIT_TEST_VAR2"), "Beta99");
+
+    // 3. env_remove: unset variable
+    card.handle_action(R"({"type":"Action.Execute","verb":"env_remove","data":{"env_key":"ROUEN_UNIT_TEST_VAR"}})");
+    EXPECT_EQ(card.get_last_action(), "env_remove");
+    EXPECT_EQ(card.get_last_removed_key(), "ROUEN_UNIT_TEST_VAR");
+    EXPECT_FALSE(card.has_env_var("ROUEN_UNIT_TEST_VAR"));
+
+    // 4. env_export: export snapshot
+    card.handle_action(R"({"type":"Action.Execute","verb":"env_export"})");
+    EXPECT_EQ(card.get_last_action(), "env_export");
+
+    // Clean up second test variable
+    card.handle_action(R"({"type":"Action.Execute","verb":"env_remove","data":{"key":"ROUEN_UNIT_TEST_VAR2"}})");
+    EXPECT_FALSE(card.has_env_var("ROUEN_UNIT_TEST_VAR2"));
+
+    // 5. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(envvars_cardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::envvars_card card{};
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"env_set\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"env_set\",\"data\":{\"env_key\":null}}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"env_remove\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"env_export\",\"data\":{}}"));
+}
+
 
 
 
