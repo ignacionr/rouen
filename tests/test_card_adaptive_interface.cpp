@@ -27,6 +27,7 @@
 #include "../src/cards/productivity/calculator.hpp"
 #include "../src/cards/media/camera.hpp"
 #include "../src/cards/media/chess_replay.hpp"
+#include "../src/cards/development/cmake.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -1259,6 +1260,140 @@ TEST(chess_replayAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(chess_card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
     EXPECT_NO_THROW(chess_card.handle_action("{\"verb\":\"chess_search_user\",\"data\":null}"));
 }
+
+TEST(cmake_cardAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::cmake_card cmake_card{"/Users/ignaciorodriguez/src/rouen/CMakeLists.txt"};
+    std::string card_json = cmake_card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    // Verify all required FactSet fields and inputs exist
+    bool found_generator = false;
+    bool found_build_type = false;
+    bool found_max_jobs = false;
+    bool found_target = false;
+    bool found_build_type_input = false;
+    bool found_target_name_input = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.ChoiceSet" && child.id == "build_type") {
+                    found_build_type_input = true;
+                }
+                if (child.type == "Input.ChoiceSet" && child.id == "target_name") {
+                    found_target_name_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Generator:") found_generator = true;
+                if (fact.title == "Build Type:") found_build_type = true;
+                if (fact.title == "Max Parallel Jobs:") found_max_jobs = true;
+                if (fact.title == "Primary Target:") found_target = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_generator);
+    EXPECT_TRUE(found_build_type);
+    EXPECT_TRUE(found_max_jobs);
+    EXPECT_TRUE(found_target);
+    EXPECT_TRUE(found_build_type_input);
+    EXPECT_TRUE(found_target_name_input);
+
+    // Verify actions exist
+    bool found_configure_act = false;
+    bool found_build_act = false;
+    bool found_clean_act = false;
+    bool found_syntax_act = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "configure") found_configure_act = true;
+        if (act.verb == "build") found_build_act = true;
+        if (act.verb == "clean") found_clean_act = true;
+        if (act.verb == "check_syntax") found_syntax_act = true;
+    }
+    EXPECT_TRUE(found_configure_act);
+    EXPECT_TRUE(found_build_act);
+    EXPECT_TRUE(found_clean_act);
+    EXPECT_TRUE(found_syntax_act);
+}
+
+TEST(cmake_cardAdaptiveTest, ActionDispatch) {
+    auto dummy_run_cmd = std::make_shared<std::function<void(std::string const&, std::shared_ptr<std::function<void(std::string)>>)>>(
+        [](std::string const&, std::shared_ptr<std::function<void(std::string)>>) {}
+    );
+    registrar::add<std::function<void(std::string const&, std::shared_ptr<std::function<void(std::string)>>)>>("run_command", dummy_run_cmd);
+
+    rouen::cards::cmake_card cmake_card{"/Users/ignaciorodriguez/src/rouen/CMakeLists.txt"};
+
+    // Initial state assertions
+    EXPECT_EQ(cmake_card.get_build_type(), "Release");
+    EXPECT_EQ(cmake_card.get_selected_target(), "rouen");
+    EXPECT_FALSE(cmake_card.is_building());
+    EXPECT_FALSE(cmake_card.is_adaptive_view_mode());
+
+    // 1. configure with build_type
+    cmake_card.handle_action(R"({"type":"Action.Execute","verb":"configure","data":{"build_type":"Debug"}})");
+    EXPECT_EQ(cmake_card.get_build_type(), "Debug");
+    EXPECT_TRUE(cmake_card.is_building());
+    EXPECT_NE(cmake_card.get_last_command().find("Debug"), std::string::npos);
+    EXPECT_NE(cmake_card.get_adaptive_card_json().find("Debug"), std::string::npos);
+
+    // Cancel to reset cmd_running_
+    cmake_card.cancel_running_action();
+    EXPECT_FALSE(cmake_card.is_building());
+
+    // 2. build with target_name
+    cmake_card.handle_action(R"({"type":"Action.Execute","verb":"build","data":{"target_name":"unit_tests"}})");
+    EXPECT_EQ(cmake_card.get_selected_target(), "unit_tests");
+    EXPECT_TRUE(cmake_card.is_building());
+    EXPECT_NE(cmake_card.get_last_command().find("unit_tests"), std::string::npos);
+    EXPECT_NE(cmake_card.get_last_command().find("-j2"), std::string::npos);
+    EXPECT_NE(cmake_card.get_adaptive_card_json().find("unit_tests"), std::string::npos);
+
+    cmake_card.cancel_running_action();
+    EXPECT_FALSE(cmake_card.is_building());
+
+    // 3. clean
+    cmake_card.handle_action(R"({"type":"Action.Execute","verb":"clean"})");
+    EXPECT_TRUE(cmake_card.is_building());
+    EXPECT_NE(cmake_card.get_last_command().find("clean"), std::string::npos);
+
+    cmake_card.cancel_running_action();
+    EXPECT_FALSE(cmake_card.is_building());
+
+    // 4. check_syntax
+    cmake_card.handle_action(R"({"type":"Action.Execute","verb":"check_syntax"})");
+    EXPECT_TRUE(cmake_card.is_checking_syntax());
+
+    // 5. toggle_adaptive_view
+    cmake_card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(cmake_card.is_adaptive_view_mode());
+    cmake_card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(cmake_card.is_adaptive_view_mode());
+}
+
+TEST(cmake_cardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::cmake_card cmake_card{"/Users/ignaciorodriguez/src/rouen/CMakeLists.txt"};
+    EXPECT_NO_THROW(cmake_card.handle_action(""));
+    EXPECT_NO_THROW(cmake_card.handle_action("not a json string"));
+    EXPECT_NO_THROW(cmake_card.handle_action("{"));
+    EXPECT_NO_THROW(cmake_card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(cmake_card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(cmake_card.handle_action("{\"verb\":\"configure\",\"data\":null}"));
+    EXPECT_NO_THROW(cmake_card.handle_action("{\"verb\":\"build\",\"data\":null}"));
+}
+
 
 
 

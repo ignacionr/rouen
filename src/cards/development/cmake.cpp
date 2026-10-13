@@ -26,6 +26,9 @@
 #include "../../helpers/process_helper.hpp"
 #include "../../helpers/syntax_checker.hpp"
 #include "../../helpers/conventional_commit.hpp"
+#include "../../helpers/glaze_include.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
+#include "../../fonts.hpp"
 #include "../../../external/IconsMaterialDesign.h"
 #include "../../registrar.hpp"
 
@@ -137,12 +140,21 @@ namespace rouen::cards {
             if (!std::filesystem::exists(build_dir_)) {
                 std::filesystem::create_directories(build_dir_);
             }
-            cmd = std::format("cd {} && {} -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B . -S {}", 
+            std::string build_type_flag;
+            if (!build_type_.empty()) {
+                build_type_flag = std::format(" -DCMAKE_BUILD_TYPE={}", build_type_);
+            }
+            cmd = std::format("cd {} && {} -DCMAKE_EXPORT_COMPILE_COMMANDS=ON{} -B . -S {}", 
                 build_dir_.string(), 
                 cmake_path,
+                build_type_flag,
                 std::filesystem::path(path_).parent_path().string());
         } else if (action == "build") {
-            cmd = std::format("cd {} && {} --build . -j2", build_dir_.string(), cmake_path);
+            std::string target_flag;
+            if (!selected_target_.empty() && selected_target_ != "all") {
+                target_flag = std::format(" --target {}", selected_target_);
+            }
+            cmd = std::format("cd {} && {} --build .{} -j2", build_dir_.string(), cmake_path, target_flag);
         } else if (action == "clean") {
             cmd = std::format("cd {} && {} --build . --target clean", build_dir_.string(), cmake_path);
         } else if (action == "install") {
@@ -150,8 +162,12 @@ namespace rouen::cards {
         } else if (action == "open_dir") {
             cmd = platform::open_file(build_dir_.string());
         } else if (action == "rebuild") {
-            cmd = std::format("cd {} && {} --build . --target clean && {} --build . -j2", 
-                build_dir_.string(), cmake_path, cmake_path);
+            std::string target_flag;
+            if (!selected_target_.empty() && selected_target_ != "all") {
+                target_flag = std::format(" --target {}", selected_target_);
+            }
+            cmd = std::format("cd {} && {} --build . --target clean && {} --build .{} -j2", 
+                build_dir_.string(), cmake_path, cmake_path, target_flag);
         } else {
             return false;
         }
@@ -442,7 +458,52 @@ namespace rouen::cards {
     }
 
     bool cmake_card::render() {
-        return render_window([this]() {
+        rouen::ui::imgui_ui_context_impl ui;
+        return render(ui);
+    }
+
+    bool cmake_card::render(rouen::ui::ui_context& ui) {
+        return render_window([this, &ui]() {
+            // Presentation mode selector
+            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            ui.separator();
+
+            if (adaptive_view_mode) {
+                auto now = std::chrono::steady_clock::now();
+                auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                    try {
+                        adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                        adaptive_error_.clear();
+                    } catch (const std::exception& e) {
+                        adaptive_error_ = e.what();
+                    }
+                    last_adaptive_parse_time_ = now;
+                }
+
+                if (!adaptive_error_.empty()) {
+                    ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                } else {
+                    adaptive_renderer_.render(
+                        adaptive_bound_, adaptive_input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                handle_action(payload);
+                            }
+                        },
+                        helpers::adaptive_cards::render_config{
+                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        }
+                    );
+                }
+                return;
+            }
+
             ImGui::TextColored(colors[0], "CMake Project: %s", 
                 project_name_.empty() ? "Unknown" : project_name_.c_str());
 
@@ -698,18 +759,254 @@ namespace rouen::cards {
         });
     }
 
+    std::string cmake_card::get_adaptive_card_json() const {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+        std::vector<glz::json_t> body;
+
+        // 1. Header Container
+        glz::json_t header;
+        header["type"] = "Container";
+        header["style"] = "emphasis";
+
+        glz::json_t col_set;
+        col_set["type"] = "ColumnSet";
+        std::vector<glz::json_t> columns;
+
+        // Column 1: Emoji icon 🛠️ (\ud83d\udee0\ufe0f)
+        glz::json_t icon_col;
+        icon_col["type"] = "Column";
+        icon_col["width"] = "auto";
+        std::vector<glz::json_t> icon_items;
+        glz::json_t icon_tb;
+        icon_tb["type"] = "TextBlock";
+        icon_tb["text"] = "\xF0\x9F\x9B\xA0\xEF\xB8\x8F";
+        icon_tb["size"] = "Large";
+        icon_items.push_back(std::move(icon_tb));
+        icon_col["items"] = std::move(icon_items);
+        columns.push_back(std::move(icon_col));
+
+        // Column 2: Title & Path subtitle
+        glz::json_t title_col;
+        title_col["type"] = "Column";
+        title_col["width"] = "stretch";
+        std::vector<glz::json_t> title_items;
+        glz::json_t title_tb;
+        title_tb["type"] = "TextBlock";
+        title_tb["text"] = "CMake Build Controller";
+        title_tb["weight"] = "Bolder";
+        title_tb["size"] = "Large";
+        title_items.push_back(std::move(title_tb));
+
+        glz::json_t path_tb;
+        path_tb["type"] = "TextBlock";
+        path_tb["text"] = path_.empty() ? "/Users/ignaciorodriguez/src/rouen/CMakeLists.txt" : path_;
+        path_tb["isSubtle"] = true;
+        path_tb["size"] = "Small";
+        path_tb["spacing"] = "None";
+        title_items.push_back(std::move(path_tb));
+
+        title_col["items"] = std::move(title_items);
+        columns.push_back(std::move(title_col));
+
+        // Column 3: Badge "Ninja / Clang"
+        glz::json_t badge_col;
+        badge_col["type"] = "Column";
+        badge_col["width"] = "auto";
+        std::vector<glz::json_t> badge_items;
+        glz::json_t badge_tb;
+        badge_tb["type"] = "TextBlock";
+        badge_tb["text"] = "Ninja / Clang";
+        badge_tb["weight"] = "Bolder";
+        badge_tb["color"] = "Accent";
+        badge_tb["size"] = "Small";
+        badge_items.push_back(std::move(badge_tb));
+        badge_col["items"] = std::move(badge_items);
+        columns.push_back(std::move(badge_col));
+
+        col_set["columns"] = std::move(columns);
+        std::vector<glz::json_t> header_items;
+        header_items.push_back(std::move(col_set));
+        header["items"] = std::move(header_items);
+        body.push_back(std::move(header));
+
+        // 2. FactSet
+        glz::json_t fact_set;
+        fact_set["type"] = "FactSet";
+        std::vector<glz::json_t> facts;
+
+        glz::json_t fact_gen;
+        fact_gen["title"] = "Generator:";
+        fact_gen["value"] = "Ninja";
+        facts.push_back(std::move(fact_gen));
+
+        glz::json_t fact_bt;
+        fact_bt["title"] = "Build Type:";
+        std::string bt_val = (build_type_ == "Release") ? "Release (-O3)" : 
+                             (build_type_ == "Debug") ? "Debug (-g)" : 
+                             (build_type_ == "RelWithDebInfo") ? "RelWithDebInfo (-O2 -g)" : build_type_;
+        fact_bt["value"] = bt_val;
+        facts.push_back(std::move(fact_bt));
+
+        glz::json_t fact_jobs;
+        fact_jobs["title"] = "Max Parallel Jobs:";
+        fact_jobs["value"] = "-j2 (RAM safety enforced)";
+        facts.push_back(std::move(fact_jobs));
+
+        glz::json_t fact_tgt;
+        fact_tgt["title"] = "Primary Target:";
+        fact_tgt["value"] = selected_target_.empty() ? "rouen" : selected_target_;
+        facts.push_back(std::move(fact_tgt));
+
+        fact_set["facts"] = std::move(facts);
+        body.push_back(std::move(fact_set));
+
+        // 3. Configuration Container
+        glz::json_t config_container;
+        config_container["type"] = "Container";
+        config_container["separator"] = true;
+        std::vector<glz::json_t> config_items;
+
+        glz::json_t config_header;
+        config_header["type"] = "TextBlock";
+        config_header["text"] = "Build Configuration";
+        config_header["weight"] = "Bolder";
+        config_items.push_back(std::move(config_header));
+
+        // Input.ChoiceSet for build_type
+        glz::json_t bt_choice_set;
+        bt_choice_set["type"] = "Input.ChoiceSet";
+        bt_choice_set["id"] = "build_type";
+        bt_choice_set["label"] = "Build Configuration";
+        bt_choice_set["value"] = build_type_.empty() ? "Release" : build_type_;
+        std::vector<glz::json_t> bt_choices;
+        bt_choices.push_back(glz::json_t::object_t{{"title", "Release"}, {"value", "Release"}});
+        bt_choices.push_back(glz::json_t::object_t{{"title", "Debug"}, {"value", "Debug"}});
+        bt_choices.push_back(glz::json_t::object_t{{"title", "RelWithDebInfo"}, {"value", "RelWithDebInfo"}});
+        bt_choice_set["choices"] = std::move(bt_choices);
+        config_items.push_back(std::move(bt_choice_set));
+
+        // Input.ChoiceSet for target_name
+        glz::json_t tgt_choice_set;
+        tgt_choice_set["type"] = "Input.ChoiceSet";
+        tgt_choice_set["id"] = "target_name";
+        tgt_choice_set["label"] = "Compile Target";
+        tgt_choice_set["value"] = selected_target_.empty() ? "rouen" : selected_target_;
+        std::vector<glz::json_t> tgt_choices;
+        tgt_choices.push_back(glz::json_t::object_t{{"title", "rouen (Main Application)"}, {"value", "rouen"}});
+        tgt_choices.push_back(glz::json_t::object_t{{"title", "unit_tests (Test Suite)"}, {"value", "unit_tests"}});
+        tgt_choices.push_back(glz::json_t::object_t{{"title", "all (Everything)"}, {"value", "all"}});
+        for (const auto& t : targets_) {
+            if (t != "rouen" && t != "unit_tests" && t != "all") {
+                tgt_choices.push_back(glz::json_t::object_t{{"title", t}, {"value", t}});
+            }
+        }
+        tgt_choice_set["choices"] = std::move(tgt_choices);
+        config_items.push_back(std::move(tgt_choice_set));
+
+        config_container["items"] = std::move(config_items);
+        body.push_back(std::move(config_container));
+
+        card["body"] = std::move(body);
+
+        // 4. Actions
+        std::vector<glz::json_t> actions;
+        glz::json_t act_cfg;
+        act_cfg["type"] = "Action.Execute";
+        act_cfg["title"] = "Configure";
+        act_cfg["verb"] = "configure";
+        actions.push_back(std::move(act_cfg));
+
+        glz::json_t act_build;
+        act_build["type"] = "Action.Execute";
+        act_build["title"] = "Build (-j2)";
+        act_build["verb"] = "build";
+        actions.push_back(std::move(act_build));
+
+        glz::json_t act_clean;
+        act_clean["type"] = "Action.Execute";
+        act_clean["title"] = "Clean";
+        act_clean["verb"] = "clean";
+        actions.push_back(std::move(act_clean));
+
+        glz::json_t act_syntax;
+        act_syntax["type"] = "Action.Execute";
+        act_syntax["title"] = "Check Syntax";
+        act_syntax["verb"] = "check_syntax";
+        actions.push_back(std::move(act_syntax));
+
+        card["actions"] = std::move(actions);
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
+    }
+
     void cmake_card::handle_action(std::string_view action_json) {
-        std::string act(action_json);
-        if (act.find("check_syntax") != std::string::npos) {
-            check_syntax();
-        } else if (act.find("configure") != std::string::npos) {
-            run_cmake_action("configure", "Configuring project");
-        } else if (act.find("build") != std::string::npos) {
-            run_cmake_action("build", "Building project");
-        } else if (act.find("clean") != std::string::npos) {
-            run_cmake_action("clean", "Cleaning project");
-        } else if (act.find("conventional_commit") != std::string::npos) {
-            generate_conventional_commit();
+        if (action_json.empty()) return;
+
+        try {
+            std::string verb;
+            glz::json_t data{};
+            glz::json_t payload{};
+
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (!err && payload.is_object()) {
+                if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                    verb = payload["verb"].get<std::string>();
+                } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                    verb = payload["action"].get<std::string>();
+                }
+                if (payload.contains("data") && payload["data"].is_object()) {
+                    data = payload["data"];
+                } else {
+                    data = payload;
+                }
+            } else {
+                verb = std::string(action_json);
+            }
+
+            if (verb == "configure") {
+                if (data.contains("build_type") && data["build_type"].holds<std::string>()) {
+                    build_type_ = data["build_type"].get<std::string>();
+                }
+                run_cmake_action("configure", "Configuring CMake project");
+            } else if (verb == "build") {
+                if (data.contains("target_name") && data["target_name"].holds<std::string>()) {
+                    selected_target_ = data["target_name"].get<std::string>();
+                } else if (data.contains("target") && data["target"].holds<std::string>()) {
+                    selected_target_ = data["target"].get<std::string>();
+                }
+                run_cmake_action("build", "Building CMake project");
+            } else if (verb == "clean") {
+                run_cmake_action("clean", "Cleaning CMake project");
+            } else if (verb == "check_syntax") {
+                check_syntax();
+            } else if (verb == "cancel") {
+                cancel_running_action();
+            } else if (verb == "conventional_commit") {
+                generate_conventional_commit();
+            } else if (verb == "toggle_adaptive_view") {
+                adaptive_view_mode = !adaptive_view_mode;
+            } else if (verb == "set_build_type") {
+                if (data.contains("build_type") && data["build_type"].holds<std::string>()) {
+                    build_type_ = data["build_type"].get<std::string>();
+                }
+            } else if (verb == "set_target" || verb == "set_target_name") {
+                if (data.contains("target_name") && data["target_name"].holds<std::string>()) {
+                    selected_target_ = data["target_name"].get<std::string>();
+                } else if (data.contains("target") && data["target"].holds<std::string>()) {
+                    selected_target_ = data["target"].get<std::string>();
+                }
+            }
+
+            last_adaptive_parse_time_ = {};
+        } catch (const std::exception& e) {
+            std::cerr << "[cmake] Action error: " << e.what() << std::endl;
+        } catch (...) {
         }
     }
 
