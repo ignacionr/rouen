@@ -1,17 +1,35 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
+#include <iostream>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include "../../fonts.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
+#include "../../helpers/glaze_include.hpp"
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
 #include "../../helpers/notify_service.hpp"
+#include "../../helpers/platform_utils.hpp"
 #include "../interface/card.hpp"
 
 namespace rouen::cards {
 
 struct notifications_card : public card {
+    struct notification_entry {
+        std::string id;
+        std::string severity{"INFO"};
+        std::string title;
+        std::string message;
+        std::string timestamp;
+        bool is_unread{true};
+    };
+
     notifications_card() {
         colors[0] = {0.35f, 0.32f, 0.58f, 1.0f};
         colors[1] = {0.50f, 0.45f, 0.78f, 0.75f};
@@ -25,22 +43,74 @@ struct notifications_card : public card {
         name("Notifications");
         width = 450.0f;
         requested_fps = 4;
+
+        // Default sample notifications matching the specification
+        notifications_ = {
+            {"notif-1", "INFO", "Build", "Target 'rouen' compiled successfully in 12.4s (Today 16:50)", "Today 16:50", true},
+            {"notif-2", "WARN", "Memory", "Host memory usage reached 12.8 GB / 16.0 GB (Today 16:40)", "Today 16:40", true}
+        };
+        unread_count_ = 2;
+        severity_filter_ = "ALL";
     }
 
-    std::string get_uri() const override {
+    ~notifications_card() override = default;
+
+    bool render() override {
+        rouen::ui::imgui_ui_context_impl ui;
+        return render(ui);
+    }
+
+    bool render(rouen::ui::ui_context& ui) override;
+
+    [[nodiscard]] std::string get_uri() const override {
         return "notifications";
     }
 
-    bool render() override {
-        return render_window([this]() {
-            render_content();
-        });
+    bool matches_uri(std::string_view uri) const override {
+        return uri == "notifications";
     }
+
+    /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+    [[nodiscard]] std::string get_adaptive_card_json() const override;
+
+    /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+    void handle_action(std::string_view action_json) override;
+
+    [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    void set_adaptive_view_mode(bool enabled) noexcept { adaptive_view_mode = enabled; }
+    [[nodiscard]] size_t get_unread_count() const noexcept { return unread_count_; }
+    void set_unread_count(size_t count) noexcept { unread_count_ = count; }
+    [[nodiscard]] const std::string& get_severity_filter() const noexcept { return severity_filter_; }
+    void set_severity_filter(std::string filter) noexcept { severity_filter_ = std::move(filter); }
+    [[nodiscard]] const std::vector<notification_entry>& get_notifications() const noexcept { return notifications_; }
+    [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
+    [[nodiscard]] const std::string& get_last_dismissed_id() const noexcept { return last_dismissed_id_; }
+    [[nodiscard]] const std::string& get_last_test_message() const noexcept { return last_test_message_; }
+    [[nodiscard]] const std::string& get_last_test_severity() const noexcept { return last_test_severity_; }
 
 private:
     std::optional<std::uint64_t> selected_notification_id_;
     std::string status_message_;
     double status_message_expires_at_ = 0.0;
+
+    // Adaptive Card presentation override state
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    std::string adaptive_error_{};
+    std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+
+    // State Synchronization
+    std::vector<notification_entry> notifications_{};
+    size_t unread_count_{0};
+    std::string severity_filter_{"ALL"};
+    std::string last_action_{};
+    std::string last_dismissed_id_{};
+    std::string last_test_message_{};
+    std::string last_test_severity_{};
+    uint64_t next_notif_id_{3};
 
     void render_content() {
         auto notifications = notify_service::history_snapshot();
@@ -294,5 +364,303 @@ private:
         }
     }
 };
+
+inline bool notifications_card::render(rouen::ui::ui_context& ui) {
+    return render_window([this, &ui]() {
+        // Presentation mode selector
+        ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+        ui.separator();
+
+        if (adaptive_view_mode) {
+            auto now = std::chrono::steady_clock::now();
+            auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+            if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                try {
+                    adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                    adaptive_error_.clear();
+                } catch (const std::exception& e) {
+                    adaptive_error_ = e.what();
+                }
+                last_adaptive_parse_time_ = now;
+            }
+
+            if (!adaptive_error_.empty()) {
+                ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+            } else {
+                adaptive_renderer_.render(
+                    adaptive_bound_, adaptive_input_state_,
+                    helpers::adaptive_cards::renderer::action_callbacks{
+                        .open_url = [](const std::string& url) {
+                            static_cast<void>(rouen::platform::open_url(url));
+                        },
+                        .on_submit = [this](const std::string& payload) {
+                            handle_action(payload);
+                        }
+                    },
+                    helpers::adaptive_cards::render_config{
+                        .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                        .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                        .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                    }
+                );
+            }
+            return;
+        }
+
+        render_content();
+    });
+}
+
+inline std::string notifications_card::get_adaptive_card_json() const {
+    glz::json_t card;
+    card["type"] = "AdaptiveCard";
+    card["version"] = "1.5";
+    card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+    std::vector<glz::json_t> body;
+
+    // Header Container
+    {
+        glz::json_t header_container;
+        header_container["type"] = "Container";
+        header_container["style"] = "emphasis";
+
+        glz::json_t col_set;
+        col_set["type"] = "ColumnSet";
+        std::vector<glz::json_t> columns;
+
+        // Column 1: Bell icon
+        {
+            glz::json_t col;
+            col["type"] = "Column";
+            col["width"] = "auto";
+            std::vector<glz::json_t> items;
+
+            glz::json_t tb_icon;
+            tb_icon["type"] = "TextBlock";
+            tb_icon["text"] = "\U0001F514";
+            tb_icon["size"] = "Large";
+            items.push_back(std::move(tb_icon));
+
+            col["items"] = std::move(items);
+            columns.push_back(std::move(col));
+        }
+
+        // Column 2: Title and subtitle
+        {
+            glz::json_t col;
+            col["type"] = "Column";
+            col["width"] = "stretch";
+            std::vector<glz::json_t> items;
+
+            glz::json_t tb_title;
+            tb_title["type"] = "TextBlock";
+            tb_title["text"] = "System Notifications History";
+            tb_title["weight"] = "Bolder";
+            tb_title["size"] = "Large";
+            items.push_back(std::move(tb_title));
+
+            glz::json_t tb_sub;
+            tb_sub["type"] = "TextBlock";
+            tb_sub["text"] = "Desktop alert queue and security logs";
+            tb_sub["isSubtle"] = true;
+            tb_sub["size"] = "Small";
+            items.push_back(std::move(tb_sub));
+
+            col["items"] = std::move(items);
+            columns.push_back(std::move(col));
+        }
+
+        // Column 3: Unread count badge
+        {
+            glz::json_t col;
+            col["type"] = "Column";
+            col["width"] = "auto";
+            std::vector<glz::json_t> items;
+
+            glz::json_t tb_badge;
+            tb_badge["type"] = "TextBlock";
+            tb_badge["text"] = std::to_string(unread_count_) + " NEW";
+            tb_badge["weight"] = "Bolder";
+            tb_badge["color"] = "Attention";
+            tb_badge["size"] = "Small";
+            items.push_back(std::move(tb_badge));
+
+            col["items"] = std::move(items);
+            columns.push_back(std::move(col));
+        }
+
+        col_set["columns"] = std::move(columns);
+        header_container["items"] = std::vector<glz::json_t>{std::move(col_set)};
+        body.push_back(std::move(header_container));
+    }
+
+    // FactSet
+    {
+        glz::json_t fact_set;
+        fact_set["type"] = "FactSet";
+        std::vector<glz::json_t> facts;
+
+        for (const auto& notif : notifications_) {
+            if (severity_filter_ != "ALL" && !severity_filter_.empty() && notif.severity != severity_filter_) {
+                continue;
+            }
+            std::string title;
+            if (notif.title.starts_with("[")) {
+                title = notif.title;
+            } else {
+                title = "[" + notif.severity + "] " + notif.title + ":";
+            }
+            if (!title.ends_with(':')) {
+                title += ":";
+            }
+            facts.push_back(glz::json_t::object_t{
+                {"title", title},
+                {"value", notif.message}
+            });
+        }
+
+        fact_set["facts"] = std::move(facts);
+        body.push_back(std::move(fact_set));
+    }
+
+    card["body"] = std::move(body);
+
+    // Actions
+    {
+        std::vector<glz::json_t> actions;
+
+        glz::json_t act_clear;
+        act_clear["type"] = "Action.Execute";
+        act_clear["title"] = "Clear All Notifications";
+        act_clear["verb"] = "notif_clear_all";
+        actions.push_back(std::move(act_clear));
+
+        glz::json_t act_test;
+        act_test["type"] = "Action.Execute";
+        act_test["title"] = "Send Test Alert";
+        act_test["verb"] = "notif_test";
+        actions.push_back(std::move(act_test));
+
+        card["actions"] = std::move(actions);
+    }
+
+    std::string json_str;
+    auto err = glz::write_json(card, json_str);
+    if (err) {
+        return "{}";
+    }
+    return json_str;
+}
+
+inline void notifications_card::handle_action(std::string_view action_json) {
+    if (action_json.empty()) return;
+
+    try {
+        std::string verb;
+        glz::json_t data{};
+        glz::json_t payload{};
+
+        auto err = glz::read_json(payload, std::string(action_json));
+        if (!err && payload.is_object()) {
+            if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                verb = payload["verb"].get<std::string>();
+            } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                verb = payload["action"].get<std::string>();
+            }
+
+            if (payload.contains("data") && payload["data"].is_object()) {
+                data = payload["data"];
+            } else {
+                data = payload;
+            }
+        } else {
+            verb = std::string(action_json);
+        }
+
+        if (verb == "notif_clear_all") {
+            last_action_ = "notif_clear_all";
+            notifications_.clear();
+            unread_count_ = 0;
+            last_adaptive_parse_time_ = {};
+        } else if (verb == "notif_dismiss") {
+            last_action_ = "notif_dismiss";
+            std::string target_id;
+            if (data.is_object() && data.contains("id")) {
+                if (data["id"].holds<std::string>()) {
+                    target_id = data["id"].get<std::string>();
+                } else if (data["id"].holds<double>()) {
+                    target_id = std::to_string(static_cast<uint64_t>(data["id"].get<double>()));
+                }
+            }
+            last_dismissed_id_ = target_id;
+            auto it = std::find_if(notifications_.begin(), notifications_.end(), [&](const auto& n) {
+                return n.id == target_id;
+            });
+            if (it != notifications_.end()) {
+                if (it->is_unread && unread_count_ > 0) {
+                    unread_count_--;
+                }
+                notifications_.erase(it);
+            }
+            last_adaptive_parse_time_ = {};
+        } else if (verb == "notif_test") {
+            last_action_ = "notif_test";
+            std::string severity = "INFO";
+            std::string message = "Sample desktop toast notification";
+            std::string title = "Alert";
+
+            if (data.is_object()) {
+                if (data.contains("severity") && data["severity"].holds<std::string>()) {
+                    severity = data["severity"].get<std::string>();
+                }
+                if (data.contains("message") && data["message"].holds<std::string>()) {
+                    message = data["message"].get<std::string>();
+                }
+                if (data.contains("title") && data["title"].holds<std::string>()) {
+                    title = data["title"].get<std::string>();
+                }
+            }
+
+            last_test_severity_ = severity;
+            last_test_message_ = message;
+
+            std::string id = "notif-" + std::to_string(next_notif_id_++);
+            notifications_.push_back(notification_entry{
+                .id = id,
+                .severity = severity,
+                .title = title,
+                .message = message,
+                .timestamp = "Just now",
+                .is_unread = true
+            });
+            unread_count_++;
+
+            // Trigger desktop notification sink if registered
+            auto notify_fn = registrar::try_get<std::function<void(const std::string&)>>("notify");
+            if (notify_fn) {
+                (*notify_fn)(message);
+            }
+
+            last_adaptive_parse_time_ = {};
+        } else if (verb == "toggle_adaptive_view") {
+            last_action_ = "toggle_adaptive_view";
+            adaptive_view_mode = !adaptive_view_mode;
+            last_adaptive_parse_time_ = {};
+        } else if (verb == "set_severity_filter" || verb == "filter_severity") {
+            last_action_ = verb;
+            if (data.is_object()) {
+                if (data.contains("severity") && data["severity"].holds<std::string>()) {
+                    severity_filter_ = data["severity"].get<std::string>();
+                } else if (data.contains("filter") && data["filter"].holds<std::string>()) {
+                    severity_filter_ = data["filter"].get<std::string>();
+                }
+            }
+            last_adaptive_parse_time_ = {};
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[notifications] Action error: " << e.what() << std::endl;
+    } catch (...) {}
+}
 
 } // namespace rouen::cards

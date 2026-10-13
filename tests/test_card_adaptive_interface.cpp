@@ -24,6 +24,7 @@
 #include "../src/cards/system/display_card.hpp"
 #include "../src/cards/system/envvars.hpp"
 #include "../src/cards/system/mesh_card.hpp"
+#include "../src/cards/system/notifications.hpp"
 #include "../src/cards/productivity/pomodoro.hpp"
 #include "../src/cards/production/adlib.hpp"
 #include "../src/cards/development/vcproject_card.hpp"
@@ -3303,6 +3304,118 @@ TEST(mesh_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"mesh_ping_peer\",\"data\":null}"));
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"mesh_invite\",\"data\":null}"));
 }
+
+TEST(notifications_cardAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::notifications_card card{};
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_header_title = false;
+    bool found_unread_badge = false;
+    bool found_build_fact = false;
+    bool found_memory_fact = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& col_set : elem.items) {
+                if (col_set.type == "ColumnSet") {
+                    for (const auto& col : col_set.columns) {
+                        for (const auto& item : col.items) {
+                            if (item.type == "TextBlock") {
+                                if (item.text.find("System Notifications History") != std::string::npos) {
+                                    found_header_title = true;
+                                }
+                                if (item.text.find("NEW") != std::string::npos) {
+                                    found_unread_badge = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title.find("Build") != std::string::npos) found_build_fact = true;
+                if (fact.title.find("Memory") != std::string::npos) found_memory_fact = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_header_title);
+    EXPECT_TRUE(found_unread_badge);
+    EXPECT_TRUE(found_build_fact);
+    EXPECT_TRUE(found_memory_fact);
+
+    bool found_clear_action = false;
+    bool found_test_action = false;
+
+    for (const auto& act : doc.actions) {
+        if (act.verb == "notif_clear_all") found_clear_action = true;
+        if (act.verb == "notif_test") found_test_action = true;
+    }
+
+    EXPECT_TRUE(found_clear_action);
+    EXPECT_TRUE(found_test_action);
+}
+
+TEST(notifications_cardAdaptiveTest, ActionDispatch) {
+    rouen::cards::notifications_card card{};
+
+    // Initial state assertions
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+    EXPECT_EQ(card.get_unread_count(), 2u);
+    EXPECT_EQ(card.get_notifications().size(), 2u);
+
+    // 1. notif_test
+    card.handle_action(R"({"type":"Action.Execute","verb":"notif_test","data":{"severity":"ERROR","message":"Disk space running critically low","title":"Disk"}})");
+    EXPECT_EQ(card.get_last_action(), "notif_test");
+    EXPECT_EQ(card.get_last_test_severity(), "ERROR");
+    EXPECT_EQ(card.get_last_test_message(), "Disk space running critically low");
+    EXPECT_EQ(card.get_unread_count(), 3u);
+    EXPECT_EQ(card.get_notifications().size(), 3u);
+
+    // 2. notif_dismiss
+    card.handle_action(R"({"type":"Action.Execute","verb":"notif_dismiss","data":{"id":"notif-1"}})");
+    EXPECT_EQ(card.get_last_action(), "notif_dismiss");
+    EXPECT_EQ(card.get_last_dismissed_id(), "notif-1");
+    EXPECT_EQ(card.get_unread_count(), 2u);
+    EXPECT_EQ(card.get_notifications().size(), 2u);
+
+    // 3. notif_clear_all
+    card.handle_action(R"({"type":"Action.Execute","verb":"notif_clear_all"})");
+    EXPECT_EQ(card.get_last_action(), "notif_clear_all");
+    EXPECT_TRUE(card.get_notifications().empty());
+    EXPECT_EQ(card.get_unread_count(), 0u);
+
+    // 4. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(notifications_cardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::notifications_card card{};
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"notif_test\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"notif_dismiss\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"notif_clear_all\",\"data\":null}"));
+}
+
 
 
 
