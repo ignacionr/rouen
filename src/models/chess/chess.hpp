@@ -268,6 +268,8 @@ public:
         date = "";
         round_str = "";
         result = "*";
+        eco = "";
+        opening = "";
         CHESS_INFO("Game reset");
     }
     
@@ -441,6 +443,8 @@ public:
     std::string white_player;
     std::string black_player;
     std::string result;
+    std::string eco;
+    std::string opening;
     
 private:
     Board board;
@@ -480,6 +484,10 @@ private:
             black_player = value;
         } else if (name == "Result") {
             result = value;
+        } else if (name == "ECO") {
+            eco = value;
+        } else if (name == "Opening") {
+            opening = value;
         }
         
         CHESS_DEBUG_FMT("Parsed PGN tag: [{}] = '{}'", name, value);

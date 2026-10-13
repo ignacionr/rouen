@@ -28,6 +28,9 @@
 #include "../../registrar.hpp"
 #include "../../fonts.hpp"  // For font utilities
 #include "../../../external/IconsMaterialDesign.h"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
 #include "chess_com_integration.hpp"
 #include "../../helpers/chess_game_analyzer.hpp"
 
@@ -101,9 +104,383 @@ public:
         
         return "chess";
     }
-    
+
+    [[nodiscard]] std::string compute_fen() const {
+        if (!game) return "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        const auto& board = game->get_current_position();
+        const auto& pieces = board.get_board();
+        std::string fen;
+
+        for (int rank = 7; rank >= 0; --rank) {
+            int empty_count = 0;
+            for (int file = 0; file < 8; ++file) {
+                size_t idx = static_cast<size_t>(rank) * 8 + static_cast<size_t>(file);
+                models::chess::Piece p = pieces[idx];
+                if (p == models::chess::Piece::None) {
+                    empty_count++;
+                } else {
+                    if (empty_count > 0) {
+                        fen += std::to_string(empty_count);
+                        empty_count = 0;
+                    }
+                    switch (p) {
+                        case models::chess::Piece::WhitePawn:   fen += 'P'; break;
+                        case models::chess::Piece::WhiteKnight: fen += 'N'; break;
+                        case models::chess::Piece::WhiteBishop: fen += 'B'; break;
+                        case models::chess::Piece::WhiteRook:   fen += 'R'; break;
+                        case models::chess::Piece::WhiteQueen:  fen += 'Q'; break;
+                        case models::chess::Piece::WhiteKing:   fen += 'K'; break;
+                        case models::chess::Piece::BlackPawn:   fen += 'p'; break;
+                        case models::chess::Piece::BlackKnight: fen += 'n'; break;
+                        case models::chess::Piece::BlackBishop: fen += 'b'; break;
+                        case models::chess::Piece::BlackRook:   fen += 'r'; break;
+                        case models::chess::Piece::BlackQueen:  fen += 'q'; break;
+                        case models::chess::Piece::BlackKing:   fen += 'k'; break;
+                        case models::chess::Piece::None:        break;
+                        default: break;
+                    }
+                }
+            }
+            if (empty_count > 0) {
+                fen += std::to_string(empty_count);
+            }
+            if (rank > 0) {
+                fen += '/';
+            }
+        }
+
+        size_t current_move = game->get_current_move_index();
+        bool white_to_move = (current_move % 2 == 0);
+        fen += white_to_move ? " w " : " b ";
+
+        std::string castling;
+        if (current_move == 0) {
+            castling = "KQkq";
+        } else {
+            if (pieces[4] == models::chess::Piece::WhiteKing) {
+                if (pieces[7] == models::chess::Piece::WhiteRook) castling += 'K';
+                if (pieces[0] == models::chess::Piece::WhiteRook) castling += 'Q';
+            }
+            if (pieces[60] == models::chess::Piece::BlackKing) {
+                if (pieces[63] == models::chess::Piece::BlackRook) castling += 'k';
+                if (pieces[56] == models::chess::Piece::BlackRook) castling += 'q';
+            }
+            if (castling.empty()) castling = "-";
+        }
+        fen += castling;
+        fen += " - 0 ";
+        size_t fullmove = (current_move / 2) + 1;
+        fen += std::to_string(fullmove);
+
+        return fen;
+    }
+
+    [[nodiscard]] std::string get_opening_display() const {
+        if (!game) return "Standard Opening";
+        if (!game->eco.empty() && !game->opening.empty()) {
+            return std::format("{} {}", game->eco, game->opening);
+        }
+        if (!game->opening.empty()) return game->opening;
+        if (!game->eco.empty()) return game->eco;
+        if (!game->event.empty() && game->event != "Chess Game") return game->event;
+        return "Standard Opening";
+    }
+
+    [[nodiscard]] std::string get_last_move_display() const {
+        if (!game || game->get_move_count() == 0 || game->get_current_move_index() == 0) {
+            return "Starting position (White to play)";
+        }
+        size_t cur = game->get_current_move_index();
+        const auto& moves = game->get_moves();
+        if (cur % 2 == 0) {
+            size_t move_num = cur / 2;
+            std::string w_move = (cur >= 2 && cur - 2 < moves.size()) ? moves[cur - 2].algebraic : "";
+            std::string b_move = (cur >= 1 && cur - 1 < moves.size()) ? moves[cur - 1].algebraic : "";
+            if (!w_move.empty() && !b_move.empty()) {
+                return std::format("{}. {} {} (White to play)", move_num, w_move, b_move);
+            } else if (!b_move.empty()) {
+                return std::format("{}... {} (White to play)", move_num, b_move);
+            }
+        } else {
+            size_t move_num = (cur / 2) + 1;
+            std::string w_move = (cur >= 1 && cur - 1 < moves.size()) ? moves[cur - 1].algebraic : "";
+            return std::format("{}. {} (Black to play)", move_num, w_move);
+        }
+        return "Starting position (White to play)";
+    }
+
+    [[nodiscard]] std::string get_game_subtitle() const {
+        if (!game) return "Casual Game";
+        if (game->white_player != "White" || game->black_player != "Black") {
+            std::string sub = std::format("{} vs {}", game->white_player, game->black_player);
+            if (!game->date.empty() && !game->event.empty() && game->event != "Chess Game") {
+                sub += std::format(" ({}, {})", game->date, game->event);
+            } else if (!game->date.empty()) {
+                sub += std::format(" ({})", game->date);
+            } else if (!game->event.empty() && game->event != "Chess Game") {
+                sub += std::format(" ({})", game->event);
+            }
+            return sub;
+        }
+        if (!game->event.empty() && game->event != "Chess Game") {
+            return game->event;
+        }
+        return "Kasparov vs Deep Blue (1996, Game 1)";
+    }
+
+    /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+    [[nodiscard]] std::string get_adaptive_card_json() const override {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+        std::vector<glz::json_t> body;
+
+        // 1. Header Container
+        glz::json_t header;
+        header["type"] = "Container";
+        header["style"] = "emphasis";
+
+        glz::json_t col_set;
+        col_set["type"] = "ColumnSet";
+        std::vector<glz::json_t> columns;
+
+        // Column 1: Emoji icon
+        glz::json_t icon_col;
+        icon_col["type"] = "Column";
+        icon_col["width"] = "auto";
+        std::vector<glz::json_t> icon_items;
+        glz::json_t icon_tb;
+        icon_tb["type"] = "TextBlock";
+        icon_tb["text"] = "\xE2\x99\x9F\xEF\xB8\x8F"; // ♟️
+        icon_tb["size"] = "Large";
+        icon_items.push_back(std::move(icon_tb));
+        icon_col["items"] = std::move(icon_items);
+        columns.push_back(std::move(icon_col));
+
+        // Column 2: Title & subtitle
+        glz::json_t title_col;
+        title_col["type"] = "Column";
+        title_col["width"] = "stretch";
+        std::vector<glz::json_t> title_items;
+        glz::json_t title_tb;
+        title_tb["type"] = "TextBlock";
+        title_tb["text"] = "Chess Game Replayer & Analyzer";
+        title_tb["weight"] = "Bolder";
+        title_tb["size"] = "Large";
+        title_items.push_back(std::move(title_tb));
+
+        glz::json_t subtitle_tb;
+        subtitle_tb["type"] = "TextBlock";
+        subtitle_tb["text"] = get_game_subtitle();
+        subtitle_tb["isSubtle"] = true;
+        subtitle_tb["size"] = "Small";
+        title_items.push_back(std::move(subtitle_tb));
+        title_col["items"] = std::move(title_items);
+        columns.push_back(std::move(title_col));
+
+        // Column 3: Move counter
+        glz::json_t move_col;
+        move_col["type"] = "Column";
+        move_col["width"] = "auto";
+        std::vector<glz::json_t> move_items;
+        glz::json_t move_tb;
+        move_tb["type"] = "TextBlock";
+        size_t current_move = game ? game->get_current_move_index() : 0;
+        size_t total_moves = game ? game->get_move_count() : 0;
+        move_tb["text"] = std::format("Move {} / {}", current_move, total_moves);
+        move_tb["weight"] = "Bolder";
+        move_tb["color"] = "Accent";
+        move_tb["size"] = "Small";
+        move_items.push_back(std::move(move_tb));
+        move_col["items"] = std::move(move_items);
+        columns.push_back(std::move(move_col));
+
+        col_set["columns"] = std::move(columns);
+        std::vector<glz::json_t> header_items;
+        header_items.push_back(std::move(col_set));
+        header["items"] = std::move(header_items);
+        body.push_back(std::move(header));
+
+        // 2. FactSet
+        glz::json_t fact_set;
+        fact_set["type"] = "FactSet";
+        std::vector<glz::json_t> facts;
+        facts.push_back(glz::json_t::object_t{{"title", "White Player:"}, {"value", game ? game->white_player : "White"}});
+        facts.push_back(glz::json_t::object_t{{"title", "Black Player:"}, {"value", game ? game->black_player : "Black"}});
+        facts.push_back(glz::json_t::object_t{{"title", "Opening:"}, {"value", get_opening_display()}});
+        facts.push_back(glz::json_t::object_t{{"title", "Last Move:"}, {"value", get_last_move_display()}});
+        facts.push_back(glz::json_t::object_t{{"title", "FEN:"}, {"value", compute_fen()}});
+        fact_set["facts"] = std::move(facts);
+        body.push_back(std::move(fact_set));
+
+        // 3. Search Container
+        glz::json_t search_container;
+        search_container["type"] = "Container";
+        search_container["separator"] = true;
+        std::vector<glz::json_t> search_items;
+        glz::json_t search_input;
+        search_input["type"] = "Input.Text";
+        search_input["id"] = "chess_com_user";
+        search_input["placeholder"] = "Search Chess.com player username (e.g. magnuscarlsen)...";
+        if (!chess_com_state.chess_com_username.empty()) {
+            search_input["value"] = chess_com_state.chess_com_username;
+        }
+        search_items.push_back(std::move(search_input));
+        search_container["items"] = std::move(search_items);
+        body.push_back(std::move(search_container));
+
+        card["body"] = std::move(body);
+
+        // 4. Actions
+        std::vector<glz::json_t> actions;
+        actions.push_back(glz::json_t::object_t{
+            {"type", "Action.Execute"},
+            {"title", "Previous Move"},
+            {"verb", "chess_prev_move"}
+        });
+        actions.push_back(glz::json_t::object_t{
+            {"type", "Action.Execute"},
+            {"title", "Next Move"},
+            {"verb", "chess_next_move"}
+        });
+        actions.push_back(glz::json_t::object_t{
+            {"type", "Action.Execute"},
+            {"title", "Flip Board"},
+            {"verb", "chess_flip_board"}
+        });
+        actions.push_back(glz::json_t::object_t{
+            {"type", "Action.Execute"},
+            {"title", "Search Player"},
+            {"verb", "chess_search_user"}
+        });
+        card["actions"] = std::move(actions);
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
+    }
+
+    /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+    void handle_action(std::string_view action_json) override {
+        if (action_json.empty()) return;
+
+        try {
+            std::string verb;
+            glz::json_t data{};
+            glz::json_t payload{};
+
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (!err && payload.is_object()) {
+                if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                    verb = payload["verb"].get<std::string>();
+                } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                    verb = payload["action"].get<std::string>();
+                }
+                if (payload.contains("data") && payload["data"].is_object()) {
+                    data = payload["data"];
+                } else {
+                    data = payload;
+                }
+            } else {
+                verb = std::string(action_json);
+            }
+
+            if (verb == "chess_next_move") {
+                if (game) {
+                    game->next_move();
+                }
+            } else if (verb == "chess_prev_move") {
+                if (game) {
+                    game->previous_move();
+                }
+            } else if (verb == "chess_flip_board") {
+                board_flipped = !board_flipped;
+            } else if (verb == "chess_search_user") {
+                std::string user;
+                auto extract_user = [&](const glz::json_t& obj) {
+                    if (!obj.is_object()) return;
+                    if (obj.contains("chess_com_user") && obj["chess_com_user"].holds<std::string>()) {
+                        user = obj["chess_com_user"].get<std::string>();
+                    } else if (obj.contains("username") && obj["username"].holds<std::string>()) {
+                        user = obj["username"].get<std::string>();
+                    } else if (obj.contains("user") && obj["user"].holds<std::string>()) {
+                        user = obj["user"].get<std::string>();
+                    }
+                };
+                extract_user(data);
+                if (user.empty() && payload.is_object()) {
+                    extract_user(payload);
+                }
+                if (!user.empty()) {
+                    set_chess_com_username(user);
+                    chess_com_integration.fetch_player_archives(user);
+                } else if (strlen(chess_com_state.username_buffer) > 0) {
+                    chess_com_integration.fetch_player_archives(chess_com_state.username_buffer);
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[chess] Action error: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "[chess] Unknown action error" << std::endl;
+        }
+    }
+
+    [[nodiscard]] bool get_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    void set_adaptive_view_mode(bool enabled) noexcept { adaptive_view_mode = enabled; }
+    [[nodiscard]] bool is_board_flipped() const noexcept { return board_flipped; }
+    [[nodiscard]] const std::string& get_chess_com_username() const noexcept { return chess_com_state.chess_com_username; }
+    [[nodiscard]] const models::chess::Game* get_game() const noexcept { return game.get(); }
+    [[nodiscard]] models::chess::Game* get_game() noexcept { return game.get(); }
+
     bool render() override {
-        return render_window([this]() {
+        rouen::ui::imgui_ui_context_impl ui;
+        return render(ui);
+    }
+
+    bool render(rouen::ui::ui_context& ui) override {
+        return render_window([this, &ui]() {
+            // Presentation mode selector
+            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            ui.separator();
+
+            if (adaptive_view_mode) {
+                auto now = std::chrono::steady_clock::now();
+                auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                    try {
+                        adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                        adaptive_error_.clear();
+                    } catch (const std::exception& e) {
+                        adaptive_error_ = e.what();
+                    }
+                    last_adaptive_parse_time_ = now;
+                }
+
+                if (!adaptive_error_.empty()) {
+                    ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                } else {
+                    adaptive_renderer_.render(
+                        adaptive_bound_, adaptive_input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                handle_action(payload);
+                            }
+                        },
+                        helpers::adaptive_cards::render_config{
+                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        }
+                    );
+                }
+                return;
+            }
+
             if (!game) {
                 ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Chess game model not initialized");
                 return;
@@ -271,12 +648,14 @@ public:
         const auto& board_array = board.get_board();
 
         // Draw squares and pieces
-        for (int rank = 7; rank >= 0; --rank) {
-            for (int file = 0; file < 8; ++file) {
+        for (int row = 0; row < 8; ++row) {
+            int rank = board_flipped ? row : (7 - row);
+            for (int col = 0; col < 8; ++col) {
+                int file = board_flipped ? (7 - col) : col;
                 // Calculate square position
                 ImVec2 square_pos = ImVec2(
-                    board_pos.x + static_cast<float>(file) * square_size,
-                    board_pos.y + static_cast<float>(7 - rank) * square_size
+                    board_pos.x + static_cast<float>(col) * square_size,
+                    board_pos.y + static_cast<float>(row) * square_size
                 );
                 
                 // Determine square color (light or dark)
@@ -291,7 +670,7 @@ public:
                 );
                 
                 // Draw file and rank labels on the edges
-                if (rank == 0) {
+                if (row == 7) {
                     // Draw file labels (a-h) at the bottom
                     char file_label[2] = {static_cast<char>('a' + file), '\0'};
                     draw_list->AddText(
@@ -302,7 +681,7 @@ public:
                     );
                 }
                 
-                if (file == 0) {
+                if (col == 0) {
                     // Draw rank labels (1-8) on the left
                     draw_list->AddText(
                         ImVec2(square_pos.x - 14.0f, 
@@ -650,6 +1029,16 @@ private:
     chess::ChessComApiClient chess_api;
     ChessComIntegration chess_com_integration;
     
+    // Adaptive Card presentation override state
+    bool board_flipped{false};
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    std::string adaptive_error_{};
+    std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+
     // AI Analysis members
     rouen::helpers::ChessGameAnalyzer ai_analyzer;
     std::future<rouen::helpers::ChessAnalysisResult> ai_analysis_future;

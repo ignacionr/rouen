@@ -26,6 +26,7 @@
 #include "../src/cards/development/git.hpp"
 #include "../src/cards/productivity/calculator.hpp"
 #include "../src/cards/media/camera.hpp"
+#include "../src/cards/media/chess_replay.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -1134,6 +1135,131 @@ TEST(cast_controlAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(cast_card.handle_action("{\"verb\":\"cast_start\",\"data\":null}"));
     EXPECT_NO_THROW(cast_card.handle_action("{\"verb\":\"cast_stop\"}"));
 }
+
+TEST(chess_replayAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::chess_replay chess_card{};
+    std::string card_json = chess_card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    // Verify all required FactSet fields and inputs exist
+    bool found_white_player = false;
+    bool found_black_player = false;
+    bool found_opening = false;
+    bool found_last_move = false;
+    bool found_fen = false;
+    bool found_user_input = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.Text" && child.id == "chess_com_user") {
+                    found_user_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "White Player:") found_white_player = true;
+                if (fact.title == "Black Player:") found_black_player = true;
+                if (fact.title == "Opening:") found_opening = true;
+                if (fact.title == "Last Move:") found_last_move = true;
+                if (fact.title == "FEN:") found_fen = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_white_player);
+    EXPECT_TRUE(found_black_player);
+    EXPECT_TRUE(found_opening);
+    EXPECT_TRUE(found_last_move);
+    EXPECT_TRUE(found_fen);
+    EXPECT_TRUE(found_user_input);
+
+    // Verify actions exist
+    bool found_prev_move = false;
+    bool found_next_move = false;
+    bool found_flip_board = false;
+    bool found_search_user = false;
+
+    for (const auto& act : doc.actions) {
+        if (act.verb == "chess_prev_move") found_prev_move = true;
+        if (act.verb == "chess_next_move") found_next_move = true;
+        if (act.verb == "chess_flip_board") found_flip_board = true;
+        if (act.verb == "chess_search_user") found_search_user = true;
+    }
+
+    EXPECT_TRUE(found_prev_move);
+    EXPECT_TRUE(found_next_move);
+    EXPECT_TRUE(found_flip_board);
+    EXPECT_TRUE(found_search_user);
+}
+
+TEST(chess_replayAdaptiveTest, ActionDispatch) {
+    rouen::cards::chess_replay chess_card{};
+
+    // Initial state
+    EXPECT_FALSE(chess_card.is_board_flipped());
+    ASSERT_NE(chess_card.get_game(), nullptr);
+    EXPECT_EQ(chess_card.get_game()->get_current_move_index(), 0u);
+
+    // Load game content
+    const std::string pgn =
+        "[Event \"Kasparov vs Deep Blue\"]\n"
+        "[Site \"Philadelphia, PA USA\"]\n"
+        "[Date \"1996.02.10\"]\n"
+        "[White \"Garry Kasparov\"]\n"
+        "[Black \"Deep Blue\"]\n"
+        "[Result \"1-0\"]\n"
+        "1. e4 c5 2. c3 d5 3. exd5 Qxd5 4. d4 Nf6 5. Nf3 Bg4 6. Be2 e6 1-0\n";
+    EXPECT_TRUE(chess_card.load_pgn_content(pgn));
+    EXPECT_GT(chess_card.get_game()->get_move_count(), 0u);
+    EXPECT_EQ(chess_card.get_game()->get_current_move_index(), 0u);
+
+    // 1. chess_next_move
+    chess_card.handle_action(R"({"type":"Action.Execute","verb":"chess_next_move"})");
+    EXPECT_EQ(chess_card.get_game()->get_current_move_index(), 1u);
+
+    chess_card.handle_action(R"({"type":"Action.Execute","verb":"chess_next_move"})");
+    EXPECT_EQ(chess_card.get_game()->get_current_move_index(), 2u);
+
+    // 2. chess_prev_move
+    chess_card.handle_action(R"({"type":"Action.Execute","verb":"chess_prev_move"})");
+    EXPECT_EQ(chess_card.get_game()->get_current_move_index(), 1u);
+
+    // 3. chess_flip_board
+    chess_card.handle_action(R"({"type":"Action.Execute","verb":"chess_flip_board"})");
+    EXPECT_TRUE(chess_card.is_board_flipped());
+
+    chess_card.handle_action(R"({"type":"Action.Execute","verb":"chess_flip_board"})");
+    EXPECT_FALSE(chess_card.is_board_flipped());
+
+    // 4. chess_search_user
+    chess_card.handle_action(R"({"type":"Action.Execute","verb":"chess_search_user","data":{"chess_com_user":"magnuscarlsen"}})");
+    EXPECT_EQ(chess_card.get_chess_com_username(), "magnuscarlsen");
+
+    chess_card.handle_action(R"({"type":"Action.Execute","verb":"chess_search_user","data":{"username":"hikaru"}})");
+    EXPECT_EQ(chess_card.get_chess_com_username(), "hikaru");
+}
+
+TEST(chess_replayAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::chess_replay chess_card{};
+    EXPECT_NO_THROW(chess_card.handle_action(""));
+    EXPECT_NO_THROW(chess_card.handle_action("not a json string"));
+    EXPECT_NO_THROW(chess_card.handle_action("{"));
+    EXPECT_NO_THROW(chess_card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(chess_card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(chess_card.handle_action("{\"verb\":\"chess_search_user\",\"data\":null}"));
+}
+
 
 
 
