@@ -46,6 +46,7 @@
 #include "../src/cards/information/markdown_notes.hpp"
 #include "../src/cards/information/markdown_viewer.hpp"
 #include "../src/cards/information/number_series.hpp"
+#include "../src/cards/information/pdf_viewer.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -3519,3 +3520,115 @@ TEST(number_series_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"filter_range\",\"data\":{\"range\":null}}"));
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"export_csv\",\"data\":null}"));
 }
+
+TEST(pdf_viewerAdaptiveTest, JsonSerialization) {
+    rouen::cards::pdf_viewer viewer{};
+    std::string card_json = viewer.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_title_fact = false;
+    bool found_author_fact = false;
+    bool found_current_page_fact = false;
+    bool found_zoom_level_fact = false;
+    bool found_target_page_input = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Title:") found_title_fact = true;
+                if (fact.title == "Author:") found_author_fact = true;
+                if (fact.title == "Current Page:") found_current_page_fact = true;
+                if (fact.title == "Zoom Level:") found_zoom_level_fact = true;
+            }
+        }
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.Number" && child.id == "target_page") {
+                    found_target_page_input = true;
+                }
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_title_fact);
+    EXPECT_TRUE(found_author_fact);
+    EXPECT_TRUE(found_current_page_fact);
+    EXPECT_TRUE(found_zoom_level_fact);
+    EXPECT_TRUE(found_target_page_input);
+
+    bool found_prev_page = false;
+    bool found_next_page = false;
+    bool found_jump_page = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "pdf_prev_page") found_prev_page = true;
+        if (act.verb == "pdf_next_page") found_next_page = true;
+        if (act.verb == "pdf_jump_page") found_jump_page = true;
+    }
+    EXPECT_TRUE(found_prev_page);
+    EXPECT_TRUE(found_next_page);
+    EXPECT_TRUE(found_jump_page);
+}
+
+TEST(pdf_viewerAdaptiveTest, ActionDispatch) {
+    rouen::cards::pdf_viewer viewer{};
+
+    // Initial state
+    EXPECT_FALSE(viewer.is_adaptive_view_mode());
+
+    // 1. pdf_jump_page with page_number
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"pdf_jump_page","data":{"page_number":42}})");
+    EXPECT_EQ(viewer.get_last_action(), "pdf_jump_page");
+    EXPECT_EQ(viewer.get_current_page(), 42);
+
+    // Also test alias field target_page
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"pdf_jump_page","data":{"target_page":100}})");
+    EXPECT_EQ(viewer.get_last_action(), "pdf_jump_page");
+    EXPECT_EQ(viewer.get_current_page(), 100);
+
+    // 2. pdf_next_page
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"pdf_next_page"})");
+    EXPECT_EQ(viewer.get_last_action(), "pdf_next_page");
+    EXPECT_EQ(viewer.get_current_page(), 101);
+
+    // 3. pdf_prev_page
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"pdf_prev_page"})");
+    EXPECT_EQ(viewer.get_last_action(), "pdf_prev_page");
+    EXPECT_EQ(viewer.get_current_page(), 100);
+
+    // 4. pdf_zoom
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"pdf_zoom","data":{"zoom_factor":1.5}})");
+    EXPECT_EQ(viewer.get_last_action(), "pdf_zoom");
+    EXPECT_FLOAT_EQ(viewer.get_zoom_factor(), 1.5f);
+
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"pdf_zoom","data":{"zoom_factor":"125%"}})");
+    EXPECT_EQ(viewer.get_last_action(), "pdf_zoom");
+    EXPECT_FLOAT_EQ(viewer.get_zoom_factor(), 1.25f);
+
+    // 5. toggle_adaptive_view
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(viewer.is_adaptive_view_mode());
+    viewer.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(viewer.is_adaptive_view_mode());
+}
+
+TEST(pdf_viewerAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::pdf_viewer viewer{};
+    EXPECT_NO_THROW(viewer.handle_action(""));
+    EXPECT_NO_THROW(viewer.handle_action("not a json string"));
+    EXPECT_NO_THROW(viewer.handle_action("{"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"pdf_jump_page\",\"data\":null}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"pdf_jump_page\",\"data\":{\"page_number\":null}}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"pdf_next_page\",\"data\":null}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"pdf_prev_page\",\"data\":null}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"pdf_zoom\",\"data\":null}"));
+    EXPECT_NO_THROW(viewer.handle_action("{\"verb\":\"pdf_zoom\",\"data\":{\"zoom_factor\":null}}"));
+}
+
