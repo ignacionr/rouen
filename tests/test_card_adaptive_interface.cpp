@@ -30,6 +30,7 @@
 #include "../src/cards/media/camera.hpp"
 #include "../src/cards/media/chess_replay.hpp"
 #include "../src/cards/development/cmake.hpp"
+#include "../src/cards/development/diff_card.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -1628,6 +1629,126 @@ TEST(dbrepair_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(dbrepair.handle_action("{\"verb\":\"db_vacuum\",\"data\":{\"database_choice\":\"nonexistent.db\"}}"));
     EXPECT_NO_THROW(dbrepair.handle_action("{\"verb\":\"db_backup\",\"data\":{\"db_target\":\"nonexistent.db\"}}"));
 }
+
+TEST(diff_cardAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::diff_card card{};
+    std::string old_content = "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\n";
+    std::string new_content = "line 1\nline 2 mod\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11 mod\nline 12\n";
+    card.load_arbitrary_diff(old_content, new_content, "src/cards/development/diff_card.cpp");
+
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    // Verify all required FactSet fields and inputs exist
+    bool found_target_file = false;
+    bool found_view_mode = false;
+    bool found_diff_source = false;
+    bool found_line_stats = false;
+    bool found_file_selector = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.ChoiceSet" && child.id == "file_selector") {
+                    found_file_selector = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Target File:") found_target_file = true;
+                if (fact.title == "View Mode:") found_view_mode = true;
+                if (fact.title == "Diff Source:") found_diff_source = true;
+                if (fact.title == "Line Stats:") found_line_stats = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_target_file);
+    EXPECT_TRUE(found_view_mode);
+    EXPECT_TRUE(found_diff_source);
+    EXPECT_TRUE(found_line_stats);
+    EXPECT_TRUE(found_file_selector);
+
+    // Verify actions exist
+    bool found_next_hunk = false;
+    bool found_stage_hunk = false;
+    bool found_discard_hunk = false;
+    bool found_toggle_view_mode = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "next_hunk") found_next_hunk = true;
+        if (act.verb == "stage_hunk") found_stage_hunk = true;
+        if (act.verb == "discard_hunk") found_discard_hunk = true;
+        if (act.verb == "toggle_view_mode") found_toggle_view_mode = true;
+    }
+    EXPECT_TRUE(found_next_hunk);
+    EXPECT_TRUE(found_stage_hunk);
+    EXPECT_TRUE(found_discard_hunk);
+    EXPECT_TRUE(found_toggle_view_mode);
+}
+
+TEST(diff_cardAdaptiveTest, ActionDispatch) {
+    rouen::cards::diff_card card{};
+    std::string old_content = "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\n";
+    std::string new_content = "line 1\nline 2 mod\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11 mod\nline 12\n";
+    card.load_arbitrary_diff(old_content, new_content, "src/cards/development/diff_card.cpp");
+
+    ASSERT_GE(card.get_diff().chunks.size(), 2u);
+
+    // Initial state assertions
+    EXPECT_EQ(card.get_current_hunk_idx(), 0u);
+    EXPECT_EQ(card.get_view_mode(), rouen::cards::DiffViewMode::SideBySide);
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+
+    // 1. next_hunk
+    card.handle_action(R"({"type":"Action.Execute","verb":"next_hunk"})");
+    EXPECT_EQ(card.get_current_hunk_idx(), 1u);
+
+    // 2. stage_hunk
+    card.handle_action(R"({"type":"Action.Execute","verb":"stage_hunk","data":{"hunk_idx":0}})");
+    EXPECT_EQ(card.get_diff().chunks[0].status, rouen::helpers::ChunkStatus::Accepted);
+
+    // 3. discard_hunk
+    card.handle_action(R"({"type":"Action.Execute","verb":"discard_hunk","data":{"hunk_idx":0}})");
+    EXPECT_EQ(card.get_diff().chunks[0].status, rouen::helpers::ChunkStatus::Discarded);
+
+    // 4. toggle_view_mode
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_view_mode"})");
+    EXPECT_EQ(card.get_view_mode(), rouen::cards::DiffViewMode::Unified);
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_view_mode"})");
+    EXPECT_EQ(card.get_view_mode(), rouen::cards::DiffViewMode::SideBySide);
+
+    // 5. select_file
+    card.handle_action(R"({"type":"Action.Execute","verb":"select_file","data":{"file_path":"new_file.cpp"}})");
+    EXPECT_EQ(card.get_file_path(), "new_file.cpp");
+
+    // 6. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(diff_cardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::diff_card card{};
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"select_file\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"stage_hunk\",\"data\":{\"hunk_idx\":\"invalid\"}}"));
+}
+
 
 
 
