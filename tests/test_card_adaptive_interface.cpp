@@ -45,6 +45,7 @@
 #include "../src/cards/information/mail/mail.hpp"
 #include "../src/cards/information/markdown_notes.hpp"
 #include "../src/cards/information/markdown_viewer.hpp"
+#include "../src/cards/information/number_series.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -3416,7 +3417,105 @@ TEST(notifications_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"notif_clear_all\",\"data\":null}"));
 }
 
+TEST(number_series_cardAdaptiveTest, JsonSerialization) {
+    rouen::cards::number_series_card card{};
+    std::string card_json = card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
 
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
 
+    bool found_current_reading = false;
+    bool found_min_value = false;
+    bool found_peak_value = false;
+    bool found_sample_count = false;
+    bool found_dataset_selector = false;
 
+    for (const auto& elem : doc.body) {
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Current Reading:") found_current_reading = true;
+                if (fact.title == "Minimum Value:") found_min_value = true;
+                if (fact.title == "Peak Value:") found_peak_value = true;
+                if (fact.title == "Sample Count:") found_sample_count = true;
+            }
+        }
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.ChoiceSet" && child.id == "dataset_selector") {
+                    found_dataset_selector = true;
+                }
+            }
+        }
+    }
 
+    EXPECT_TRUE(found_current_reading);
+    EXPECT_TRUE(found_min_value);
+    EXPECT_TRUE(found_peak_value);
+    EXPECT_TRUE(found_sample_count);
+    EXPECT_TRUE(found_dataset_selector);
+
+    bool found_select_series = false;
+    bool found_export_csv = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "select_series") found_select_series = true;
+        if (act.verb == "export_csv") found_export_csv = true;
+    }
+    EXPECT_TRUE(found_select_series);
+    EXPECT_TRUE(found_export_csv);
+}
+
+TEST(number_series_cardAdaptiveTest, ActionDispatch) {
+    rouen::cards::number_series_card card{};
+
+    // Initial state assertions
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+
+    // 1. select_series
+    card.handle_action(R"({"type":"Action.Execute","verb":"select_series","data":{"dataset":"temps"}})");
+    EXPECT_EQ(card.get_last_action(), "select_series");
+    EXPECT_EQ(card.get_selected_series_name(), "temps");
+
+    // Also test alias field name dataset_selector
+    card.handle_action(R"({"type":"Action.Execute","verb":"select_series","data":{"dataset_selector":"cpu"}})");
+    EXPECT_EQ(card.get_last_action(), "select_series");
+    EXPECT_EQ(card.get_selected_series_name(), "cpu");
+
+    // 2. filter_range
+    card.handle_action(R"({"type":"Action.Execute","verb":"filter_range","data":{"range":"24h"}})");
+    EXPECT_EQ(card.get_last_action(), "filter_range");
+    EXPECT_EQ(card.get_selected_range(), "24h");
+
+    card.handle_action(R"({"type":"Action.Execute","verb":"filter_range","data":{"range":"All"}})");
+    EXPECT_EQ(card.get_last_action(), "filter_range");
+    EXPECT_EQ(card.get_selected_range(), "All");
+
+    // 3. export_csv
+    card.handle_action(R"({"type":"Action.Execute","verb":"export_csv"})");
+    EXPECT_EQ(card.get_last_action(), "export_csv");
+    EXPECT_FALSE(card.get_last_exported_csv().empty());
+    EXPECT_TRUE(std::filesystem::exists(card.get_last_exported_csv()));
+
+    // 4. toggle_adaptive_view
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(card.is_adaptive_view_mode());
+    card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(card.is_adaptive_view_mode());
+}
+
+TEST(number_series_cardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::number_series_card card{};
+    EXPECT_NO_THROW(card.handle_action(""));
+    EXPECT_NO_THROW(card.handle_action("not a json string"));
+    EXPECT_NO_THROW(card.handle_action("{"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"select_series\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"select_series\",\"data\":{\"dataset\":null}}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"filter_range\",\"data\":null}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"filter_range\",\"data\":{\"range\":null}}"));
+    EXPECT_NO_THROW(card.handle_action("{\"verb\":\"export_csv\",\"data\":null}"));
+}

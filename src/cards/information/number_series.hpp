@@ -3,14 +3,22 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <format>
+#include <fstream>
+#include <iostream>
 #include <limits>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "../../fonts.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
 #include "../../helpers/glaze_include.hpp"
+#include "../../helpers/imgui_include.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
+#include "../../helpers/platform_utils.hpp"
 #include "../../models/series/series_repository.hpp"
 #include "../interface/card.hpp"
 
@@ -83,7 +91,52 @@ public:
     }
 
     bool render() override {
-        return render_window([this]() {
+        rouen::ui::imgui_ui_context_impl ui;
+        return render(ui);
+    }
+
+    bool render(rouen::ui::ui_context& ui) override {
+        return render_window([this, &ui]() {
+            // Presentation mode selector
+            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            ui.separator();
+
+            if (adaptive_view_mode) {
+                auto now = std::chrono::steady_clock::now();
+                auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                    try {
+                        adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                        adaptive_error_.clear();
+                    } catch (const std::exception& e) {
+                        adaptive_error_ = e.what();
+                    }
+                    last_adaptive_parse_time_ = now;
+                }
+
+                if (!adaptive_error_.empty()) {
+                    ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                } else {
+                    adaptive_renderer_.render(
+                        adaptive_bound_, adaptive_input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                handle_action(payload);
+                            }
+                        },
+                        helpers::adaptive_cards::render_config{
+                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        }
+                    );
+                }
+                return;
+            }
+
             // Action toolbar: New, Save, Delete buttons
             if (ImGui::Button("New Series")) {
                 create_new_series();
@@ -453,6 +506,322 @@ public:
         ImGui::PopStyleVar(2);
     }
 
+    /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+    [[nodiscard]] std::string get_adaptive_card_json() const override {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+        std::vector<glz::json_t> body;
+
+        // Stats calculation
+        float sum = 0.0f;
+        float max_val_stat = current_data_.points.empty() ? 0.0f : -std::numeric_limits<float>::infinity();
+        float min_val_stat = current_data_.points.empty() ? 0.0f : std::numeric_limits<float>::infinity();
+        for (const auto& pt : current_data_.points) {
+            sum += pt.value;
+            if (pt.value > max_val_stat) max_val_stat = pt.value;
+            if (pt.value < min_val_stat) min_val_stat = pt.value;
+        }
+        float avg = current_data_.points.empty() ? 0.0f : sum / static_cast<float>(current_data_.points.size());
+
+        std::string unit_lbl = (current_data_.unit == "C") ? "°C" : current_data_.unit;
+        auto format_val = [&](float val) -> std::string {
+            if (current_data_.unit == "$") {
+                return std::format("${:.1f}", val);
+            }
+            return std::format("{:.1f}{}", val, unit_lbl);
+        };
+
+        std::string current_val_str = current_data_.points.empty() ? "N/A" : format_val(current_data_.points.back().value);
+        std::string min_val_str = current_data_.points.empty() ? "N/A" : format_val(min_val_stat);
+        std::string max_val_str = current_data_.points.empty() ? "N/A" : format_val(max_val_stat);
+        std::string avg_val_str = current_data_.points.empty() ? "Avg: N/A" : std::format("Avg: {}", format_val(avg));
+
+        // 1. Header Container
+        {
+            glz::json_t header_container;
+            header_container["type"] = "Container";
+            header_container["style"] = "emphasis";
+
+            glz::json_t col_set;
+            col_set["type"] = "ColumnSet";
+            std::vector<glz::json_t> columns;
+
+            // Column 1: Emoji icon
+            {
+                glz::json_t col1;
+                col1["type"] = "Column";
+                col1["width"] = "auto";
+                std::vector<glz::json_t> col1_items;
+                glz::json_t tb_icon;
+                tb_icon["type"] = "TextBlock";
+                tb_icon["text"] = "📈";
+                tb_icon["size"] = "Large";
+                col1_items.push_back(std::move(tb_icon));
+                col1["items"] = std::move(col1_items);
+                columns.push_back(std::move(col1));
+            }
+
+            // Column 2: Title & Subtitle
+            {
+                glz::json_t col2;
+                col2["type"] = "Column";
+                col2["width"] = "stretch";
+                std::vector<glz::json_t> col2_items;
+
+                glz::json_t tb_title;
+                tb_title["type"] = "TextBlock";
+                std::string display_title = current_data_.title.empty() ? "Number Series" : current_data_.title;
+                if (!unit_lbl.empty() && display_title.find(unit_lbl) == std::string::npos) {
+                    display_title = std::format("{} ({})", display_title, unit_lbl);
+                }
+                tb_title["text"] = display_title;
+                tb_title["weight"] = "Bolder";
+                tb_title["size"] = "Large";
+                col2_items.push_back(std::move(tb_title));
+
+                glz::json_t tb_sub;
+                tb_sub["type"] = "TextBlock";
+                tb_sub["text"] = std::format("Series: {} ({} samples)", current_data_.name.empty() ? "default" : current_data_.name, current_data_.points.size());
+                tb_sub["isSubtle"] = true;
+                tb_sub["size"] = "Small";
+                col2_items.push_back(std::move(tb_sub));
+
+                col2["items"] = std::move(col2_items);
+                columns.push_back(std::move(col2));
+            }
+
+            // Column 3: Avg badge
+            {
+                glz::json_t col3;
+                col3["type"] = "Column";
+                col3["width"] = "auto";
+                std::vector<glz::json_t> col3_items;
+
+                glz::json_t tb_badge;
+                tb_badge["type"] = "TextBlock";
+                tb_badge["text"] = avg_val_str;
+                tb_badge["weight"] = "Bolder";
+                tb_badge["color"] = "Good";
+                tb_badge["size"] = "Medium";
+                col3_items.push_back(std::move(tb_badge));
+
+                col3["items"] = std::move(col3_items);
+                columns.push_back(std::move(col3));
+            }
+
+            col_set["columns"] = std::move(columns);
+            std::vector<glz::json_t> header_items;
+            header_items.push_back(std::move(col_set));
+            header_container["items"] = std::move(header_items);
+            body.push_back(std::move(header_container));
+        }
+
+        // 2. FactSet
+        {
+            glz::json_t fact_set;
+            fact_set["type"] = "FactSet";
+            std::vector<glz::json_t> facts;
+
+            facts.push_back(glz::json_t::object_t{
+                {"title", "Current Reading:"},
+                {"value", current_val_str}
+            });
+            facts.push_back(glz::json_t::object_t{
+                {"title", "Minimum Value:"},
+                {"value", min_val_str}
+            });
+            facts.push_back(glz::json_t::object_t{
+                {"title", "Peak Value:"},
+                {"value", max_val_str}
+            });
+            facts.push_back(glz::json_t::object_t{
+                {"title", "Sample Count:"},
+                {"value", std::format("{} data points", current_data_.points.size())}
+            });
+
+            fact_set["facts"] = std::move(facts);
+            body.push_back(std::move(fact_set));
+        }
+
+        // 3. Selection & Filter Container
+        {
+            glz::json_t selector_container;
+            selector_container["type"] = "Container";
+            selector_container["separator"] = true;
+            std::vector<glz::json_t> container_items;
+
+            glz::json_t choice_set;
+            choice_set["type"] = "Input.ChoiceSet";
+            choice_set["id"] = "dataset_selector";
+            choice_set["label"] = "Select Metric Series";
+            choice_set["value"] = current_data_.name.empty() ? "cpu" : current_data_.name;
+            std::vector<glz::json_t> choices;
+
+            if (!datasets_.empty()) {
+                for (const auto& ds : datasets_) {
+                    std::string title = ds.title;
+                    if (!ds.unit.empty() && title.find(ds.unit) == std::string::npos) {
+                        std::string u = (ds.unit == "C") ? "°C" : ds.unit;
+                        title = std::format("{} ({})", title, u);
+                    }
+                    choices.push_back(glz::json_t::object_t{
+                        {"title", title},
+                        {"value", ds.name}
+                    });
+                }
+            } else {
+                choices.push_back(glz::json_t::object_t{
+                    {"title", "Host CPU Load (%)"},
+                    {"value", "cpu"}
+                });
+                choices.push_back(glz::json_t::object_t{
+                    {"title", "Weekly Temperature Forecast (°C)"},
+                    {"value", "temps"}
+                });
+                choices.push_back(glz::json_t::object_t{
+                    {"title", "Monthly Sales Revenue ($)"},
+                    {"value", "sales"}
+                });
+            }
+            choice_set["choices"] = std::move(choices);
+            container_items.push_back(std::move(choice_set));
+
+            selector_container["items"] = std::move(container_items);
+            body.push_back(std::move(selector_container));
+        }
+
+        card["body"] = std::move(body);
+
+        // 4. Actions
+        std::vector<glz::json_t> actions;
+        {
+            glz::json_t act_select;
+            act_select["type"] = "Action.Execute";
+            act_select["title"] = "Switch Series";
+            act_select["verb"] = "select_series";
+            actions.push_back(std::move(act_select));
+
+            glz::json_t act_filter;
+            act_filter["type"] = "Action.Execute";
+            act_filter["title"] = "Filter Range";
+            act_filter["verb"] = "filter_range";
+            actions.push_back(std::move(act_filter));
+
+            glz::json_t act_export;
+            act_export["type"] = "Action.Execute";
+            act_export["title"] = "Export CSV";
+            act_export["verb"] = "export_csv";
+            actions.push_back(std::move(act_export));
+        }
+        card["actions"] = std::move(actions);
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
+    }
+
+    /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+    void handle_action(std::string_view action_json) override {
+        if (action_json.empty()) return;
+        try {
+            std::string verb;
+            glz::json_t data{};
+            glz::json_t payload{};
+
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (!err && payload.is_object()) {
+                if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                    verb = payload["verb"].get<std::string>();
+                } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                    verb = payload["action"].get<std::string>();
+                }
+                if (payload.contains("data") && payload["data"].is_object()) {
+                    data = payload["data"];
+                } else {
+                    data = payload;
+                }
+            } else {
+                verb = std::string(action_json);
+            }
+
+            if (verb == "select_series") {
+                std::string dataset;
+                if (data.is_object()) {
+                    if (data.contains("dataset") && data["dataset"].holds<std::string>()) {
+                        dataset = data["dataset"].get<std::string>();
+                    } else if (data.contains("dataset_selector") && data["dataset_selector"].holds<std::string>()) {
+                        dataset = data["dataset_selector"].get<std::string>();
+                    } else if (data.contains("series") && data["series"].holds<std::string>()) {
+                        dataset = data["series"].get<std::string>();
+                    } else if (data.contains("series_id") && data["series_id"].holds<std::string>()) {
+                        dataset = data["series_id"].get<std::string>();
+                    } else if (data.contains("name") && data["name"].holds<std::string>()) {
+                        dataset = data["name"].get<std::string>();
+                    }
+                }
+                if (!dataset.empty()) {
+                    select_series_by_name(dataset);
+                }
+                last_action_ = "select_series";
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "filter_range") {
+                std::string range;
+                if (data.is_object()) {
+                    if (data.contains("range") && data["range"].holds<std::string>()) {
+                        range = data["range"].get<std::string>();
+                    } else if (data.contains("filter_range") && data["filter_range"].holds<std::string>()) {
+                        range = data["filter_range"].get<std::string>();
+                    }
+                }
+                if (!range.empty()) {
+                    selected_range_ = range;
+                }
+                last_action_ = "filter_range";
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "export_csv") {
+                std::string export_path;
+                if (data.is_object() && data.contains("path") && data["path"].holds<std::string>()) {
+                    export_path = data["path"].get<std::string>();
+                } else {
+                    auto dir = rouen::platform::get_user_data_path();
+                    std::filesystem::create_directories(dir);
+                    export_path = (dir / std::format("{}.csv", current_data_.name.empty() ? "series" : current_data_.name)).string();
+                }
+                try {
+                    std::ofstream ofs(export_path);
+                    if (ofs.is_open()) {
+                        ofs << "Order,Label,Value\n";
+                        for (size_t i = 0; i < current_data_.points.size(); ++i) {
+                            ofs << i << ",\"" << current_data_.points[i].label << "\"," << current_data_.points[i].value << "\n";
+                        }
+                        ofs.close();
+                        last_exported_csv_path_ = export_path;
+                    }
+                } catch (...) {}
+                last_action_ = "export_csv";
+            } else if (verb == "toggle_adaptive_view") {
+                adaptive_view_mode = !adaptive_view_mode;
+                last_action_ = "toggle_adaptive_view";
+            } else if (verb == "refresh") {
+                refresh_datasets();
+                last_action_ = "refresh";
+                last_adaptive_parse_time_ = {};
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[number-series] Action error: " << e.what() << std::endl;
+        }
+    }
+
+    [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    void set_adaptive_view_mode(bool mode) noexcept { adaptive_view_mode = mode; }
+    [[nodiscard]] std::string get_last_action() const { return last_action_; }
+    [[nodiscard]] std::string get_selected_series_name() const { return current_data_.name; }
+    [[nodiscard]] std::string get_selected_range() const { return selected_range_; }
+    [[nodiscard]] std::string get_last_exported_csv() const { return last_exported_csv_path_; }
+
 private:
     void refresh_datasets() {
         datasets_ = repository_.list_series();
@@ -753,6 +1122,19 @@ private:
     series_data current_data_;
     std::vector<series_data> datasets_;
     size_t selected_dataset_index_ = 0;
+
+    // Adaptive Card presentation override state
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    std::string adaptive_error_{};
+    std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+
+    std::string last_action_{};
+    std::string selected_range_{"All"};
+    std::string last_exported_csv_path_{};
 };
 
 } // namespace rouen::cards
