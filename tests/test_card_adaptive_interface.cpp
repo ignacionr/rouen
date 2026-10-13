@@ -2074,6 +2074,121 @@ TEST(envvars_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"env_export\",\"data\":{}}"));
 }
 
+TEST(gitAdaptiveTest, JsonSerialization) {
+    ::git git_card{};
+    std::string card_json = git_card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_branch_fact = false;
+    bool found_working_tree_fact = false;
+    bool found_upstream_sync_fact = false;
+    bool found_latest_commit_fact = false;
+    bool found_commit_msg_input = false;
+    bool found_branch_choice_input = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.Text" && child.id == "commit_message") {
+                    found_commit_msg_input = true;
+                }
+                if (child.type == "Input.ChoiceSet" && child.id == "branch_name") {
+                    found_branch_choice_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Branch:") found_branch_fact = true;
+                if (fact.title == "Working Tree:") found_working_tree_fact = true;
+                if (fact.title == "Upstream Sync:") found_upstream_sync_fact = true;
+                if (fact.title == "Latest Commit:") found_latest_commit_fact = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_branch_fact);
+    EXPECT_TRUE(found_working_tree_fact);
+    EXPECT_TRUE(found_upstream_sync_fact);
+    EXPECT_TRUE(found_latest_commit_fact);
+    EXPECT_TRUE(found_commit_msg_input);
+    EXPECT_TRUE(found_branch_choice_input);
+
+    bool found_act_commit = false;
+    bool found_act_pull = false;
+    bool found_act_push = false;
+    bool found_act_ai_summary = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "git_commit") found_act_commit = true;
+        if (act.verb == "git_pull") found_act_pull = true;
+        if (act.verb == "git_push") found_act_push = true;
+        if (act.verb == "git_ai_summary") found_act_ai_summary = true;
+    }
+    EXPECT_TRUE(found_act_commit);
+    EXPECT_TRUE(found_act_pull);
+    EXPECT_TRUE(found_act_push);
+    EXPECT_TRUE(found_act_ai_summary);
+}
+
+TEST(gitAdaptiveTest, ActionDispatch) {
+    ::git git_card{};
+
+    // Initial state
+    EXPECT_FALSE(git_card.is_adaptive_view_mode());
+
+    // 1. git_commit
+    git_card.handle_action(R"({"type":"Action.Execute","verb":"git_commit","data":{"commit_message":"feat(git): add adaptive card action handling"}})");
+    EXPECT_EQ(git_card.get_last_action(), "git_commit");
+    EXPECT_EQ(git_card.last_commit_message, "feat(git): add adaptive card action handling");
+
+    // 2. git_pull
+    git_card.handle_action(R"({"type":"Action.Execute","verb":"git_pull"})");
+    EXPECT_EQ(git_card.get_last_action(), "git_pull");
+
+    // 3. git_push
+    git_card.handle_action(R"({"type":"Action.Execute","verb":"git_push"})");
+    EXPECT_EQ(git_card.get_last_action(), "git_push");
+
+    // 4. git_checkout
+    git_card.handle_action(R"({"type":"Action.Execute","verb":"git_checkout","data":{"branch_name":"feature/adaptive-cards"}})");
+    EXPECT_EQ(git_card.get_last_action(), "git_checkout");
+    EXPECT_EQ(git_card.get_last_checked_out_branch(), "feature/adaptive-cards");
+    EXPECT_EQ(git_card.current_branch, "feature/adaptive-cards");
+
+    // 5. git_stage_file
+    git_card.handle_action(R"({"type":"Action.Execute","verb":"git_stage_file","data":{"file_path":"src/cards/development/git.cpp"}})");
+    EXPECT_EQ(git_card.get_last_action(), "git_stage_file");
+    EXPECT_EQ(git_card.get_last_staged_file(), "src/cards/development/git.cpp");
+
+    // 6. git_ai_summary
+    git_card.handle_action(R"({"type":"Action.Execute","verb":"git_ai_summary"})");
+    EXPECT_EQ(git_card.get_last_action(), "git_ai_summary");
+
+    // 7. toggle_adaptive_view
+    git_card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(git_card.is_adaptive_view_mode());
+    git_card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(git_card.is_adaptive_view_mode());
+}
+
+TEST(gitAdaptiveTest, MalformedActionHandling) {
+    ::git git_card{};
+    EXPECT_NO_THROW(git_card.handle_action(""));
+    EXPECT_NO_THROW(git_card.handle_action("not a json string"));
+    EXPECT_NO_THROW(git_card.handle_action("{"));
+    EXPECT_NO_THROW(git_card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(git_card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(git_card.handle_action("{\"verb\":\"git_commit\",\"data\":null}"));
+    EXPECT_NO_THROW(git_card.handle_action("{\"verb\":\"git_checkout\",\"data\":{\"branch_name\":null}}"));
+    EXPECT_NO_THROW(git_card.handle_action("{\"verb\":\"git_stage_file\",\"data\":{}}"));
+}
+
 
 
 

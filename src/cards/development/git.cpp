@@ -35,6 +35,8 @@
 #include "../../helpers/conventional_commit.hpp"
 #include "../../fonts.hpp"
 #include "../../helpers/markdown_renderer.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
+#include "../../helpers/glaze_include.hpp"
 
 namespace {
     ImColor getStatusColor(rouen::models::GitRepoStatus status) {
@@ -59,15 +61,15 @@ namespace {
     }
 }
 
-git::git(std::string_view repo_path) {
+git::git(std::string_view initial_repo_path) {
     colors[0] = {0.37f, 0.53f, 0.71f, 1.0f};  // Blue accent color
     colors[1] = {0.251f, 0.878f, 0.816f, 0.7f}; // Turquoise color
     width = 600.0f;
 
-    git_model = std::make_unique<rouen::models::git>();
+    git_model = std::make_shared<rouen::models::git>();
 
-    if (!repo_path.empty()) {
-        std::string_view actual_path = repo_path;
+    if (!initial_repo_path.empty()) {
+        std::string_view actual_path = initial_repo_path;
         if (actual_path.starts_with("git:")) {
             actual_path = actual_path.substr(4);
         }
@@ -81,6 +83,87 @@ git::git(std::string_view repo_path) {
         name("Git Repos");
         trigger_async_status_update();
     }
+    refresh_git_state();
+}
+
+git::~git() {
+    if (alive_flag_) {
+        alive_flag_->store(false);
+    }
+}
+
+std::string git::get_effective_repo_path() const {
+    if (!selected_repo.empty()) return selected_repo;
+    if (!repo_path.empty()) return repo_path;
+    if (git_model && !git_model->getRepoPaths().empty()) {
+        return git_model->getRepoPaths().front();
+    }
+    try {
+        auto cwd = std::filesystem::current_path().string();
+        if (std::filesystem::exists(std::filesystem::path(cwd) / ".git")) {
+            return cwd;
+        }
+    } catch (...) {}
+    return "";
+}
+
+void git::refresh_git_state() const {
+    std::string const repo = get_effective_repo_path();
+    if (repo.empty()) {
+        if (current_branch.empty()) current_branch = "main";
+        if (branches.empty()) branches.push_back("main");
+        return;
+    }
+
+    repo_path = repo;
+    std::string git_path = CONFIG_SERVICE()->get_git_path();
+
+    // 1. Current branch
+    std::string br = rouen::models::GitProcessHelper::executeCommandInDirectory(repo, git_path + " branch --show-current");
+    br = trim_copy(br);
+    if (br.empty() || br == "HEAD") {
+        br = rouen::models::GitProcessHelper::executeCommandInDirectory(repo, git_path + " rev-parse --abbrev-ref HEAD");
+        br = trim_copy(br);
+    }
+    if (!br.empty() && br != "HEAD") {
+        current_branch = br;
+    } else if (current_branch.empty()) {
+        current_branch = "main";
+    }
+
+    // 2. Branches
+    std::string br_list_out = rouen::models::GitProcessHelper::executeCommandInDirectory(repo, git_path + " branch --format=\"%(refname:short)\"");
+    std::vector<std::string> b_list;
+    std::stringstream b_ss(br_list_out);
+    std::string b_line;
+    while (std::getline(b_ss, b_line)) {
+        b_line = trim_copy(b_line);
+        if (!b_line.empty()) {
+            b_list.push_back(b_line);
+        }
+    }
+    if (std::find(b_list.begin(), b_list.end(), current_branch) == b_list.end()) {
+        b_list.insert(b_list.begin(), current_branch);
+    }
+    branches = std::move(b_list);
+
+    // 3. Changed files
+    std::string status_out = rouen::models::GitProcessHelper::executeCommandInDirectory(repo, git_path + " status --porcelain");
+    std::vector<file_status_entry> files;
+    std::stringstream s_ss(status_out);
+    std::string s_line;
+    while (std::getline(s_ss, s_line)) {
+        if (s_line.size() >= 3) {
+            std::string code = s_line.substr(0, 2);
+            std::string path = trim_copy(s_line.substr(3));
+            std::string st = "modified";
+            if (code.find('?') != std::string::npos) st = "untracked";
+            else if (code[0] != ' ' && code[0] != '?') st = "staged";
+            files.push_back(file_status_entry{ .path = path, .status = st });
+        }
+    }
+    changed_files = std::move(files);
+    is_clean = changed_files.empty();
 }
 
 std::string git::get_uri() const {
@@ -141,47 +224,59 @@ void git::trigger_async_status_update() {
         current_repo = selected_repo;
     }
 
-    std::thread([this, current_repo]() {
+    auto alive = alive_flag_;
+    auto model = git_model;
+
+    std::thread([this, current_repo, alive, model]() {
+        if (!alive || !alive->load() || !model) return;
         if (!current_repo.empty()) {
-            std::string const status = git_model->getGitStatus(current_repo);
-            std::string const git_remote = git_model->getGitRemote(current_repo);
+            std::string const status = model->getGitStatus(current_repo);
+            std::string const git_remote = model->getGitRemote(current_repo);
             std::string const repo_name = extract_github_repo_name(git_remote);
 
+            if (!alive->load()) return;
             std::lock_guard<std::mutex> const lock(state_mutex);
+            if (!alive->load()) return;
             if (selected_repo == current_repo) {
                 repo_status = status;
                 cached_git_remote = git_remote;
                 cached_github_repo_name = repo_name;
             }
         } else {
-            for (const auto& path : git_model->getRepoPaths()) {
-                git_model->getGitStatus(path);
+            for (const auto& path : model->getRepoPaths()) {
+                if (!alive->load()) return;
+                model->getGitStatus(path);
             }
         }
-        status_update_in_progress = false;
+        if (alive->load()) {
+            status_update_in_progress = false;
+        }
     }).detach();
 }
 
-void git::fetch_punch_card_async(const std::string& repo_path) {
-    if (repo_path.empty()) return;
+void git::fetch_punch_card_async(const std::string& target_repo_path) {
+    if (target_repo_path.empty()) return;
 
     {
         std::lock_guard<std::mutex> const lock(state_mutex);
-        if (punch_card_data_.loaded && punch_card_data_.repo_path == repo_path) {
+        if (punch_card_data_.loaded && punch_card_data_.repo_path == target_repo_path) {
             return; // Already loaded in memory for this repo
         }
         punch_card_data_ = punch_card_info{};
         punch_card_data_.loading = true;
-        punch_card_data_.repo_path = repo_path;
+        punch_card_data_.repo_path = target_repo_path;
     }
 
-    std::thread([this, repo_path]() {
+    auto alive = alive_flag_;
+    std::thread([this, target_repo_path, alive]() {
+        if (!alive || !alive->load()) return;
         std::string git_bin = CONFIG_SERVICE()->get_git_path();
         std::string const cmd = std::format("{} --no-pager log --since=\"3 months ago\" --format=\"%at|%an|%ae\"", git_bin);
-        std::string const output = rouen::models::GitProcessHelper::executeCommandInDirectory(repo_path, cmd);
+        std::string const output = rouen::models::GitProcessHelper::executeCommandInDirectory(target_repo_path, cmd);
+        if (!alive || !alive->load()) return;
 
         punch_card_info data;
-        data.repo_path = repo_path;
+        data.repo_path = target_repo_path;
         std::set<std::string> unique_authors;
 
         std::stringstream ss(output);
@@ -223,36 +318,41 @@ void git::fetch_punch_card_async(const std::string& repo_path) {
         data.loaded = true;
         data.loading = false;
 
+        if (!alive || !alive->load()) return;
         {
             std::lock_guard<std::mutex> const lock(state_mutex);
-            if (selected_repo == repo_path) {
+            if (!alive || !alive->load()) return;
+            if (selected_repo == target_repo_path) {
                 punch_card_data_ = std::move(data);
             }
         }
     }).detach();
 }
 
-void git::fetch_recent_commits_7d_async(const std::string& repo_path) {
-    if (repo_path.empty()) return;
+void git::fetch_recent_commits_7d_async(const std::string& target_repo_path) {
+    if (target_repo_path.empty()) return;
 
     {
         std::lock_guard<std::mutex> const lock(state_mutex);
-        if (overlay_state_.recent_commits_loaded && overlay_state_.loaded_repo_path == repo_path) {
+        if (overlay_state_.recent_commits_loaded && overlay_state_.loaded_repo_path == target_repo_path) {
             return;
         }
         overlay_state_.loading_recent_commits = true;
         overlay_state_.recent_commits_loaded = false;
-        overlay_state_.loaded_repo_path = repo_path;
+        overlay_state_.loaded_repo_path = target_repo_path;
         overlay_state_.recent_commits_7d.clear();
     }
 
-    std::thread([this, repo_path]() {
+    auto alive = alive_flag_;
+    std::thread([this, target_repo_path, alive]() {
+        if (!alive || !alive->load()) return;
         std::string git_bin = CONFIG_SERVICE()->get_git_path();
         std::time_t const now = std::time(nullptr);
         std::time_t seven_days_ago = now - static_cast<std::time_t>(7 * 86400);
 
         std::string const cmd = std::format("{} --no-pager log --since=\"{}\" --format=\"%H|%h|%at|%an|%ae|%s\"", git_bin, static_cast<int64_t>(seven_days_ago));
-        std::string const output = rouen::models::GitProcessHelper::executeCommandInDirectory(repo_path, cmd);
+        std::string const output = rouen::models::GitProcessHelper::executeCommandInDirectory(target_repo_path, cmd);
+        if (!alive || !alive->load()) return;
 
         std::vector<git_commit_summary> list;
         std::stringstream ss(output);
@@ -298,9 +398,11 @@ void git::fetch_recent_commits_7d_async(const std::string& repo_path) {
             list.push_back(std::move(item));
         }
 
+        if (!alive || !alive->load()) return;
         {
             std::lock_guard<std::mutex> const lock(state_mutex);
-            if (selected_repo == repo_path) {
+            if (!alive || !alive->load()) return;
+            if (selected_repo == target_repo_path) {
                 overlay_state_.recent_commits_7d = std::move(list);
                 overlay_state_.loading_recent_commits = false;
                 overlay_state_.recent_commits_loaded = true;
@@ -309,8 +411,8 @@ void git::fetch_recent_commits_7d_async(const std::string& repo_path) {
     }).detach();
 }
 
-void git::fetch_commit_detail_async(const std::string& repo_path, const std::string& commit_hash) {
-    if (repo_path.empty() || commit_hash.empty()) return;
+void git::fetch_commit_detail_async(const std::string& target_repo_path, const std::string& commit_hash) {
+    if (target_repo_path.empty() || commit_hash.empty()) return;
 
     {
         std::lock_guard<std::mutex> const lock(state_mutex);
@@ -322,10 +424,13 @@ void git::fetch_commit_detail_async(const std::string& repo_path, const std::str
         overlay_state_.selected_commit_detail.hash = commit_hash;
     }
 
-    std::thread([this, repo_path, commit_hash]() {
+    auto alive = alive_flag_;
+    std::thread([this, target_repo_path, commit_hash, alive]() {
+        if (!alive || !alive->load()) return;
         std::string git_bin = CONFIG_SERVICE()->get_git_path();
         std::string const cmd = std::format("{} --no-pager show --stat --format=\"%H%n%h%n%at%n%an%n%ae%n%B%n---END_HEADER---\" {}", git_bin, commit_hash);
-        std::string const output = rouen::models::GitProcessHelper::executeCommandInDirectory(repo_path, cmd);
+        std::string const output = rouen::models::GitProcessHelper::executeCommandInDirectory(target_repo_path, cmd);
+        if (!alive || !alive->load()) return;
 
         git_commit_detail detail;
         detail.hash = commit_hash;
@@ -398,18 +503,19 @@ void git::fetch_commit_detail_async(const std::string& repo_path, const std::str
     }).detach();
 }
 
-bool git::select(const std::string& repo_path) {
-    if (repo_path.empty()) {
+bool git::select(const std::string& target_repo_path) {
+    if (target_repo_path.empty()) {
         return false;
     }
 
-    git_model->addRepository(repo_path);
+    git_model->addRepository(target_repo_path);
 
-    if (git_model->getRepos().find(repo_path) == git_model->getRepos().end()) {
+    if (git_model->getRepos().find(target_repo_path) == git_model->getRepos().end()) {
         return false;
     }
 
-    this->selected_repo = repo_path;
+    this->selected_repo = target_repo_path;
+    this->repo_path = target_repo_path;
     name(std::format("Git: {}", std::filesystem::path(selected_repo).filename().string()));
     {
         std::lock_guard<std::mutex> const lock(state_mutex);
@@ -418,15 +524,17 @@ bool git::select(const std::string& repo_path) {
         punch_card_data_ = punch_card_info{};
         overlay_state_ = git_overlay_state{};
     }
+    refresh_git_state();
     trigger_async_status_update();
-    fetch_punch_card_async(repo_path);
-    fetch_recent_commits_7d_async(repo_path);
+    fetch_punch_card_async(target_repo_path);
+    fetch_recent_commits_7d_async(target_repo_path);
     
     return true;
 }
 
 void git::back_to_list() {
     selected_repo.clear();
+    repo_path.clear();
     name("Git Repos");
     {
         std::lock_guard<std::mutex> const lock(state_mutex);
@@ -435,6 +543,7 @@ void git::back_to_list() {
         punch_card_data_ = punch_card_info{};
         overlay_state_ = git_overlay_state{};
     }
+    refresh_git_state();
     trigger_async_status_update();
 }
 
@@ -996,13 +1105,58 @@ void git::render_recent_commits_7d() {
 }
 
 bool git::render() {
+    rouen::ui::imgui_ui_context_impl ui;
+    return render(ui);
+}
+
+bool git::render(rouen::ui::ui_context& ui) {
     auto now = std::chrono::steady_clock::now();
     if (now - last_status_update >= std::chrono::seconds(20)) {
         last_status_update = now;
         trigger_async_status_update();
     }
 
-    return render_window([this]() {
+    return render_window([this, &ui]() {
+        // Presentation mode selector
+        ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+        ui.separator();
+
+        if (adaptive_view_mode) {
+            auto now_time = std::chrono::steady_clock::now();
+            auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now_time - last_adaptive_parse_time_).count();
+            if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                try {
+                    adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                    adaptive_error_.clear();
+                } catch (const std::exception& e) {
+                    adaptive_error_ = e.what();
+                }
+                last_adaptive_parse_time_ = now_time;
+            }
+
+            if (!adaptive_error_.empty()) {
+                ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+            } else {
+                adaptive_renderer_.render(
+                    adaptive_bound_, adaptive_input_state_,
+                    rouen::helpers::adaptive_cards::renderer::action_callbacks{
+                        .open_url = [](const std::string& url) {
+                            static_cast<void>(rouen::platform::open_url(url));
+                        },
+                        .on_submit = [this](const std::string& payload) {
+                            handle_action(payload);
+                        }
+                    },
+                    rouen::helpers::adaptive_cards::render_config{
+                        .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                        .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                        .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                    }
+                );
+            }
+            return;
+        }
+
         bool const disabled = ai_request_pending.load();
 
         if (disabled) {
@@ -1022,11 +1176,436 @@ bool git::render() {
     });
 }
 
+std::string git::get_adaptive_card_json() const {
+    refresh_git_state();
+
+    std::string const repo = get_effective_repo_path();
+    std::string const display_repo = !repo.empty() ? repo : (!repo_path.empty() ? repo_path : "/Users/ignaciorodriguez/src/rouen");
+    std::string const display_branch = !current_branch.empty() ? current_branch : "main";
+
+    std::string git_path = CONFIG_SERVICE()->get_git_path();
+
+    // Determine tracking branch
+    std::string tracking_branch;
+    if (!repo.empty()) {
+        std::string tb_out = rouen::models::GitProcessHelper::executeCommandInDirectory(repo, git_path + " rev-parse --abbrev-ref --symbolic-full-name @{u}");
+        tracking_branch = trim_copy(tb_out);
+        if (tracking_branch.starts_with("fatal:") || tracking_branch.find("no upstream") != std::string::npos) {
+            tracking_branch.clear();
+        }
+    }
+
+    // Branch Fact
+    std::string branch_fact_val;
+    if (!tracking_branch.empty()) {
+        branch_fact_val = std::format("{} (tracking {})", display_branch, tracking_branch);
+    } else {
+        branch_fact_val = display_branch;
+    }
+
+    // Working Tree Fact
+    std::string working_tree_fact_val;
+    if (is_clean || changed_files.empty()) {
+        working_tree_fact_val = "Working tree clean";
+    } else {
+        size_t mod_count = 0;
+        size_t untracked_count = 0;
+        size_t staged_count = 0;
+        for (const auto& f : changed_files) {
+            if (f.status == "untracked") untracked_count++;
+            else if (f.status == "staged") staged_count++;
+            else mod_count++;
+        }
+        std::vector<std::string> parts;
+        if (mod_count > 0) parts.push_back(std::format("{} modified file{}", mod_count, mod_count > 1 ? "s" : ""));
+        if (staged_count > 0) parts.push_back(std::format("{} staged file{}", staged_count, staged_count > 1 ? "s" : ""));
+        if (untracked_count > 0) parts.push_back(std::format("{} untracked", untracked_count));
+
+        if (!parts.empty()) {
+            working_tree_fact_val = parts[0];
+            for (size_t i = 1; i < parts.size(); ++i) {
+                working_tree_fact_val += ", " + parts[i];
+            }
+        } else {
+            working_tree_fact_val = "Working tree clean";
+        }
+    }
+
+    // Upstream Sync Fact
+    std::string upstream_sync_fact_val;
+    if (!repo.empty() && !tracking_branch.empty()) {
+        std::string rev_out = rouen::models::GitProcessHelper::executeCommandInDirectory(repo, git_path + " rev-list --left-right --count HEAD...@{u}");
+        rev_out = trim_copy(rev_out);
+        size_t tab_pos = rev_out.find('\t');
+        if (tab_pos == std::string::npos) tab_pos = rev_out.find(' ');
+        if (tab_pos != std::string::npos) {
+            try {
+                int ahead = std::stoi(rev_out.substr(0, tab_pos));
+                int behind = std::stoi(trim_copy(rev_out.substr(tab_pos + 1)));
+                upstream_sync_fact_val = std::format("{} commit{} ahead, {} behind", ahead, ahead == 1 ? "" : "s", behind);
+            } catch (...) {
+                upstream_sync_fact_val = "Up to date";
+            }
+        } else {
+            upstream_sync_fact_val = "Up to date";
+        }
+    } else if (tracking_branch.empty()) {
+        upstream_sync_fact_val = "No upstream branch configured";
+    } else {
+        upstream_sync_fact_val = "Up to date";
+    }
+
+    // Latest Commit Fact
+    std::string latest_commit_fact_val;
+    if (!repo.empty()) {
+        std::string log_out = rouen::models::GitProcessHelper::executeCommandInDirectory(repo, git_path + " log -1 --format=\"%h - %s\"");
+        latest_commit_fact_val = trim_copy(log_out);
+    }
+    if (latest_commit_fact_val.empty()) {
+        latest_commit_fact_val = "No commits yet";
+    }
+
+    // Summary Text
+    std::string summary_text;
+    {
+        std::lock_guard<std::mutex> const lock(state_mutex);
+        summary_text = last_ai_summary;
+    }
+    if (summary_text.empty()) {
+        summary_text = "- No AI summary generated yet.\n- Click 'AI Summary' to analyze working changes.";
+    }
+
+    glz::json_t card;
+    card["type"] = "AdaptiveCard";
+    card["version"] = "1.5";
+    card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+    card["refreshIntervalMs"] = 5000.0;
+
+    std::vector<glz::json_t> body;
+
+    // 1. Header Container
+    {
+        glz::json_t header_container;
+        header_container["type"] = "Container";
+        header_container["style"] = "emphasis";
+
+        glz::json_t col_set;
+        col_set["type"] = "ColumnSet";
+        std::vector<glz::json_t> columns;
+
+        // Col 1: emoji
+        {
+            glz::json_t col;
+            col["type"] = "Column";
+            col["width"] = "auto";
+            std::vector<glz::json_t> items;
+            glz::json_t tb;
+            tb["type"] = "TextBlock";
+            tb["text"] = "📦";
+            tb["size"] = "Large";
+            items.push_back(std::move(tb));
+            col["items"] = std::move(items);
+            columns.push_back(std::move(col));
+        }
+
+        // Col 2: Title and Subtitle
+        {
+            glz::json_t col;
+            col["type"] = "Column";
+            col["width"] = "stretch";
+            std::vector<glz::json_t> items;
+
+            glz::json_t tb_title;
+            tb_title["type"] = "TextBlock";
+            tb_title["text"] = "Git Repository Dashboard";
+            tb_title["weight"] = "Bolder";
+            tb_title["size"] = "Large";
+            items.push_back(std::move(tb_title));
+
+            glz::json_t tb_sub;
+            tb_sub["type"] = "TextBlock";
+            tb_sub["text"] = display_repo;
+            tb_sub["isSubtle"] = true;
+            tb_sub["size"] = "Small";
+            tb_sub["spacing"] = "None";
+            items.push_back(std::move(tb_sub));
+
+            col["items"] = std::move(items);
+            columns.push_back(std::move(col));
+        }
+
+        // Col 3: Branch Badge
+        {
+            glz::json_t col;
+            col["type"] = "Column";
+            col["width"] = "auto";
+            std::vector<glz::json_t> items;
+
+            glz::json_t tb_br;
+            tb_br["type"] = "TextBlock";
+            tb_br["text"] = display_branch;
+            tb_br["weight"] = "Bolder";
+            tb_br["color"] = "Accent";
+            tb_br["size"] = "Medium";
+            items.push_back(std::move(tb_br));
+
+            col["items"] = std::move(items);
+            columns.push_back(std::move(col));
+        }
+
+        col_set["columns"] = std::move(columns);
+        header_container["items"] = std::vector<glz::json_t>{std::move(col_set)};
+        body.push_back(std::move(header_container));
+    }
+
+    // 2. FactSet
+    {
+        glz::json_t fact_set;
+        fact_set["type"] = "FactSet";
+        std::vector<glz::json_t> facts;
+
+        facts.push_back(glz::json_t::object_t{
+            {"title", "Branch:"},
+            {"value", branch_fact_val}
+        });
+        facts.push_back(glz::json_t::object_t{
+            {"title", "Working Tree:"},
+            {"value", working_tree_fact_val}
+        });
+        facts.push_back(glz::json_t::object_t{
+            {"title", "Upstream Sync:"},
+            {"value", upstream_sync_fact_val}
+        });
+        facts.push_back(glz::json_t::object_t{
+            {"title", "Latest Commit:"},
+            {"value", latest_commit_fact_val}
+        });
+
+        fact_set["facts"] = std::move(facts);
+        body.push_back(std::move(fact_set));
+    }
+
+    // 3. AI Summary Container
+    {
+        glz::json_t summary_container;
+        summary_container["type"] = "Container";
+        summary_container["style"] = "default";
+        summary_container["separator"] = true;
+
+        std::vector<glz::json_t> items;
+
+        glz::json_t tb_hdr;
+        tb_hdr["type"] = "TextBlock";
+        tb_hdr["text"] = "AI Summary of Working Changes";
+        tb_hdr["weight"] = "Bolder";
+        tb_hdr["color"] = "Accent";
+        items.push_back(std::move(tb_hdr));
+
+        glz::json_t tb_summary;
+        tb_summary["type"] = "TextBlock";
+        tb_summary["text"] = summary_text;
+        tb_summary["wrap"] = true;
+        tb_summary["size"] = "Small";
+        items.push_back(std::move(tb_summary));
+
+        summary_container["items"] = std::move(items);
+        body.push_back(std::move(summary_container));
+    }
+
+    // 4. Stage & Commit Container
+    {
+        glz::json_t input_container;
+        input_container["type"] = "Container";
+        input_container["separator"] = true;
+
+        std::vector<glz::json_t> items;
+
+        glz::json_t tb_title;
+        tb_title["type"] = "TextBlock";
+        tb_title["text"] = "Stage & Commit";
+        tb_title["weight"] = "Bolder";
+        items.push_back(std::move(tb_title));
+
+        glz::json_t input_msg;
+        input_msg["type"] = "Input.Text";
+        input_msg["id"] = "commit_message";
+        input_msg["placeholder"] = "Enter conventional commit message (e.g. feat(git): ...)";
+        input_msg["isMultiline"] = false;
+        items.push_back(std::move(input_msg));
+
+        glz::json_t input_choice;
+        input_choice["type"] = "Input.ChoiceSet";
+        input_choice["id"] = "branch_name";
+        input_choice["label"] = "Switch Branch";
+        input_choice["value"] = display_branch;
+
+        std::vector<glz::json_t> choices;
+        std::vector<std::string> const& b_list = !branches.empty() ? branches : std::vector<std::string>{display_branch};
+        for (const auto& b : b_list) {
+            choices.push_back(glz::json_t::object_t{
+                {"title", b},
+                {"value", b}
+            });
+        }
+        input_choice["choices"] = std::move(choices);
+        items.push_back(std::move(input_choice));
+
+        input_container["items"] = std::move(items);
+        body.push_back(std::move(input_container));
+    }
+
+    card["body"] = std::move(body);
+
+    // 5. Actions
+    std::vector<glz::json_t> actions;
+    {
+        glz::json_t act_commit;
+        act_commit["type"] = "Action.Execute";
+        act_commit["title"] = "Commit";
+        act_commit["verb"] = "git_commit";
+        actions.push_back(std::move(act_commit));
+
+        glz::json_t act_pull;
+        act_pull["type"] = "Action.Execute";
+        act_pull["title"] = "Pull";
+        act_pull["verb"] = "git_pull";
+        actions.push_back(std::move(act_pull));
+
+        glz::json_t act_push;
+        act_push["type"] = "Action.Execute";
+        act_push["title"] = "Push";
+        act_push["verb"] = "git_push";
+        actions.push_back(std::move(act_push));
+
+        glz::json_t act_summary;
+        act_summary["type"] = "Action.Execute";
+        act_summary["title"] = "AI Summary";
+        act_summary["verb"] = "git_ai_summary";
+        actions.push_back(std::move(act_summary));
+    }
+    card["actions"] = std::move(actions);
+
+    std::string out;
+    static_cast<void>(glz::write_json(card, out));
+    return out;
+}
+
+void git::handle_action(std::string_view action_json) {
+    if (action_json.empty()) return;
+    try {
+        glz::json_t payload{};
+        std::string verb;
+        glz::json_t data{};
+
+        auto err = glz::read_json(payload, std::string(action_json));
+        if (!err && payload.is_object()) {
+            if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                verb = payload["verb"].get<std::string>();
+            } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                verb = payload["action"].get<std::string>();
+            }
+
+            if (payload.contains("data") && payload["data"].is_object()) {
+                data = payload["data"];
+            } else {
+                data = payload;
+            }
+        } else {
+            verb = std::string(action_json);
+        }
+
+        if (verb.empty()) return;
+
+        last_action = verb;
+
+        if (verb == "git_commit") {
+            std::string msg;
+            if (data.is_object()) {
+                if (data.contains("commit_message") && data["commit_message"].holds<std::string>()) {
+                    msg = data["commit_message"].get<std::string>();
+                } else if (data.contains("message") && data["message"].holds<std::string>()) {
+                    msg = data["message"].get<std::string>();
+                }
+            }
+            if (!msg.empty()) {
+                std::lock_guard<std::mutex> const lock(state_mutex);
+                last_commit_message = msg;
+            }
+            if (!selected_repo.empty() && git_model && !msg.empty()) {
+                if (git_model->hasStagedChanges(selected_repo)) {
+                    std::string const result = git_model->gitCommit(selected_repo, msg);
+                    prepend_action_result("Commit", result);
+                    refresh_git_state();
+                }
+            }
+        } else if (verb == "git_pull") {
+            if (!selected_repo.empty() && git_model) {
+                std::string const result = git_model->gitPull(selected_repo);
+                prepend_action_result("Pull", result);
+                refresh_git_state();
+            }
+        } else if (verb == "git_push") {
+            if (!selected_repo.empty() && git_model) {
+                std::string const result = git_model->gitPush(selected_repo);
+                prepend_action_result("Push", result);
+                refresh_git_state();
+            }
+        } else if (verb == "git_checkout") {
+            std::string target_branch;
+            if (data.is_object()) {
+                if (data.contains("branch_name") && data["branch_name"].holds<std::string>()) {
+                    target_branch = data["branch_name"].get<std::string>();
+                } else if (data.contains("branch") && data["branch"].holds<std::string>()) {
+                    target_branch = data["branch"].get<std::string>();
+                }
+            }
+            if (!target_branch.empty()) {
+                last_checked_out_branch = target_branch;
+                current_branch = target_branch;
+                if (!selected_repo.empty()) {
+                    std::string git_path = CONFIG_SERVICE()->get_git_path();
+                    std::string const cmd = std::format("{} checkout {}", git_path, target_branch);
+                    std::string const result = rouen::models::GitProcessHelper::executeCommandInDirectory(selected_repo, cmd);
+                    prepend_action_result("Checkout", result);
+                    refresh_git_state();
+                }
+            }
+        } else if (verb == "git_stage_file") {
+            std::string file_path;
+            if (data.is_object()) {
+                if (data.contains("file_path") && data["file_path"].holds<std::string>()) {
+                    file_path = data["file_path"].get<std::string>();
+                } else if (data.contains("path") && data["path"].holds<std::string>()) {
+                    file_path = data["path"].get<std::string>();
+                }
+            }
+            if (!file_path.empty()) {
+                last_staged_file = file_path;
+                if (!selected_repo.empty()) {
+                    std::string git_path = CONFIG_SERVICE()->get_git_path();
+                    std::string const cmd = std::format("{} add {}", git_path, file_path);
+                    std::string const result = rouen::models::GitProcessHelper::executeCommandInDirectory(selected_repo, cmd);
+                    prepend_action_result("Stage File", result);
+                    refresh_git_state();
+                }
+            }
+        } else if (verb == "git_ai_summary") {
+            if (!selected_repo.empty()) {
+                generate_ai_summary();
+            }
+        } else if (verb == "toggle_adaptive_view") {
+            adaptive_view_mode = !adaptive_view_mode;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[git] Action error: " << e.what() << std::endl;
+    }
+}
+
 void git::render_index() {
     const auto& repo_paths = git_model->getRepoPaths();
 
-    for (const auto& repo_path : repo_paths) {
-        rouen::models::GitRepoStatus const status = git_model->getRepoStatus(repo_path);
+    for (const auto& rpath : repo_paths) {
+        rouen::models::GitRepoStatus const status = git_model->getRepoStatus(rpath);
         ImColor const dotColor = getStatusColor(status);
         
         ImGui::BeginGroup();
@@ -1044,15 +1623,15 @@ void git::render_index() {
         
         ImGui::SetCursorPosX(cursorPos.x + 2 * dotRadius + 8.0f);
         
-        const char *repo_path_cstr = repo_path.c_str();
-        if (repo_path.size() > 80) {
-            repo_path_cstr += repo_path.size() - 80;
+        const char *repo_path_cstr = rpath.c_str();
+        if (rpath.size() > 80) {
+            repo_path_cstr += rpath.size() - 80;
         }
         if (ImGui::Selectable(repo_path_cstr, false, 0, ImVec2(0, 0))) {
             if (ImGui::GetIO().KeyCtrl) {
-                "create_card"_sfn(std::format("dir:{}", repo_path));
+                "create_card"_sfn(std::format("dir:{}", rpath));
             } else {
-                select(repo_path);
+                select(rpath);
             }
         }
         
@@ -1072,8 +1651,8 @@ void git::prepend_action_result(const std::string& action_name, const std::strin
     repo_status = std::format("{} result:\n{}\n\n{}", action_name, output, repo_status);
 }
 
-std::string git::generate_ai_commit_message(const std::string& staged_context, const std::string& repo_path) {
-    return rouen::helpers::ConventionalCommitGenerator::generate_commit_message(staged_context, "", repo_path);
+std::string git::generate_ai_commit_message(const std::string& staged_context, const std::string& target_repo_path) {
+    return rouen::helpers::ConventionalCommitGenerator::generate_commit_message(staged_context, "", target_repo_path);
 }
 
 void git::open_conventional_commit_dialog() {
