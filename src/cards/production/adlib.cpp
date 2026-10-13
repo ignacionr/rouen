@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <iostream>
 
 #include <imgui.h>
 
@@ -16,6 +17,9 @@
 #include "adlib_engine.hpp"
 #include "audio_capture.hpp"
 #include "config_service.hpp"
+#include "../../fonts.hpp"
+#include "../../helpers/glaze_include.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
 
 namespace rouen::cards {
 
@@ -27,10 +31,22 @@ adlib_card::adlib_card(std::string_view locator) {
     // Vibrant Production Theme Colors (Indigo / Violet / Electric Cyan)
     colors[0] = ImVec4(0.55f, 0.35f, 0.95f, 1.0f); // Primary Accent (Indigo)
     colors[1] = ImVec4(0.70f, 0.45f, 0.98f, 0.7f); // Secondary Accent
-    get_color(2, ImVec4(0.12f, 0.10f, 0.18f, 1.0f)); // Background
+    // colors[2] = ImVec4(0.12f, 0.10f, 0.18f, 1.0f); // Background
 
     refresh_audio_devices();
     load_config_from_ini();
+
+    soundbank_name_ = "Broadcast Cues & FX";
+    master_volume_ = 1.0f;
+    any_playing_ = false;
+    last_triggered_pad_ = 0;
+
+    pads_ = {
+        sound_pad_entry{1, "Applause", "Applause & Cheering (3.2s)", 3.2, false},
+        sound_pad_entry{2, "Drum Roll", "Drum Roll & Cymbal Hit (4.5s)", 4.5, false},
+        sound_pad_entry{3, "Air Horn", "Air Horn Stager (1.8s)", 1.8, false},
+        sound_pad_entry{4, "Record Scratch", "Record Scratch (0.9s)", 0.9, false}
+    };
 }
 
 void adlib_card::on_close() {
@@ -193,7 +209,52 @@ bool adlib_card::validate_config(std::string& out_error_msg) {
 }
 
 bool adlib_card::render() {
-    return render_window([this]() {
+    rouen::ui::imgui_ui_context_impl ui;
+    return render(ui);
+}
+
+bool adlib_card::render(rouen::ui::ui_context& ui) {
+    return render_window([this, &ui]() {
+        // Presentation mode selector
+        ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+        ui.separator();
+
+        if (adaptive_view_mode) {
+            auto now = std::chrono::steady_clock::now();
+            auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+            if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                try {
+                    adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                    adaptive_error_.clear();
+                } catch (const std::exception& e) {
+                    adaptive_error_ = e.what();
+                }
+                last_adaptive_parse_time_ = now;
+            }
+
+            if (!adaptive_error_.empty()) {
+                ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+            } else {
+                adaptive_renderer_.render(
+                    adaptive_bound_, adaptive_input_state_,
+                    helpers::adaptive_cards::renderer::action_callbacks{
+                        .open_url = [](const std::string& url) {
+                            static_cast<void>(rouen::platform::open_url(url));
+                        },
+                        .on_submit = [this](const std::string& payload) {
+                            handle_action(payload);
+                        }
+                    },
+                    helpers::adaptive_cards::render_config{
+                        .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                        .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                        .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                    }
+                );
+            }
+            return;
+        }
+
         render_content();
     });
 }
@@ -496,6 +557,259 @@ void adlib_card::draw_template_config() {
                 validation_error_.clear();
             }
         }
+    }
+}
+
+std::string adlib_card::get_adaptive_card_json() const {
+    glz::json_t card;
+    card["type"] = "AdaptiveCard";
+    card["version"] = "1.5";
+    card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+    std::vector<glz::json_t> body;
+
+    // 1. Header Container
+    glz::json_t header;
+    header["type"] = "Container";
+    header["style"] = "emphasis";
+
+    glz::json_t col_set;
+    col_set["type"] = "ColumnSet";
+    std::vector<glz::json_t> columns;
+
+    // Column 1: Emoji icon
+    glz::json_t icon_col;
+    icon_col["type"] = "Column";
+    icon_col["width"] = "auto";
+    std::vector<glz::json_t> icon_items;
+    glz::json_t icon_tb;
+    icon_tb["type"] = "TextBlock";
+    icon_tb["text"] = "🎛️";
+    icon_tb["size"] = "Large";
+    icon_items.push_back(std::move(icon_tb));
+    icon_col["items"] = std::move(icon_items);
+    columns.push_back(std::move(icon_col));
+
+    // Column 2: Title & Soundbank subtitle
+    glz::json_t title_col;
+    title_col["type"] = "Column";
+    title_col["width"] = "stretch";
+    std::vector<glz::json_t> title_items;
+    glz::json_t title_tb;
+    title_tb["type"] = "TextBlock";
+    title_tb["text"] = "Ad-Lib Broadcast Soundboard";
+    title_tb["weight"] = "Bolder";
+    title_tb["size"] = "Large";
+    title_items.push_back(std::move(title_tb));
+
+    glz::json_t bank_tb;
+    bank_tb["type"] = "TextBlock";
+    bank_tb["text"] = "Soundbank: " + soundbank_name_;
+    bank_tb["isSubtle"] = true;
+    bank_tb["size"] = "Small";
+    title_items.push_back(std::move(bank_tb));
+
+    title_col["items"] = std::move(title_items);
+    columns.push_back(std::move(title_col));
+
+    // Column 3: Badge "16 PADS"
+    glz::json_t count_col;
+    count_col["type"] = "Column";
+    count_col["width"] = "auto";
+    std::vector<glz::json_t> count_items;
+    glz::json_t count_tb;
+    count_tb["type"] = "TextBlock";
+    count_tb["text"] = "16 PADS";
+    count_tb["weight"] = "Bolder";
+    count_tb["color"] = "Accent";
+    count_tb["size"] = "Small";
+    count_items.push_back(std::move(count_tb));
+    count_col["items"] = std::move(count_items);
+    columns.push_back(std::move(count_col));
+
+    col_set["columns"] = std::move(columns);
+    std::vector<glz::json_t> header_items;
+    header_items.push_back(std::move(col_set));
+    header["items"] = std::move(header_items);
+    body.push_back(std::move(header));
+
+    // 2. Soundbank Preset Selector Container
+    glz::json_t bank_container;
+    bank_container["type"] = "Container";
+    std::vector<glz::json_t> bank_items;
+    glz::json_t choice_set;
+    choice_set["type"] = "Input.ChoiceSet";
+    choice_set["id"] = "bank";
+    choice_set["label"] = "Soundbank Preset";
+    choice_set["value"] = soundbank_name_;
+    std::vector<glz::json_t> choices;
+    choices.push_back(glz::json_t::object_t{{"title", "Broadcast Cues & FX"}, {"value", "Broadcast Cues & FX"}});
+    choices.push_back(glz::json_t::object_t{{"title", "Audience Reactions"}, {"value", "Audience Reactions"}});
+    choices.push_back(glz::json_t::object_t{{"title", "Music Stingers & Beds"}, {"value", "Music Stingers & Beds"}});
+    choice_set["choices"] = std::move(choices);
+    bank_items.push_back(std::move(choice_set));
+    bank_container["items"] = std::move(bank_items);
+    body.push_back(std::move(bank_container));
+
+    // 3. FactSet for soundboard pads
+    glz::json_t fact_set;
+    fact_set["type"] = "FactSet";
+    std::vector<glz::json_t> facts;
+    for (const auto& pad : pads_) {
+        glz::json_t fact;
+        fact["title"] = std::format("Pad {}:", pad.id);
+        fact["value"] = pad.value;
+        facts.push_back(std::move(fact));
+    }
+    fact_set["facts"] = std::move(facts);
+    body.push_back(std::move(fact_set));
+
+    card["body"] = std::move(body);
+
+    // 4. Actions
+    std::vector<glz::json_t> actions;
+    auto add_pad_action = [&actions](const std::string& title, int pad_id) {
+        glz::json_t a;
+        a["type"] = "Action.Execute";
+        a["title"] = title;
+        a["verb"] = "adlib_trigger";
+        glz::json_t data;
+        data["pad"] = pad_id;
+        a["data"] = std::move(data);
+        actions.push_back(std::move(a));
+    };
+
+    if (pads_.size() >= 1) add_pad_action("Trigger Pad 1 (" + pads_[0].name + ")", pads_[0].id);
+    if (pads_.size() >= 2) add_pad_action("Trigger Pad 2 (" + pads_[1].name + ")", pads_[1].id);
+    if (pads_.size() >= 3) add_pad_action("Trigger Pad 3 (" + pads_[2].name + ")", pads_[2].id);
+
+    glz::json_t stop_act;
+    stop_act["type"] = "Action.Execute";
+    stop_act["title"] = "Stop All Audio";
+    stop_act["verb"] = "adlib_stop_all";
+    actions.push_back(std::move(stop_act));
+
+    card["actions"] = std::move(actions);
+
+    std::string out;
+    static_cast<void>(glz::write_json(card, out));
+    return out;
+}
+
+void adlib_card::handle_action(std::string_view action_json) {
+    if (action_json.empty()) return;
+
+    try {
+        std::string verb;
+        glz::json_t data{};
+        glz::json_t payload{};
+
+        auto err = glz::read_json(payload, std::string(action_json));
+        if (!err && payload.is_object()) {
+            if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                verb = payload["verb"].get<std::string>();
+            } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                verb = payload["action"].get<std::string>();
+            }
+            if (payload.contains("data") && payload["data"].is_object()) {
+                data = payload["data"];
+            } else {
+                data = payload;
+            }
+        } else {
+            verb = std::string(action_json);
+        }
+
+        if (verb == "adlib_trigger") {
+            int pad_idx = 0;
+            if (data.contains("pad")) {
+                if (data["pad"].holds<double>()) {
+                    pad_idx = static_cast<int>(data["pad"].get<double>());
+                } else if (data["pad"].holds<std::string>()) {
+                    try { pad_idx = std::stoi(data["pad"].get<std::string>()); } catch (...) {}
+                }
+            } else if (data.contains("pad_index")) {
+                if (data["pad_index"].holds<double>()) {
+                    pad_idx = static_cast<int>(data["pad_index"].get<double>());
+                } else if (data["pad_index"].holds<std::string>()) {
+                    try { pad_idx = std::stoi(data["pad_index"].get<std::string>()); } catch (...) {}
+                }
+            } else if (payload.contains("pad")) {
+                if (payload["pad"].holds<double>()) {
+                    pad_idx = static_cast<int>(payload["pad"].get<double>());
+                } else if (payload["pad"].holds<std::string>()) {
+                    try { pad_idx = std::stoi(payload["pad"].get<std::string>()); } catch (...) {}
+                }
+            } else if (payload.contains("pad_index")) {
+                if (payload["pad_index"].holds<double>()) {
+                    pad_idx = static_cast<int>(payload["pad_index"].get<double>());
+                } else if (payload["pad_index"].holds<std::string>()) {
+                    try { pad_idx = std::stoi(payload["pad_index"].get<std::string>()); } catch (...) {}
+                }
+            }
+
+            if (pad_idx > 0) {
+                last_triggered_pad_ = pad_idx;
+                any_playing_ = true;
+                for (auto& pad : pads_) {
+                    if (pad.id == pad_idx) {
+                        pad.is_playing = true;
+                    }
+                }
+            }
+        } else if (verb == "adlib_stop_all") {
+            any_playing_ = false;
+            for (auto& pad : pads_) {
+                pad.is_playing = false;
+            }
+            auto& engine = rouen::helpers::AdLibEngine::instance();
+            engine.stop();
+        } else if (verb == "adlib_load_bank") {
+            std::string bank;
+            if (data.contains("bank") && data["bank"].holds<std::string>()) {
+                bank = data["bank"].get<std::string>();
+            } else if (data.contains("soundbank") && data["soundbank"].holds<std::string>()) {
+                bank = data["soundbank"].get<std::string>();
+            } else if (payload.contains("bank") && payload["bank"].holds<std::string>()) {
+                bank = payload["bank"].get<std::string>();
+            } else if (payload.contains("soundbank") && payload["soundbank"].holds<std::string>()) {
+                bank = payload["soundbank"].get<std::string>();
+            }
+
+            if (!bank.empty()) {
+                soundbank_name_ = bank;
+                if (bank == "Audience Reactions") {
+                    pads_ = {
+                        sound_pad_entry{1, "Applause", "Enthusiastic Applause (4.0s)", 4.0, false},
+                        sound_pad_entry{2, "Laughter", "Audience Laughter (3.5s)", 3.5, false},
+                        sound_pad_entry{3, "Gasp", "Dramatic Gasp (1.5s)", 1.5, false},
+                        sound_pad_entry{4, "Cheering", "Stadium Cheering (5.0s)", 5.0, false}
+                    };
+                } else if (bank == "Music Stingers & Beds") {
+                    pads_ = {
+                        sound_pad_entry{1, "Fanfare", "Brass Fanfare (3.0s)", 3.0, false},
+                        sound_pad_entry{2, "Suspense", "Low Drone Suspense (6.0s)", 6.0, false},
+                        sound_pad_entry{3, "Upbeat", "Upbeat Synth Stinger (2.5s)", 2.5, false},
+                        sound_pad_entry{4, "Outro Bed", "Outro Acoustic Bed (8.0s)", 8.0, false}
+                    };
+                } else {
+                    pads_ = {
+                        sound_pad_entry{1, "Applause", "Applause & Cheering (3.2s)", 3.2, false},
+                        sound_pad_entry{2, "Drum Roll", "Drum Roll & Cymbal Hit (4.5s)", 4.5, false},
+                        sound_pad_entry{3, "Air Horn", "Air Horn Stager (1.8s)", 1.8, false},
+                        sound_pad_entry{4, "Record Scratch", "Record Scratch (0.9s)", 0.9, false}
+                    };
+                }
+                any_playing_ = false;
+            }
+        } else if (verb == "toggle_adaptive_view") {
+            adaptive_view_mode = !adaptive_view_mode;
+        }
+
+        last_adaptive_parse_time_ = {};
+    } catch (const std::exception& e) {
+        std::cerr << "[adlib] Action error: " << e.what() << std::endl;
+    } catch (...) {
     }
 }
 

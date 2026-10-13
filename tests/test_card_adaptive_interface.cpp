@@ -19,6 +19,7 @@
 #include "../src/cards/system/about.hpp"
 #include "../src/cards/system/sysinfo.hpp"
 #include "../src/cards/productivity/pomodoro.hpp"
+#include "../src/cards/production/adlib.hpp"
 #include "../src/cards/development/vcproject_card.hpp"
 #include "../src/cards/development/fs-directory.hpp"
 #include "../src/cards/development/git.hpp"
@@ -778,6 +779,117 @@ TEST(calculatorAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(calc.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
     EXPECT_NO_THROW(calc.handle_action("{\"verb\":\"calc_input\"}")); // Missing token
     EXPECT_NO_THROW(calc.handle_action("{\"verb\":\"calc_eval\",\"data\":null}"));
+}
+
+TEST(adlib_cardAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::adlib_card adlib{};
+    std::string card_json = adlib.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    // Verify all required FactSet fields and inputs exist
+    bool found_pad1 = false;
+    bool found_pad2 = false;
+    bool found_pad3 = false;
+    bool found_pad4 = false;
+    bool found_bank_input = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.ChoiceSet" && (child.id == "bank" || child.id == "soundbank")) {
+                    found_bank_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Pad 1:" && fact.value.find("Applause") != std::string::npos) found_pad1 = true;
+                if (fact.title == "Pad 2:" && fact.value.find("Drum Roll") != std::string::npos) found_pad2 = true;
+                if (fact.title == "Pad 3:" && fact.value.find("Air Horn") != std::string::npos) found_pad3 = true;
+                if (fact.title == "Pad 4:" && fact.value.find("Record Scratch") != std::string::npos) found_pad4 = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_pad1);
+    EXPECT_TRUE(found_pad2);
+    EXPECT_TRUE(found_pad3);
+    EXPECT_TRUE(found_pad4);
+    EXPECT_TRUE(found_bank_input);
+
+    // Verify actions exist
+    bool found_act_pad1 = false;
+    bool found_act_pad2 = false;
+    bool found_act_pad3 = false;
+    bool found_act_stop = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "adlib_trigger") {
+            if (act.title.find("Pad 1") != std::string::npos) found_act_pad1 = true;
+            if (act.title.find("Pad 2") != std::string::npos) found_act_pad2 = true;
+            if (act.title.find("Pad 3") != std::string::npos) found_act_pad3 = true;
+        } else if (act.verb == "adlib_stop_all") {
+            found_act_stop = true;
+        }
+    }
+    EXPECT_TRUE(found_act_pad1);
+    EXPECT_TRUE(found_act_pad2);
+    EXPECT_TRUE(found_act_pad3);
+    EXPECT_TRUE(found_act_stop);
+}
+
+TEST(adlib_cardAdaptiveTest, ActionDispatch) {
+    rouen::cards::adlib_card adlib{};
+
+    // Initial state
+    EXPECT_FALSE(adlib.is_any_playing());
+    EXPECT_EQ(adlib.get_last_triggered_pad(), 0);
+
+    // 1. adlib_trigger pad 1
+    adlib.handle_action(R"({"type":"Action.Execute","verb":"adlib_trigger","data":{"pad":1}})");
+    EXPECT_TRUE(adlib.is_any_playing());
+    EXPECT_EQ(adlib.get_last_triggered_pad(), 1);
+    ASSERT_GE(adlib.get_pads().size(), 1u);
+    EXPECT_TRUE(adlib.get_pads()[0].is_playing);
+
+    // 2. adlib_trigger pad 2 via pad_index
+    adlib.handle_action(R"({"type":"Action.Execute","verb":"adlib_trigger","data":{"pad_index":2}})");
+    EXPECT_TRUE(adlib.is_any_playing());
+    EXPECT_EQ(adlib.get_last_triggered_pad(), 2);
+    ASSERT_GE(adlib.get_pads().size(), 2u);
+    EXPECT_TRUE(adlib.get_pads()[1].is_playing);
+
+    // 3. adlib_load_bank: switch bank
+    adlib.handle_action(R"({"type":"Action.Execute","verb":"adlib_load_bank","data":{"bank":"Audience Reactions"}})");
+    EXPECT_EQ(adlib.get_soundbank_name(), "Audience Reactions");
+    std::string updated_json = adlib.get_adaptive_card_json();
+    EXPECT_NE(updated_json.find("Audience Reactions"), std::string::npos);
+
+    // 4. adlib_stop_all: stop audio
+    adlib.handle_action(R"({"type":"Action.Execute","verb":"adlib_stop_all"})");
+    EXPECT_FALSE(adlib.is_any_playing());
+    for (const auto& pad : adlib.get_pads()) {
+        EXPECT_FALSE(pad.is_playing);
+    }
+}
+
+TEST(adlib_cardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::adlib_card adlib{};
+    EXPECT_NO_THROW(adlib.handle_action(""));
+    EXPECT_NO_THROW(adlib.handle_action("not a json string"));
+    EXPECT_NO_THROW(adlib.handle_action("{"));
+    EXPECT_NO_THROW(adlib.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(adlib.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(adlib.handle_action("{\"verb\":\"adlib_trigger\"}")); // Missing pad
+    EXPECT_NO_THROW(adlib.handle_action("{\"verb\":\"adlib_load_bank\",\"data\":null}"));
 }
 
 
