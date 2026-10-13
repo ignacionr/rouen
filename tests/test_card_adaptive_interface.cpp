@@ -31,6 +31,7 @@
 #include "../src/cards/media/chess_replay.hpp"
 #include "../src/cards/development/cmake.hpp"
 #include "../src/cards/development/diff_card.hpp"
+#include "../src/cards/information/directory_card.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -1748,6 +1749,113 @@ TEST(diff_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"select_file\",\"data\":null}"));
     EXPECT_NO_THROW(card.handle_action("{\"verb\":\"stage_hunk\",\"data\":{\"hunk_idx\":\"invalid\"}}"));
 }
+
+TEST(directory_cardAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::directory_card dir{};
+    dir.handle_action(R"({"type":"Action.Execute","verb":"add_contact","data":{"name":"Ignacio Rodriguez","email":"ignacio@example.com","phone":"+1 (555) 019-2831","organization":"Rouen Team"}})");
+
+    std::string card_json = dir.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_search_input = false;
+    bool found_tag_choice = false;
+    bool found_contact_fact = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.Text" && child.id == "search_term") {
+                    found_search_input = true;
+                }
+                if (child.type == "Input.ChoiceSet" && child.id == "tag_filter") {
+                    found_tag_choice = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title.find("Ignacio Rodriguez") != std::string::npos &&
+                    fact.value.find("ignacio@example.com") != std::string::npos) {
+                    found_contact_fact = true;
+                }
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_search_input);
+    EXPECT_TRUE(found_tag_choice);
+    EXPECT_TRUE(found_contact_fact);
+
+    bool found_search_act = false;
+    bool found_open_act = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "search_contacts") found_search_act = true;
+        if (act.verb == "open_contact") found_open_act = true;
+    }
+    EXPECT_TRUE(found_search_act);
+    EXPECT_TRUE(found_open_act);
+}
+
+TEST(directory_cardAdaptiveTest, ActionDispatch) {
+    rouen::cards::directory_card dir{};
+
+    // Initial state assertions
+    EXPECT_FALSE(dir.is_adaptive_view_mode());
+
+    // 1. add_contact
+    dir.handle_action(R"({"type":"Action.Execute","verb":"add_contact","data":{"name":"Ada Lovelace","email":"ada@analytics.org","phone":"+1-555-0100","organization":"Engineering Team"}})");
+    EXPECT_EQ(dir.get_last_action(), "add_contact");
+    EXPECT_GT(dir.get_last_added_contact_id(), 0);
+    EXPECT_GT(dir.get_total_count(), 0u);
+
+    // 2. search_contacts
+    dir.handle_action(R"({"type":"Action.Execute","verb":"search_contacts","data":{"search_term":"Ada","tag_filter":"Engineering"}})");
+    EXPECT_EQ(dir.get_last_action(), "search_contacts");
+    EXPECT_EQ(dir.get_search_query(), "Ada");
+    EXPECT_EQ(dir.get_selected_tag(), "Engineering");
+    EXPECT_FALSE(dir.get_contacts().empty());
+    EXPECT_NE(dir.get_contacts().front().get_full_name().find("Ada"), std::string::npos);
+
+    // 3. open_contact
+    std::string opened_uri;
+    auto dummy_create_card = std::make_shared<std::function<void(const std::string&)>>([&opened_uri](const std::string& uri) {
+        opened_uri = uri;
+    });
+    registrar::add<std::function<void(const std::string&)>>("create_card", dummy_create_card);
+
+    dir.handle_action(R"({"type":"Action.Execute","verb":"open_contact","data":{"contact_id":"42"}})");
+    EXPECT_EQ(dir.get_last_action(), "open_contact");
+    EXPECT_EQ(dir.get_last_opened_contact_id(), "42");
+    EXPECT_EQ(opened_uri, "contact:42");
+
+    // 4. toggle_adaptive_view
+    dir.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_TRUE(dir.is_adaptive_view_mode());
+    dir.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
+    EXPECT_FALSE(dir.is_adaptive_view_mode());
+}
+
+TEST(directory_cardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::directory_card dir{};
+    EXPECT_NO_THROW(dir.handle_action(""));
+    EXPECT_NO_THROW(dir.handle_action("not a json string"));
+    EXPECT_NO_THROW(dir.handle_action("{"));
+    EXPECT_NO_THROW(dir.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(dir.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(dir.handle_action("{\"verb\":\"search_contacts\",\"data\":null}"));
+    EXPECT_NO_THROW(dir.handle_action("{\"verb\":\"open_contact\",\"data\":{\"contact_id\":null}}"));
+    EXPECT_NO_THROW(dir.handle_action("{\"verb\":\"add_contact\",\"data\":{\"name\":null}}"));
+}
+
 
 
 
