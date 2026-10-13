@@ -627,6 +627,8 @@ target_sources(test_deck_scrolling PRIVATE
     ../src/cards/productivity/invoice_card.cpp
     ../src/cards/productivity/theme_card.cpp
     ../src/cards/development/cmake.cpp
+    ../src/cards/development/vcproject_card.cpp
+    ../src/cards/development/diff_card.cpp
     ../src/cards/development/fs-directory.cpp
     ../src/cards/development/git.cpp
     ../src/cards/development/git_overlay.cpp
