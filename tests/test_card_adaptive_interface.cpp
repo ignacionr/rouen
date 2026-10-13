@@ -24,6 +24,7 @@
 #include "../src/cards/development/fs-directory.hpp"
 #include "../src/cards/development/git.hpp"
 #include "../src/cards/productivity/calculator.hpp"
+#include "../src/cards/media/camera.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -936,5 +937,100 @@ TEST(adlib_cardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(adlib.handle_action("{\"verb\":\"adlib_trigger\"}")); // Missing pad
     EXPECT_NO_THROW(adlib.handle_action("{\"verb\":\"adlib_load_bank\",\"data\":null}"));
 }
+
+TEST(camera_cardAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::camera_card camera{};
+    std::string card_json = camera.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    // Verify all required FactSet fields and inputs exist
+    bool found_device_choice = false;
+    bool found_resolution = false;
+    bool found_framerate = false;
+    bool found_pixelformat = false;
+    bool found_snapshot = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& child : elem.items) {
+                if (child.type == "Input.ChoiceSet" && (child.id == "device_choice" || child.id == "device")) {
+                    found_device_choice = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title == "Resolution:") found_resolution = true;
+                if (fact.title == "Frame Rate:") found_framerate = true;
+                if (fact.title == "Pixel Format:") found_pixelformat = true;
+                if (fact.title == "Last Snapshot:") found_snapshot = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_device_choice);
+    EXPECT_TRUE(found_resolution);
+    EXPECT_TRUE(found_framerate);
+    EXPECT_TRUE(found_pixelformat);
+    EXPECT_TRUE(found_snapshot);
+
+    // Verify actions exist
+    bool found_capture_act = false;
+    bool found_toggle_act = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "cam_capture") found_capture_act = true;
+        if (act.verb == "cam_toggle_stream") found_toggle_act = true;
+    }
+    EXPECT_TRUE(found_capture_act);
+    EXPECT_TRUE(found_toggle_act);
+}
+
+TEST(camera_cardAdaptiveTest, ActionDispatch) {
+    rouen::cards::camera_card camera{};
+
+    // Initial state assertions
+    EXPECT_FALSE(camera.is_capturing());
+    EXPECT_EQ(camera.get_selected_device_index(), 0);
+    EXPECT_TRUE(camera.get_last_snapshot_path().empty());
+
+    // 1. cam_toggle_stream: activate stream
+    camera.handle_action(R"({"type":"Action.Execute","verb":"cam_toggle_stream"})");
+    EXPECT_TRUE(camera.is_capturing());
+
+    // 2. cam_switch_device: select device
+    camera.handle_action(R"({"type":"Action.Execute","verb":"cam_switch_device","data":{"device_choice":"dev_1"}})");
+    EXPECT_EQ(camera.get_selected_device_index(), 1);
+
+    // 3. cam_capture: take snapshot
+    camera.handle_action(R"({"type":"Action.Execute","verb":"cam_capture"})");
+    EXPECT_FALSE(camera.get_last_snapshot_path().empty());
+    std::string updated_json = camera.get_adaptive_card_json();
+    EXPECT_NE(updated_json.find(camera.get_last_snapshot_path()), std::string::npos);
+
+    // 4. cam_toggle_stream: deactivate stream
+    camera.handle_action(R"({"type":"Action.Execute","verb":"cam_toggle_stream"})");
+    EXPECT_FALSE(camera.is_capturing());
+}
+
+TEST(camera_cardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::camera_card camera{};
+    EXPECT_NO_THROW(camera.handle_action(""));
+    EXPECT_NO_THROW(camera.handle_action("not a json string"));
+    EXPECT_NO_THROW(camera.handle_action("{"));
+    EXPECT_NO_THROW(camera.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(camera.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(camera.handle_action("{\"verb\":\"cam_switch_device\"}")); // Missing device
+    EXPECT_NO_THROW(camera.handle_action("{\"verb\":\"cam_capture\",\"data\":null}"));
+}
+
 
 

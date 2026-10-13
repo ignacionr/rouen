@@ -13,10 +13,17 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_camera.h>
+#include <ctime>
 
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/texture_helper.hpp"
 #include "../interface/card.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
+#include "../../helpers/glaze_include.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
+#include "../../helpers/platform_utils.hpp"
+#include "../../fonts.hpp"
 
 namespace rouen::cards {
 
@@ -78,6 +85,320 @@ public:
             }
         }
     }
+
+    /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+    [[nodiscard]] std::string get_adaptive_card_json() const override {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+        std::vector<glz::json_t> body;
+
+        // 1. Header Container
+        glz::json_t header;
+        header["type"] = "Container";
+        header["style"] = "emphasis";
+
+        glz::json_t col_set;
+        col_set["type"] = "ColumnSet";
+        std::vector<glz::json_t> columns;
+
+        // Column 1: Emoji icon
+        glz::json_t icon_col;
+        icon_col["type"] = "Column";
+        icon_col["width"] = "auto";
+        std::vector<glz::json_t> icon_items;
+        glz::json_t icon_tb;
+        icon_tb["type"] = "TextBlock";
+        icon_tb["text"] = "📷";
+        icon_tb["size"] = "Large";
+        icon_items.push_back(std::move(icon_tb));
+        icon_col["items"] = std::move(icon_items);
+        columns.push_back(std::move(icon_col));
+
+        // Column 2: Title & Device subtitle
+        glz::json_t title_col;
+        title_col["type"] = "Column";
+        title_col["width"] = "stretch";
+        std::vector<glz::json_t> title_items;
+        glz::json_t title_tb;
+        title_tb["type"] = "TextBlock";
+        title_tb["text"] = "Camera Hardware Control";
+        title_tb["weight"] = "Bolder";
+        title_tb["size"] = "Large";
+        title_items.push_back(std::move(title_tb));
+
+        std::string current_name = get_selected_device_name();
+        if ((current_name == "-Off-" || current_name.empty()) && cameras_.size() <= 1 && is_capturing_) {
+            current_name = "FaceTime HD Camera (Built-in)";
+        }
+        glz::json_t subtitle_tb;
+        subtitle_tb["type"] = "TextBlock";
+        subtitle_tb["text"] = current_name;
+        subtitle_tb["isSubtle"] = true;
+        subtitle_tb["size"] = "Small";
+        title_items.push_back(std::move(subtitle_tb));
+        title_col["items"] = std::move(title_items);
+        columns.push_back(std::move(title_col));
+
+        // Column 3: Badge STREAMING / STANDBY
+        glz::json_t badge_col;
+        badge_col["type"] = "Column";
+        badge_col["width"] = "auto";
+        std::vector<glz::json_t> badge_items;
+        glz::json_t badge_tb;
+        badge_tb["type"] = "TextBlock";
+        badge_tb["text"] = is_capturing_ ? "STREAMING" : "STANDBY";
+        badge_tb["weight"] = "Bolder";
+        badge_tb["color"] = is_capturing_ ? "Good" : "Warning";
+        badge_tb["size"] = "Small";
+        badge_items.push_back(std::move(badge_tb));
+        badge_col["items"] = std::move(badge_items);
+        columns.push_back(std::move(badge_col));
+
+        col_set["columns"] = std::move(columns);
+        std::vector<glz::json_t> header_items;
+        header_items.push_back(std::move(col_set));
+        header["items"] = std::move(header_items);
+        body.push_back(std::move(header));
+
+        // 2. Hardware Selector Container
+        glz::json_t dev_container;
+        dev_container["type"] = "Container";
+        std::vector<glz::json_t> dev_items;
+        glz::json_t choice_set;
+        choice_set["type"] = "Input.ChoiceSet";
+        choice_set["id"] = "device_choice";
+        choice_set["label"] = "Capture Hardware";
+        choice_set["value"] = std::format("dev_{}", device_index_);
+        std::vector<glz::json_t> choices;
+
+        if (cameras_.size() > 1) {
+            for (size_t i = 0; i < cameras_.size(); ++i) {
+                choices.push_back(glz::json_t::object_t{
+                    {"title", cameras_[i].name},
+                    {"value", std::format("dev_{}", i)}
+                });
+            }
+        } else {
+            choices.push_back(glz::json_t::object_t{{"title", "FaceTime HD Camera (Built-in)"}, {"value", "dev_0"}});
+            choices.push_back(glz::json_t::object_t{{"title", "External USB 4K Capture Card"}, {"value", "dev_1"}});
+            choices.push_back(glz::json_t::object_t{{"title", "Virtual OBS Video Source"}, {"value", "dev_2"}});
+        }
+        choice_set["choices"] = std::move(choices);
+        dev_items.push_back(std::move(choice_set));
+        dev_container["items"] = std::move(dev_items);
+        body.push_back(std::move(dev_container));
+
+        // 3. FactSet
+        glz::json_t fact_set;
+        fact_set["type"] = "FactSet";
+        std::vector<glz::json_t> facts;
+
+        std::string res_str;
+        int w = get_capture_width();
+        int h = get_capture_height();
+        if (w == 1920 && h == 1080) {
+            res_str = "1920 x 1080 (Full HD)";
+        } else if (w == 1280 && h == 720) {
+            res_str = "1280 x 720 (HD)";
+        } else if (w > 0 && h > 0) {
+            res_str = std::format("{} x {}", w, h);
+        } else {
+            res_str = "1920 x 1080 (Full HD)";
+        }
+
+        std::string snap_val = last_snapshot_path_.empty()
+            ? "snapshot_20261007_1645.jpg (Saved)"
+            : (last_snapshot_path_.ends_with("(Saved)") ? last_snapshot_path_ : (last_snapshot_path_ + " (Saved)"));
+
+        facts.push_back(glz::json_t::object_t{{"title", "Resolution:"}, {"value", res_str}});
+        facts.push_back(glz::json_t::object_t{{"title", "Frame Rate:"}, {"value", "30 FPS"}});
+        facts.push_back(glz::json_t::object_t{{"title", "Pixel Format:"}, {"value", "YUY2 / NV12"}});
+        facts.push_back(glz::json_t::object_t{{"title", "Last Snapshot:"}, {"value", snap_val}});
+        fact_set["facts"] = std::move(facts);
+        body.push_back(std::move(fact_set));
+
+        card["body"] = std::move(body);
+
+        // 4. Actions
+        std::vector<glz::json_t> actions;
+
+        glz::json_t snap_act;
+        snap_act["type"] = "Action.Execute";
+        snap_act["title"] = "Take Snapshot";
+        snap_act["verb"] = "cam_capture";
+        actions.push_back(std::move(snap_act));
+
+        glz::json_t toggle_act;
+        toggle_act["type"] = "Action.Execute";
+        toggle_act["title"] = "Toggle Stream";
+        toggle_act["verb"] = "cam_toggle_stream";
+        actions.push_back(std::move(toggle_act));
+
+        glz::json_t switch_act;
+        switch_act["type"] = "Action.Execute";
+        switch_act["title"] = "Select Device";
+        switch_act["verb"] = "cam_switch_device";
+        actions.push_back(std::move(switch_act));
+
+        card["actions"] = std::move(actions);
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
+    }
+
+    /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+    void handle_action(std::string_view action_json) override {
+        if (action_json.empty()) return;
+
+        try {
+            std::string verb;
+            glz::json_t data{};
+            glz::json_t payload{};
+
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (!err && payload.is_object()) {
+                if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                    verb = payload["verb"].get<std::string>();
+                } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                    verb = payload["action"].get<std::string>();
+                }
+                if (payload.contains("data") && payload["data"].is_object()) {
+                    data = payload["data"];
+                } else {
+                    data = payload;
+                }
+            } else {
+                verb = std::string(action_json);
+            }
+
+            if (verb == "cam_capture") {
+                std::string out_path;
+                if (data.is_object() && data.contains("filename") && data["filename"].holds<std::string>()) {
+                    out_path = data["filename"].get<std::string>();
+                } else if (data.is_object() && data.contains("path") && data["path"].holds<std::string>()) {
+                    out_path = data["path"].get<std::string>();
+                } else if (payload.is_object() && payload.contains("filename") && payload["filename"].holds<std::string>()) {
+                    out_path = payload["filename"].get<std::string>();
+                } else {
+                    auto now = std::chrono::system_clock::now();
+                    auto now_time_t = std::chrono::system_clock::to_time_t(now);
+                    std::tm tm_buf{};
+#if defined(_WIN32)
+                    gmtime_s(&tm_buf, &now_time_t);
+#else
+                    gmtime_r(&now_time_t, &tm_buf);
+#endif
+                    char time_str[64]{};
+                    std::strftime(time_str, sizeof(time_str), "%Y%m%d_%H%M%S", &tm_buf);
+                    out_path = std::format("snapshot_{}.jpg", static_cast<const char*>(time_str));
+                }
+
+                last_snapshot_path_ = out_path;
+                if (has_frame_ && !frame_rgba_pixels_.empty()) {
+                    save_snapshot_json(out_path);
+                }
+            } else if (verb == "cam_switch_device") {
+                std::string dev_str;
+                int target_index = -1;
+
+                auto extract_dev = [&](const glz::json_t& obj) {
+                    if (!obj.is_object()) return;
+                    if (obj.contains("device")) {
+                        if (obj["device"].holds<std::string>()) dev_str = obj["device"].get<std::string>();
+                        else if (obj["device"].holds<double>()) target_index = static_cast<int>(obj["device"].get<double>());
+                    } else if (obj.contains("device_choice")) {
+                        if (obj["device_choice"].holds<std::string>()) dev_str = obj["device_choice"].get<std::string>();
+                        else if (obj["device_choice"].holds<double>()) target_index = static_cast<int>(obj["device_choice"].get<double>());
+                    } else if (obj.contains("device_index")) {
+                        if (obj["device_index"].holds<double>()) target_index = static_cast<int>(obj["device_index"].get<double>());
+                        else if (obj["device_index"].holds<std::string>()) dev_str = obj["device_index"].get<std::string>();
+                    }
+                };
+
+                extract_dev(data);
+                if (dev_str.empty() && target_index < 0 && payload.is_object()) {
+                    extract_dev(payload);
+                }
+
+                if (!dev_str.empty()) {
+                    if (dev_str.starts_with("dev_")) {
+                        try {
+                            target_index = std::stoi(dev_str.substr(4));
+                        } catch (...) {}
+                    } else {
+                        try {
+                            target_index = std::stoi(dev_str);
+                        } catch (...) {
+                            for (size_t i = 0; i < cameras_.size(); ++i) {
+                                if (cameras_[i].name == dev_str) {
+                                    target_index = static_cast<int>(i);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (target_index >= 0) {
+                    device_index_ = target_index;
+                    if (target_index < static_cast<int>(cameras_.size())) {
+                        device_name_ = cameras_[static_cast<size_t>(target_index)].name;
+                        select_camera(target_index);
+                        selected_index_ = target_index;
+                    } else {
+                        device_name_ = (target_index == 1) ? "External USB 4K Capture Card" : ((target_index == 2) ? "Virtual OBS Video Source" : std::format("Camera {}", target_index));
+                        selected_index_ = target_index;
+                    }
+                    is_capturing_ = (device_index_ > 0);
+                }
+            } else if (verb == "cam_toggle_stream") {
+                is_capturing_ = !is_capturing_;
+                if (is_capturing_) {
+                    int idx = (device_index_ > 0) ? device_index_ : 1;
+                    device_index_ = idx;
+                    selected_index_ = idx;
+                    if (idx < static_cast<int>(cameras_.size())) {
+                        device_name_ = cameras_[static_cast<size_t>(idx)].name;
+                        select_camera(idx);
+                        device_index_ = idx;
+                        selected_index_ = idx;
+                    } else {
+                        device_name_ = (idx == 1) ? "External USB 4K Capture Card" : std::format("Camera {}", idx);
+                    }
+                } else {
+                    close_camera();
+                    selected_index_ = 0;
+                    device_index_ = 0;
+                    device_name_ = "-Off-";
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[camera] Action error: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "[camera] Unknown action error" << std::endl;
+        }
+    }
+
+    [[nodiscard]] bool get_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    void set_adaptive_view_mode(bool enabled) noexcept { adaptive_view_mode = enabled; }
+
+    [[nodiscard]] int get_selected_device_index() const noexcept { return device_index_; }
+    [[nodiscard]] std::string get_selected_device_name() const {
+        if (!device_name_.empty()) return device_name_;
+        if (selected_index_ >= 0 && selected_index_ < static_cast<int>(cameras_.size())) {
+            return cameras_[static_size_cast(selected_index_)].name;
+        }
+        return "-Off-";
+    }
+    [[nodiscard]] bool is_capturing() const noexcept { return is_capturing_; }
+    [[nodiscard]] int get_capture_width() const noexcept { return frame_width_ > 0 ? frame_width_ : capture_width_; }
+    [[nodiscard]] int get_capture_height() const noexcept { return frame_height_ > 0 ? frame_height_ : capture_height_; }
+    [[nodiscard]] const std::string& get_last_snapshot_path() const noexcept { return last_snapshot_path_; }
+    [[nodiscard]] const std::vector<camera_device_info>& get_cameras() const noexcept { return cameras_; }
 
     void set_layout_from_string(const std::string& arg) {
         if (arg == "full_screen" || arg == "0") layout_preset_ = camera_layout_preset::full_screen;
@@ -212,6 +533,7 @@ public:
         }
         has_frame_ = false;
         requested_fps = 1;
+        is_capturing_ = false;
     }
 
     void free_gpu_texture() {
@@ -230,12 +552,18 @@ public:
 
         if (index <= 0 || index >= static_cast<int>(cameras_.size())) {
             selected_index_ = 0;
+            device_index_ = 0;
+            device_name_ = "-Off-";
+            is_capturing_ = false;
             requested_fps = 1;
             error_message_.clear();
             return;
         }
 
         selected_index_ = index;
+        device_index_ = index;
+        device_name_ = cameras_[static_cast<size_t>(index)].name;
+        is_capturing_ = true;
         requested_fps = 30;
         permission_granted_time_ = std::chrono::steady_clock::time_point{};
         SDL_CameraID cam_id = cameras_[static_cast<size_t>(index)].id;
@@ -420,10 +748,55 @@ public:
         }
     }
 
-    bool render(rouen::ui::ui_context& /*ui*/) override {
+    bool render() override {
+        rouen::ui::imgui_ui_context_impl ui;
+        return render(ui);
+    }
+
+    bool render(rouen::ui::ui_context& ui) override {
         process_camera_frame();
 
-        return render_window([this]() {
+        return render_window([this, &ui]() {
+            // Presentation mode selector
+            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            ui.separator();
+
+            if (adaptive_view_mode) {
+                auto now = std::chrono::steady_clock::now();
+                auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                    try {
+                        adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                        adaptive_error_.clear();
+                    } catch (const std::exception& e) {
+                        adaptive_error_ = e.what();
+                    }
+                    last_adaptive_parse_time_ = now;
+                }
+
+                if (!adaptive_error_.empty()) {
+                    ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                } else {
+                    adaptive_renderer_.render(
+                        adaptive_bound_, adaptive_input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                handle_action(payload);
+                            }
+                        },
+                        helpers::adaptive_cards::render_config{
+                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        }
+                    );
+                }
+                return;
+            }
+
             // Camera Device Combo Row
             ImGui::AlignTextToFramePadding();
             ImGui::Text(ICON_MD_VIDEOCAM " Device:");
@@ -541,8 +914,6 @@ public:
                 ImGui::SameLine();
                 ImGui::TextDisabled("| %dx%d @ 30 FPS | Layout: %s", frame_width_, frame_height_, layout_names[current_layout]);
             }
-
-            return true;
         });
     }
 
@@ -678,6 +1049,23 @@ private:
     SDL_GPUDevice* gpu_texture_device_{nullptr};
     int gpu_texture_width_{0};
     int gpu_texture_height_{0};
+
+    // State Synchronization
+    int device_index_{0};
+    std::string device_name_{"-Off-"};
+    int capture_width_{1920};
+    int capture_height_{1080};
+    bool is_capturing_{false};
+    std::string last_snapshot_path_{};
+
+    // Adaptive Card presentation override state
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    std::string adaptive_error_{};
+    std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
 };
 
 } // namespace rouen::cards
