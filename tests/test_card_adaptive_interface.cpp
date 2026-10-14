@@ -60,6 +60,7 @@
 #include "../src/cards/information/travel.hpp"
 #include "../src/cards/information/whatsapp.hpp"
 #include "../src/cards/information/wikipedia.hpp"
+#include "../src/cards/information/worldcup_dashboard.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -5263,5 +5264,113 @@ TEST(wikipediaAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(wiki_card.handle_action("{\"verb\":\"wiki_search\",\"data\":null}"));
     EXPECT_NO_THROW(wiki_card.handle_action("{\"verb\":\"wiki_language\",\"data\":null}"));
 }
+
+TEST(worldcup_dashboardAdaptiveTest, JsonSerialization) {
+    rouen::cards::worldcup_dashboard wc_card{};
+    std::string card_json = wc_card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_header_title = false;
+    bool found_group_input = false;
+    bool found_venue_fact = false;
+    bool found_possession_fact = false;
+    bool found_shots_fact = false;
+    bool found_commentary_fact = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& col_set : elem.items) {
+                if (col_set.type == "ColumnSet") {
+                    for (const auto& col : col_set.columns) {
+                        for (const auto& item : col.items) {
+                            if (item.type == "TextBlock") {
+                                if (item.text.find("FIFA World Cup 2026 Match Center") != std::string::npos) {
+                                    found_header_title = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (const auto& item : elem.items) {
+                if (item.type == "Input.ChoiceSet" && item.id == "group_code") {
+                    found_group_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title.find("Match Venue") != std::string::npos) found_venue_fact = true;
+                if (fact.title.find("Possession") != std::string::npos) found_possession_fact = true;
+                if (fact.title.find("Shots on Target") != std::string::npos) found_shots_fact = true;
+                if (fact.title.find("Live Commentary") != std::string::npos) found_commentary_fact = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_header_title);
+    EXPECT_TRUE(found_group_input);
+    EXPECT_TRUE(found_venue_fact);
+    EXPECT_TRUE(found_possession_fact);
+    EXPECT_TRUE(found_shots_fact);
+    EXPECT_TRUE(found_commentary_fact);
+
+    bool found_refresh_action = false;
+    bool found_filter_action = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "wc_refresh_scores" || act.title.find("Refresh") != std::string::npos) {
+            found_refresh_action = true;
+        }
+        if (act.verb == "wc_filter_group" || act.title.find("Group") != std::string::npos) {
+            found_filter_action = true;
+        }
+    }
+    EXPECT_TRUE(found_refresh_action);
+    EXPECT_TRUE(found_filter_action);
+}
+
+TEST(worldcup_dashboardAdaptiveTest, ActionDispatch) {
+    rouen::cards::worldcup_dashboard wc_card{};
+    EXPECT_FALSE(wc_card.is_adaptive_view_mode());
+
+    // 1. wc_refresh_scores
+    wc_card.handle_action(R"raw({"type":"Action.Execute","verb":"wc_refresh_scores"})raw");
+    EXPECT_EQ(wc_card.get_last_action(), "wc_refresh_scores");
+
+    // 2. wc_filter_group
+    wc_card.handle_action(R"raw({"type":"Action.Execute","verb":"wc_filter_group","data":{"group_code":"Group B"}})raw");
+    EXPECT_EQ(wc_card.get_last_action(), "wc_filter_group");
+    EXPECT_EQ(wc_card.get_selected_group(), "Group B");
+    EXPECT_NE(wc_card.get_adaptive_card_json().find("Group B"), std::string::npos);
+
+    // 3. wc_select_match
+    wc_card.handle_action(R"raw({"type":"Action.Execute","verb":"wc_select_match","data":{"match_id":"USA_ENG_2026"}})raw");
+    EXPECT_EQ(wc_card.get_last_action(), "wc_select_match");
+    EXPECT_EQ(wc_card.get_selected_match_id(), "USA_ENG_2026");
+
+    // 4. toggle_adaptive_view
+    wc_card.handle_action(R"raw({"type":"Action.Execute","verb":"toggle_adaptive_view"})raw");
+    EXPECT_TRUE(wc_card.is_adaptive_view_mode());
+    wc_card.handle_action(R"raw({"type":"Action.Execute","verb":"toggle_adaptive_view"})raw");
+    EXPECT_FALSE(wc_card.is_adaptive_view_mode());
+}
+
+TEST(worldcup_dashboardAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::worldcup_dashboard wc_card{};
+    EXPECT_NO_THROW(wc_card.handle_action(""));
+    EXPECT_NO_THROW(wc_card.handle_action("not a json string"));
+    EXPECT_NO_THROW(wc_card.handle_action("{"));
+    EXPECT_NO_THROW(wc_card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(wc_card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(wc_card.handle_action("{\"verb\":\"wc_filter_group\",\"data\":null}"));
+    EXPECT_NO_THROW(wc_card.handle_action("{\"verb\":\"wc_select_match\",\"data\":null}"));
+}
+
 
 

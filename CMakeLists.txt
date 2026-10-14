@@ -690,6 +690,7 @@ target_sources(${PROJECT_NAME}
   src/cards/productivity/theme_card.cpp
   src/cards/information/bybit_registrar.cpp
   src/cards/information/movies_registrar.cpp
+  src/cards/information/worldcup_registrar.cpp
   src/cards/information/ai_chat.cpp
   src/cards/information/rss.cpp
   src/cards/information/rss_item.cpp

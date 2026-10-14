@@ -28,6 +28,10 @@
 #include <filesystem>
 #include "../../helpers/llm_config.hpp"
 #include "../../helpers/platform_utils.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
+#include "../../fonts.hpp"
 
 namespace rouen::cards {
 
@@ -148,6 +152,11 @@ public:
     }
 
     bool render() override {
+        rouen::ui::imgui_ui_context_impl ui;
+        return render(ui);
+    }
+
+    bool render(rouen::ui::ui_context& ui) override {
         // Periodic background fetch every 30 seconds
         auto now = std::chrono::steady_clock::now();
         bool loaded = false;
@@ -246,7 +255,47 @@ public:
         // Temporarily boost framerate to 60 FPS for smooth fades, else stay at power-saving 1 FPS
         requested_fps = any_flash_active ? 60 : 1;
         
-        return render_window([this]() {
+        return render_window([this, &ui]() {
+            // Presentation mode selector
+            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            ui.separator();
+
+            if (adaptive_view_mode) {
+                auto now_t = std::chrono::steady_clock::now();
+                auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now_t - last_adaptive_parse_time_).count();
+                if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                    try {
+                        adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                        adaptive_error_.clear();
+                    } catch (const std::exception& e) {
+                        adaptive_error_ = e.what();
+                    }
+                    last_adaptive_parse_time_ = now_t;
+                }
+
+                if (!adaptive_error_.empty()) {
+                    ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                } else {
+                    adaptive_renderer_.render(
+                        adaptive_bound_, adaptive_input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                handle_action(payload);
+                            }
+                        },
+                        helpers::adaptive_cards::render_config{
+                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        }
+                    );
+                }
+                return;
+            }
+
             ImGui::Spacing();
             
             if (ImGui::BeginTabBar("WorldCupTabs", ImGuiTabBarFlags_None)) {
@@ -327,7 +376,446 @@ public:
         }
     }
 
+    [[nodiscard]] std::string get_adaptive_card_json() const override {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+        card["refreshIntervalMs"] = 15000;
+
+        std::string home_display = home_team_display_;
+        std::string away_display = away_team_display_;
+        std::string home_goals = home_scorers_;
+        std::string away_goals = away_scorers_;
+        int h_score = home_score_;
+        int a_score = away_score_;
+        std::string m_status = match_status_display_;
+        std::string m_venue = match_venue_;
+        std::string m_poss = match_possession_;
+        std::string m_shots = match_shots_;
+        std::string m_comm = live_commentary_snippet_;
+
+        {
+            std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(data_mutex));
+            const Match* found_match = nullptr;
+            if (!selected_match_id_.empty()) {
+                for (const auto& m : api_matches) {
+                    std::string key = m.home_code + "_" + m.away_code + "_" + m.date_str;
+                    if (key == selected_match_id_ || m.home_code == selected_match_id_ || m.away_code == selected_match_id_) {
+                        found_match = &m;
+                        break;
+                    }
+                }
+            }
+            if (!found_match) {
+                for (const auto& m : api_matches) {
+                    if (m.status == "LIVE") {
+                        found_match = &m;
+                        break;
+                    }
+                }
+            }
+            if (found_match) {
+                home_display = found_match->home_team;
+                away_display = found_match->away_team;
+                home_goals = found_match->home_scorers;
+                away_goals = found_match->away_scorers;
+                h_score = found_match->home_score;
+                a_score = found_match->away_score;
+                m_status = found_match->status;
+                if (!found_match->venue.empty()) m_venue = found_match->venue;
+                std::string match_key = found_match->home_code + "_" + found_match->away_code + "_" + found_match->date_str;
+                if (commentary_cache_.contains(match_key) && !commentary_cache_.at(match_key).text.empty()) {
+                    m_comm = commentary_cache_.at(match_key).text;
+                }
+            }
+        }
+
+        std::vector<glz::json_t> body;
+
+        // 1. Header Container (emphasis)
+        {
+            glz::json_t header_container;
+            header_container["type"] = "Container";
+            header_container["style"] = "emphasis";
+
+            glz::json_t col_set;
+            col_set["type"] = "ColumnSet";
+
+            std::vector<glz::json_t> cols;
+
+            // Column 1: Soccer Ball icon
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+
+                glz::json_t icon;
+                icon["type"] = "TextBlock";
+                icon["text"] = "\u26bd"; // ⚽
+                icon["size"] = "Large";
+                items.push_back(std::move(icon));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            // Column 2: Title and Subtitle
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                std::vector<glz::json_t> items;
+
+                glz::json_t title;
+                title["type"] = "TextBlock";
+                title["text"] = "FIFA World Cup 2026 Match Center";
+                title["weight"] = "Bolder";
+                title["size"] = "Large";
+                items.push_back(std::move(title));
+
+                glz::json_t subtitle;
+                subtitle["type"] = "TextBlock";
+                subtitle["text"] = "USA \u2022 Canada \u2022 Mexico (48 Teams)";
+                subtitle["isSubtle"] = true;
+                subtitle["size"] = "Small";
+                items.push_back(std::move(subtitle));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            // Column 3: Live match status badge
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+
+                glz::json_t status_badge;
+                status_badge["type"] = "TextBlock";
+                status_badge["text"] = m_status;
+                status_badge["weight"] = "Bolder";
+                status_badge["color"] = "Attention";
+                status_badge["size"] = "Medium";
+                items.push_back(std::move(status_badge));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            col_set["columns"] = std::move(cols);
+            header_container["items"] = std::vector<glz::json_t>{std::move(col_set)};
+            body.push_back(std::move(header_container));
+        }
+
+        // 2. Match Scoreboard Container (accent)
+        {
+            glz::json_t match_container;
+            match_container["type"] = "Container";
+            match_container["style"] = "accent";
+
+            glz::json_t col_set;
+            col_set["type"] = "ColumnSet";
+
+            std::vector<glz::json_t> cols;
+
+            // Home Team Column
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                std::vector<glz::json_t> items;
+
+                glz::json_t home_name;
+                home_name["type"] = "TextBlock";
+                home_name["text"] = home_display;
+                home_name["weight"] = "Bolder";
+                home_name["size"] = "Large";
+                items.push_back(std::move(home_name));
+
+                glz::json_t h_goals;
+                h_goals["type"] = "TextBlock";
+                h_goals["text"] = home_goals;
+                h_goals["isSubtle"] = true;
+                h_goals["size"] = "Small";
+                items.push_back(std::move(h_goals));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            // Score Column
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+
+                glz::json_t score_text;
+                score_text["type"] = "TextBlock";
+                score_text["text"] = std::format("{} - {}", h_score, a_score);
+                score_text["weight"] = "Bolder";
+                score_text["size"] = "ExtraLarge";
+                score_text["color"] = "Good";
+                items.push_back(std::move(score_text));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            // Away Team Column
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                col["horizontalAlignment"] = "Right";
+                std::vector<glz::json_t> items;
+
+                glz::json_t away_name;
+                away_name["type"] = "TextBlock";
+                away_name["text"] = away_display;
+                away_name["weight"] = "Bolder";
+                away_name["size"] = "Large";
+                away_name["horizontalAlignment"] = "Right";
+                items.push_back(std::move(away_name));
+
+                glz::json_t a_goals;
+                a_goals["type"] = "TextBlock";
+                a_goals["text"] = away_goals;
+                a_goals["isSubtle"] = true;
+                a_goals["size"] = "Small";
+                a_goals["horizontalAlignment"] = "Right";
+                items.push_back(std::move(a_goals));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            col_set["columns"] = std::move(cols);
+            match_container["items"] = std::vector<glz::json_t>{std::move(col_set)};
+            body.push_back(std::move(match_container));
+        }
+
+        // 3. Group Selection Input Container
+        {
+            glz::json_t container;
+            container["type"] = "Container";
+            std::vector<glz::json_t> items;
+
+            glz::json_t choice_set;
+            choice_set["type"] = "Input.ChoiceSet";
+            choice_set["id"] = "group_code";
+            choice_set["value"] = selected_group_;
+
+            std::vector<glz::json_t> choices;
+            for (char letter = 'A'; letter <= 'L'; ++letter) {
+                std::string gname = std::format("Group {}", letter);
+                choices.push_back(glz::json_t{{"title", gname}, {"value", gname}});
+            }
+            choice_set["choices"] = std::move(choices);
+            items.push_back(std::move(choice_set));
+
+            container["items"] = std::move(items);
+            body.push_back(std::move(container));
+        }
+
+        // 4. FactSet
+        {
+            glz::json_t fact_set;
+            fact_set["type"] = "FactSet";
+
+            std::vector<glz::json_t> facts;
+            facts.push_back(glz::json_t{{"title", "Match Venue:"}, {"value", m_venue}});
+            facts.push_back(glz::json_t{{"title", "Possession:"}, {"value", m_poss}});
+            facts.push_back(glz::json_t{{"title", "Shots on Target:"}, {"value", m_shots}});
+            facts.push_back(glz::json_t{{"title", "Live Commentary:"}, {"value", m_comm}});
+
+            fact_set["facts"] = std::move(facts);
+            body.push_back(std::move(fact_set));
+        }
+
+        card["body"] = std::move(body);
+
+        // 5. Actions
+        {
+            std::vector<glz::json_t> actions;
+
+            {
+                glz::json_t act;
+                act["type"] = "Action.Execute";
+                act["title"] = "Refresh Live Scores";
+                act["verb"] = "wc_refresh_scores";
+                actions.push_back(std::move(act));
+            }
+            {
+                glz::json_t act;
+                act["type"] = "Action.Execute";
+                act["title"] = "View Group Standings";
+                act["verb"] = "wc_filter_group";
+                actions.push_back(std::move(act));
+            }
+            {
+                glz::json_t act;
+                act["type"] = "Action.Execute";
+                act["title"] = "Select Match";
+                act["verb"] = "wc_select_match";
+                actions.push_back(std::move(act));
+            }
+
+            card["actions"] = std::move(actions);
+        }
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
+    }
+
+    void handle_action(std::string_view action_json) override {
+        if (action_json.empty()) return;
+
+        try {
+            glz::json_t payload{};
+            std::string verb;
+            glz::json_t data{};
+
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (!err && payload.is_object()) {
+                if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                    verb = payload["verb"].get<std::string>();
+                } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                    verb = payload["action"].get<std::string>();
+                }
+
+                if (payload.contains("data") && payload["data"].is_object()) {
+                    data = payload["data"];
+                } else {
+                    data = payload;
+                }
+            } else {
+                verb = std::string(action_json);
+            }
+
+            last_action_ = verb;
+
+            if (verb == "wc_refresh_scores") {
+                fetch_real_data();
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "wc_filter_group") {
+                std::string grp;
+                if (data.is_object()) {
+                    if (data.contains("group_code") && data["group_code"].holds<std::string>()) {
+                        grp = data["group_code"].get<std::string>();
+                    } else if (data.contains("group") && data["group"].holds<std::string>()) {
+                        grp = data["group"].get<std::string>();
+                    }
+                }
+                if (!grp.empty()) {
+                    if (grp.size() == 1 && grp[0] >= 'A' && grp[0] <= 'L') {
+                        selected_group_idx = grp[0] - 'A';
+                        selected_group_ = "Group " + grp;
+                    } else if (grp.starts_with("Group ") && grp.size() >= 7) {
+                        char letter = grp[6];
+                        if (letter >= 'A' && letter <= 'L') {
+                            selected_group_idx = letter - 'A';
+                        }
+                        selected_group_ = grp;
+                    } else {
+                        selected_group_ = grp;
+                    }
+                    set_standings_selected = true;
+                }
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "wc_select_match") {
+                std::string match_id;
+                if (data.is_object()) {
+                    if (data.contains("match_id") && data["match_id"].holds<std::string>()) {
+                        match_id = data["match_id"].get<std::string>();
+                    } else if (data.contains("id") && data["id"].holds<std::string>()) {
+                        match_id = data["id"].get<std::string>();
+                    } else if (data.contains("match") && data["match"].holds<std::string>()) {
+                        match_id = data["match"].get<std::string>();
+                    }
+                }
+                if (!match_id.empty()) {
+                    selected_match_id_ = match_id;
+                    expanded_match_key_ = match_id;
+                    set_match_center_selected = true;
+                    need_scroll_to_match = true;
+
+                    std::lock_guard<std::mutex> lock(data_mutex);
+                    for (const auto& m : api_matches) {
+                        std::string key = m.home_code + "_" + m.away_code + "_" + m.date_str;
+                        if (key == match_id || m.home_code == match_id || m.away_code == match_id) {
+                            home_team_display_ = m.home_team;
+                            away_team_display_ = m.away_team;
+                            home_score_ = m.home_score;
+                            away_score_ = m.away_score;
+                            match_status_display_ = m.status;
+                            match_venue_ = m.venue;
+                            home_scorers_ = m.home_scorers;
+                            away_scorers_ = m.away_scorers;
+                            break;
+                        }
+                    }
+                    if (commentary_cache_.contains(match_id)) {
+                        live_commentary_snippet_ = commentary_cache_[match_id].text;
+                    }
+                }
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "toggle_adaptive_view") {
+                adaptive_view_mode = !adaptive_view_mode;
+                last_adaptive_parse_time_ = {};
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[worldcup] Action error: " << e.what() << std::endl;
+        }
+    }
+
+    [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    void set_adaptive_view_mode(bool v) noexcept { adaptive_view_mode = v; }
+
+    [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
+    [[nodiscard]] const std::string& get_selected_group() const noexcept { return selected_group_; }
+    void set_selected_group(std::string_view group) { selected_group_ = group; }
+
+    [[nodiscard]] const std::string& get_selected_match_id() const noexcept { return selected_match_id_; }
+    void set_selected_match_id(std::string_view match_id) { selected_match_id_ = match_id; }
+
+    [[nodiscard]] const std::string& get_live_commentary() const noexcept { return live_commentary_snippet_; }
+    void set_live_commentary(std::string_view comm) { live_commentary_snippet_ = comm; }
+
+    [[nodiscard]] const std::string& get_match_venue() const noexcept { return match_venue_; }
+    [[nodiscard]] const std::string& get_match_possession() const noexcept { return match_possession_; }
+    [[nodiscard]] const std::string& get_match_shots() const noexcept { return match_shots_; }
+
 private:
+    // Adaptive Card presentation override state
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    std::string adaptive_error_{};
+    std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+
+    // Synchronized card state
+    std::string last_action_{};
+    std::string selected_group_{"Group D"};
+    std::string selected_match_id_{"ARG_FRA_FINAL"};
+    std::string home_team_display_{"Argentina \U0001F1E6\U0001F1F7"};
+    std::string away_team_display_{"\U0001F1EB\U0001F1F7 France"};
+    std::string home_scorers_{"Messi 24', \u00c1lvarez 58'"};
+    std::string away_scorers_{"Mbapp\u00e9 61' (P)"};
+    int home_score_{2};
+    int away_score_{1};
+    std::string match_status_display_{"LIVE 74'"};
+    std::string match_venue_{"MetLife Stadium, New Jersey"};
+    std::string match_possession_{"54% Argentina - 46% France"};
+    std::string match_shots_{"6 - 4"};
+    std::string live_commentary_snippet_{"73' Spectacular diving save by Martinez to deny Mbapp\u00e9!"};
+
     // Real API Data Variables
     std::vector<Match> api_matches;
     std::unordered_map<std::string, std::vector<GroupTeam>> api_groups;
