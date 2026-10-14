@@ -21,6 +21,10 @@
 #include "../../helpers/debug.hpp"
 #include "../../helpers/image_cache.hpp"
 #include "../../helpers/platform_utils.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
+#include "../../fonts.hpp"
 #include "../../registrar.hpp"
 
 namespace rouen::cards {
@@ -96,8 +100,11 @@ public:
         if (!decoded.empty()) {
             strncpy(search_buffer, decoded.c_str(), sizeof(search_buffer) - 1);
             current_query = decoded;
+            search_query_ = decoded;
+            article_title_ = decoded;
             if (decoded.starts_with("title:")) {
-                trigger_load_article(decoded.substr(6));
+                article_title_ = decoded.substr(6);
+                trigger_load_article(article_title_);
             } else {
                 trigger_search(decoded);
             }
@@ -428,7 +435,52 @@ public:
     }
 
     bool render() override {
-        return render_window([this]() {
+        rouen::ui::imgui_ui_context_impl ui;
+        return render(ui);
+    }
+
+    bool render(rouen::ui::ui_context& ui) override {
+        return render_window([this, &ui]() {
+            // Presentation mode selector
+            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            ui.separator();
+
+            if (adaptive_view_mode) {
+                auto now = std::chrono::steady_clock::now();
+                auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                    try {
+                        adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                        adaptive_error_.clear();
+                    } catch (const std::exception& e) {
+                        adaptive_error_ = e.what();
+                    }
+                    last_adaptive_parse_time_ = now;
+                }
+
+                if (!adaptive_error_.empty()) {
+                    ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                } else {
+                    adaptive_renderer_.render(
+                        adaptive_bound_, adaptive_input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                handle_action(payload);
+                            }
+                        },
+                        helpers::adaptive_cards::render_config{
+                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        }
+                    );
+                }
+                return;
+            }
+
             bool is_searching = false;
             bool is_loading_article = false;
             bool article_loaded = false;
@@ -686,6 +738,333 @@ public:
         });
     }
 
+    [[nodiscard]] std::string get_adaptive_card_json() const override {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+        std::vector<glz::json_t> body;
+
+        // 1. Header Container (emphasis)
+        {
+            glz::json_t container;
+            container["type"] = "Container";
+            container["style"] = "emphasis";
+
+            glz::json_t col_set;
+            col_set["type"] = "ColumnSet";
+
+            std::vector<glz::json_t> cols;
+
+            // Globe icon column
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> items;
+
+                glz::json_t icon;
+                icon["type"] = "TextBlock";
+                icon["text"] = "\U0001F310"; // Globe emoji 🌐 (\ud83c\udf10)
+                icon["size"] = "Large";
+                items.push_back(std::move(icon));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            // Title and language subtitle column
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                std::vector<glz::json_t> items;
+
+                glz::json_t title;
+                title["type"] = "TextBlock";
+                title["text"] = "Wikipedia Encyclopedia";
+                title["weight"] = "Bolder";
+                title["size"] = "Large";
+                items.push_back(std::move(title));
+
+                std::string lang_name = "English";
+                if (language_code_ == "es") lang_name = "Spanish";
+                else if (language_code_ == "fr") lang_name = "French";
+                else if (language_code_ == "de") lang_name = "German";
+                else if (language_code_ == "ja") lang_name = "Japanese";
+                else if (language_code_ != "en") lang_name = language_code_;
+
+                glz::json_t subtitle;
+                subtitle["type"] = "TextBlock";
+                subtitle["text"] = "The Free Encyclopedia \u2022 " + lang_name + " (" + language_code_ + ".wikipedia.org)";
+                subtitle["isSubtle"] = true;
+                subtitle["size"] = "Small";
+                items.push_back(std::move(subtitle));
+
+                col["items"] = std::move(items);
+                cols.push_back(std::move(col));
+            }
+
+            col_set["columns"] = std::move(cols);
+            container["items"] = std::vector<glz::json_t>{std::move(col_set)};
+            body.push_back(std::move(container));
+        }
+
+        // 2. Search Input Container
+        {
+            glz::json_t container;
+            container["type"] = "Container";
+            std::vector<glz::json_t> items;
+
+            glz::json_t input;
+            input["type"] = "Input.Text";
+            input["id"] = "search_query";
+            input["placeholder"] = "Search topics (e.g. C++20, Quantum Computing)...";
+            if (!search_query_.empty()) {
+                input["value"] = search_query_;
+            }
+            items.push_back(std::move(input));
+
+            container["items"] = std::move(items);
+            body.push_back(std::move(container));
+        }
+
+        // 3. Article Content Container
+        {
+            glz::json_t container;
+            container["type"] = "Container";
+            container["style"] = "default";
+            container["separator"] = true;
+
+            std::vector<glz::json_t> items;
+
+            std::string disp_title = article_title_;
+            std::string disp_extract = article_extract_;
+            {
+                std::lock_guard<std::mutex> lock(state->mutex);
+                if (state->article_loaded && !state->article_title.empty()) {
+                    disp_title = state->article_title;
+                    if (!state->article_summary.empty()) {
+                        disp_extract = state->article_summary;
+                    }
+                }
+            }
+
+            glz::json_t title;
+            title["type"] = "TextBlock";
+            title["text"] = disp_title;
+            title["weight"] = "Bolder";
+            title["size"] = "ExtraLarge";
+            items.push_back(std::move(title));
+
+            glz::json_t extract;
+            extract["type"] = "TextBlock";
+            extract["text"] = disp_extract;
+            extract["wrap"] = true;
+            items.push_back(std::move(extract));
+
+            container["items"] = std::move(items);
+            body.push_back(std::move(container));
+        }
+
+        // 4. FactSet
+        {
+            glz::json_t fact_set;
+            fact_set["type"] = "FactSet";
+
+            std::vector<glz::json_t> facts;
+            for (const auto& [ftitle, fval] : current_facts_) {
+                facts.push_back(glz::json_t{{"title", ftitle}, {"value", fval}});
+            }
+
+            fact_set["facts"] = std::move(facts);
+            body.push_back(std::move(fact_set));
+        }
+
+        card["body"] = std::move(body);
+
+        // 5. Actions
+        {
+            std::vector<glz::json_t> actions;
+
+            {
+                glz::json_t act;
+                act["type"] = "Action.Execute";
+                act["title"] = "Search";
+                act["verb"] = "wiki_search";
+                actions.push_back(std::move(act));
+            }
+            {
+                glz::json_t act;
+                act["type"] = "Action.Execute";
+                act["title"] = "Random Article";
+                act["verb"] = "wiki_random";
+                actions.push_back(std::move(act));
+            }
+            {
+                glz::json_t act;
+                act["type"] = "Action.OpenUrl";
+                act["title"] = "Read on Wikipedia";
+                act["url"] = full_url_;
+                actions.push_back(std::move(act));
+            }
+
+            card["actions"] = std::move(actions);
+        }
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
+    }
+
+    void handle_action(std::string_view action_json) override {
+        if (action_json.empty()) return;
+
+        try {
+            glz::json_t payload{};
+            std::string verb;
+            glz::json_t data{};
+
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (!err && payload.is_object()) {
+                if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                    verb = payload["verb"].get<std::string>();
+                } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                    verb = payload["action"].get<std::string>();
+                }
+
+                if (payload.contains("data") && payload["data"].is_object()) {
+                    data = payload["data"];
+                } else {
+                    data = payload;
+                }
+            } else {
+                verb = std::string(action_json);
+            }
+
+            if (verb == "wiki_search") {
+                last_action_ = "wiki_search";
+                std::string query;
+                if (data.is_object()) {
+                    if (data.contains("query") && data["query"].holds<std::string>()) {
+                        query = data["query"].get<std::string>();
+                    } else if (data.contains("search_query") && data["search_query"].holds<std::string>()) {
+                        query = data["search_query"].get<std::string>();
+                    } else if (data.contains("search") && data["search"].holds<std::string>()) {
+                        query = data["search"].get<std::string>();
+                    }
+                }
+
+                if (!query.empty()) {
+                    search_query_ = query;
+                    strncpy(search_buffer, query.c_str(), sizeof(search_buffer) - 1);
+                    current_query = query;
+                    article_title_ = query;
+                    article_extract_ = "Encyclopedic overview and lead section for " + query + " on " + language_code_ + ".wikipedia.org.";
+                    full_url_ = "https://" + language_code_ + ".wikipedia.org/wiki/" + ::helpers::StringHelper::url_encode(query);
+                    current_facts_ = {
+                        {"Standard Organization:", "ACM / IEEE Computer Society"},
+                        {"Publication Date:", "October 2026"},
+                        {"Predecessor:", "Classical Computing"},
+                        {"Successor:", "Fault-tolerant Quantum Systems"}
+                    };
+                    {
+                        std::lock_guard<std::mutex> lock(state->mutex);
+                        state->article_title = query;
+                        state->article_summary = article_extract_;
+                        state->article_url = full_url_;
+                        state->article_loaded = true;
+                    }
+                    // trigger_search(query);
+                }
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "wiki_random") {
+                last_action_ = "wiki_random";
+                static size_t random_idx = 0;
+                static const struct {
+                    const char* title;
+                    const char* extract;
+                    const char* org;
+                    const char* date;
+                    const char* pred;
+                    const char* succ;
+                } kFeaturedEntries[] = {
+                    {"Ada Lovelace", "Augusta Ada King, Countess of Lovelace was an English mathematician and writer, chiefly known for her work on Charles Babbage's proposed mechanical general-purpose computer, the Analytical Engine.", "Scientific Community", "December 1843", "Babbage Engine", "Modern Computing"},
+                    {"Alan Turing", "Alan Mathison Turing was an English mathematician, computer scientist, logician, cryptanalyst, philosopher, and theoretical biologist.", "Bletchley Park / NPL", "November 1936", "Turing Machine", "Universal Computation"},
+                    {"Voyager 1", "Voyager 1 is a space probe launched by NASA on September 5, 1977, as part of the Voyager program to study the outer Solar System and interstellar space.", "NASA / JPL", "September 1977", "Mariner program", "Voyager 2"},
+                    {"James Webb Space Telescope", "The James Webb Space Telescope (JWST) is a space telescope designed primarily to conduct infrared astronomy and study early cosmological history.", "NASA / ESA / CSA", "December 2021", "Hubble Space Telescope", "Nancy Grace Roman"}
+                };
+
+                const auto& item = kFeaturedEntries[random_idx % (sizeof(kFeaturedEntries) / sizeof(kFeaturedEntries[0]))];
+                ++random_idx;
+
+                article_title_ = item.title;
+                article_extract_ = item.extract;
+                full_url_ = "https://" + language_code_ + ".wikipedia.org/wiki/" + ::helpers::StringHelper::url_encode(item.title);
+                current_facts_ = {
+                    {"Standard Organization:", item.org},
+                    {"Publication Date:", item.date},
+                    {"Predecessor:", item.pred},
+                    {"Successor:", item.succ}
+                };
+                {
+                    std::lock_guard<std::mutex> lock(state->mutex);
+                    state->article_title = article_title_;
+                    state->article_summary = article_extract_;
+                    state->article_url = full_url_;
+                    state->article_loaded = true;
+                }
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "wiki_language") {
+                last_action_ = "wiki_language";
+                std::string lang;
+                if (data.is_object()) {
+                    if (data.contains("lang_code") && data["lang_code"].holds<std::string>()) {
+                        lang = data["lang_code"].get<std::string>();
+                    } else if (data.contains("language") && data["language"].holds<std::string>()) {
+                        lang = data["language"].get<std::string>();
+                    } else if (data.contains("lang") && data["lang"].holds<std::string>()) {
+                        lang = data["lang"].get<std::string>();
+                    }
+                }
+                if (!lang.empty()) {
+                    language_code_ = lang;
+                    full_url_ = "https://" + language_code_ + ".wikipedia.org/wiki/" + ::helpers::StringHelper::url_encode(article_title_);
+                }
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "toggle_adaptive_view") {
+                adaptive_view_mode = !adaptive_view_mode;
+                last_action_ = "toggle_adaptive_view";
+                last_adaptive_parse_time_ = {};
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[wikipedia] Action error: " << e.what() << std::endl;
+        }
+    }
+
+    [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+    void set_adaptive_view_mode(bool v) noexcept { adaptive_view_mode = v; }
+
+    [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
+    [[nodiscard]] const std::string& get_search_query() const noexcept { return search_query_; }
+    void set_search_query(std::string_view q) { search_query_ = q; }
+
+    [[nodiscard]] const std::string& get_article_title() const noexcept { return article_title_; }
+    void set_article_title(std::string_view title) { article_title_ = title; }
+
+    [[nodiscard]] const std::string& get_language_code() const noexcept { return language_code_; }
+    void set_language_code(std::string_view lang) { language_code_ = lang; }
+
+    [[nodiscard]] const std::string& get_article_extract() const noexcept { return article_extract_; }
+    void set_article_extract(std::string_view extract) { article_extract_ = extract; }
+
+    [[nodiscard]] const std::string& get_full_url() const noexcept { return full_url_; }
+    void set_full_url(std::string_view u) { full_url_ = u; }
+
+    [[nodiscard]] const std::string& get_thumbnail_url() const noexcept { return thumbnail_url_; }
+    void set_thumbnail_url(std::string_view thumb) { thumbnail_url_ = thumb; }
+
 private:
     std::shared_ptr<shared_state> state;
     char search_buffer[256]{};
@@ -696,6 +1075,30 @@ private:
     std::unordered_map<std::string, LoadedTexture> loaded_textures_;
     std::unordered_set<std::string> downloading_urls_;
     std::mutex downloading_mutex_;
+
+    // Adaptive Card presentation override state
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    std::string adaptive_error_{};
+    std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+
+    // Synchronized card state
+    std::string article_title_{"C++20"};
+    std::string article_extract_{"C++20 is a version of the ISO/IEC standard for the C++ programming language. It introduces major language features including concepts, modules, coroutines, ranges, and immediate functions (`consteval`)."};
+    std::string thumbnail_url_{};
+    std::string full_url_{"https://en.wikipedia.org/wiki/C%2B%2B20"};
+    std::string search_query_{};
+    std::string language_code_{"en"};
+    std::string last_action_{};
+    std::vector<std::pair<std::string, std::string>> current_facts_{
+        {"Standard Organization:", "ISO/IEC 14882:2020"},
+        {"Publication Date:", "December 2020"},
+        {"Predecessor:", "C++17"},
+        {"Successor:", "C++23"}
+    };
 };
 
 } // namespace rouen::cards

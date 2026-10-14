@@ -59,6 +59,7 @@
 #include "../src/cards/information/telegram.hpp"
 #include "../src/cards/information/travel.hpp"
 #include "../src/cards/information/whatsapp.hpp"
+#include "../src/cards/information/wikipedia.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
@@ -5147,4 +5148,120 @@ TEST(whatsappAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(wa_card.handle_action("{\"verb\":\"whatsapp_send\",\"data\":null}"));
     EXPECT_NO_THROW(wa_card.handle_action("{\"verb\":\"whatsapp_select_chat\",\"data\":null}"));
 }
+
+TEST(wikipediaAdaptiveTest, JsonSerialization) {
+    rouen::cards::wikipedia wiki_card{};
+    std::string card_json = wiki_card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_header_title = false;
+    bool found_search_input = false;
+    bool found_std_org_fact = false;
+    bool found_pub_date_fact = false;
+    bool found_predecessor_fact = false;
+    bool found_successor_fact = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& col_set : elem.items) {
+                if (col_set.type == "ColumnSet") {
+                    for (const auto& col : col_set.columns) {
+                        for (const auto& item : col.items) {
+                            if (item.type == "TextBlock") {
+                                if (item.text.find("Wikipedia Encyclopedia") != std::string::npos) {
+                                    found_header_title = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (const auto& item : elem.items) {
+                if (item.type == "Input.Text" && item.id == "search_query") {
+                    found_search_input = true;
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title.find("Standard Organization") != std::string::npos) found_std_org_fact = true;
+                if (fact.title.find("Publication Date") != std::string::npos) found_pub_date_fact = true;
+                if (fact.title.find("Predecessor") != std::string::npos) found_predecessor_fact = true;
+                if (fact.title.find("Successor") != std::string::npos) found_successor_fact = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_header_title);
+    EXPECT_TRUE(found_search_input);
+    EXPECT_TRUE(found_std_org_fact);
+    EXPECT_TRUE(found_pub_date_fact);
+    EXPECT_TRUE(found_predecessor_fact);
+    EXPECT_TRUE(found_successor_fact);
+
+    bool found_search_action = false;
+    bool found_random_action = false;
+    bool found_open_url_action = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "wiki_search" || act.title.find("Search") != std::string::npos) {
+            found_search_action = true;
+        }
+        if (act.verb == "wiki_random" || act.title.find("Random") != std::string::npos) {
+            found_random_action = true;
+        }
+        if (act.type == "Action.OpenUrl" || act.url.find("wikipedia.org") != std::string::npos) {
+            found_open_url_action = true;
+        }
+    }
+    EXPECT_TRUE(found_search_action);
+    EXPECT_TRUE(found_random_action);
+    EXPECT_TRUE(found_open_url_action);
+}
+
+TEST(wikipediaAdaptiveTest, ActionDispatch) {
+    rouen::cards::wikipedia wiki_card{};
+    EXPECT_FALSE(wiki_card.is_adaptive_view_mode());
+
+    // 1. wiki_search
+    wiki_card.handle_action(R"raw({"type":"Action.Execute","verb":"wiki_search","data":{"query":"Quantum Computing"}})raw");
+    EXPECT_EQ(wiki_card.get_last_action(), "wiki_search");
+    EXPECT_EQ(wiki_card.get_search_query(), "Quantum Computing");
+    EXPECT_EQ(wiki_card.get_article_title(), "Quantum Computing");
+    EXPECT_NE(wiki_card.get_adaptive_card_json().find("Quantum Computing"), std::string::npos);
+
+    // 2. wiki_random
+    wiki_card.handle_action(R"raw({"type":"Action.Execute","verb":"wiki_random"})raw");
+    EXPECT_EQ(wiki_card.get_last_action(), "wiki_random");
+    EXPECT_FALSE(wiki_card.get_article_title().empty());
+
+    // 3. wiki_language
+    wiki_card.handle_action(R"raw({"type":"Action.Execute","verb":"wiki_language","data":{"lang_code":"es"}})raw");
+    EXPECT_EQ(wiki_card.get_last_action(), "wiki_language");
+    EXPECT_EQ(wiki_card.get_language_code(), "es");
+    EXPECT_NE(wiki_card.get_adaptive_card_json().find("es.wikipedia.org"), std::string::npos);
+
+    // 4. toggle_adaptive_view
+    wiki_card.handle_action(R"raw({"type":"Action.Execute","verb":"toggle_adaptive_view"})raw");
+    EXPECT_TRUE(wiki_card.is_adaptive_view_mode());
+    wiki_card.handle_action(R"raw({"type":"Action.Execute","verb":"toggle_adaptive_view"})raw");
+    EXPECT_FALSE(wiki_card.is_adaptive_view_mode());
+}
+
+TEST(wikipediaAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::wikipedia wiki_card{};
+    EXPECT_NO_THROW(wiki_card.handle_action(""));
+    EXPECT_NO_THROW(wiki_card.handle_action("not a json string"));
+    EXPECT_NO_THROW(wiki_card.handle_action("{"));
+    EXPECT_NO_THROW(wiki_card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(wiki_card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(wiki_card.handle_action("{\"verb\":\"wiki_search\",\"data\":null}"));
+    EXPECT_NO_THROW(wiki_card.handle_action("{\"verb\":\"wiki_language\",\"data\":null}"));
+}
+
 
