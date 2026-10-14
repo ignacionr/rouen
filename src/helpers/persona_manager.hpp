@@ -28,6 +28,9 @@ namespace rouen::helpers {
         std::string thinking_level{};
         int max_tool_iterations{10};
         int max_output_tokens{8192};
+        std::string context_compaction_strategy{"summarize"}; // "none", "sliding_window", "summarize"
+        int max_context_turns{30};
+        int preserve_recent_turns{10};
 
         [[nodiscard]] std::string get_effective_thinking_level() const {
             if (!thinking_level.empty()) {
@@ -52,7 +55,10 @@ namespace rouen::helpers {
                 "temperature", &T::temperature,
                 "thinking_level", &T::thinking_level,
                 "max_tool_iterations", &T::max_tool_iterations,
-                "max_output_tokens", &T::max_output_tokens
+                "max_output_tokens", &T::max_output_tokens,
+                "context_compaction_strategy", &T::context_compaction_strategy,
+                "max_context_turns", &T::max_context_turns,
+                "preserve_recent_turns", &T::preserve_recent_turns
             );
         };
     };
@@ -133,7 +139,7 @@ namespace rouen::helpers {
             if (active_persona_index_ < personas_.size()) {
                 return personas_[active_persona_index_];
             }
-            static Persona fallback{"Default Assistant", "Fallback persona", {"terminal", "editor", "deck", "adaptive_card", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro", "notes", "contacts"}, "You are a helpful assistant.", "Default", false, {}, 0.7f, "high", 10, 8192};
+            static Persona fallback{"Default Assistant", "Fallback persona", {"terminal", "editor", "deck", "adaptive_card", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro", "notes", "contacts"}, "You are a helpful assistant.", "Default", false, {}, 0.7f, "high", 10, 8192, "summarize", 30, 10};
             return fallback;
         }
 
@@ -1031,6 +1037,18 @@ namespace rouen::helpers {
                 }
                 if (p.max_output_tokens <= 0) {
                     p.max_output_tokens = (p.name == "Autonomous Engineer" || p.name == "Code & Git Architect" || p.name == "Adaptive Card Architect") ? 16384 : 8192;
+                    modified = true;
+                }
+                if (p.max_context_turns <= 0) {
+                    p.max_context_turns = 30;
+                    modified = true;
+                }
+                if (p.preserve_recent_turns <= 0) {
+                    p.preserve_recent_turns = 10;
+                    modified = true;
+                }
+                if (p.context_compaction_strategy.empty()) {
+                    p.context_compaction_strategy = "summarize";
                     modified = true;
                 }
                 if (p.llm_config_name == "Local MLX" || p.llm_config_name == "Default" || p.llm_config_name.empty()) {

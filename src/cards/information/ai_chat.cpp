@@ -28,6 +28,7 @@
 #include "../../helpers/string_helper.hpp"
 #include "../../helpers/notify_service.hpp"
 #include "../../helpers/persona_manager.hpp"
+#include "../../helpers/context_compactor.hpp"
 #include "../../helpers/workspace_rules.hpp"
 #include "../../helpers/debug.hpp"
 #include "../../fonts.hpp"
@@ -663,6 +664,8 @@ namespace rouen::cards {
                 // Create a safe snapshot of the chat history for rendering
                 std::vector<std::pair<std::string, std::string>> chat_snapshot;
                 std::vector<MessageCache> cache_snapshot;
+                std::string summary_snapshot;
+                size_t compacted_count_snapshot = 0;
                 {
                     std::lock_guard<std::mutex> const lock(chat_history_mutex_);
                     chat_snapshot.reserve(chat_history_.size());
@@ -671,6 +674,33 @@ namespace rouen::cards {
                     // Copy the data safely
                     chat_snapshot.assign(chat_history_.begin(), chat_history_.end());
                     cache_snapshot.assign(message_cache_.begin(), message_cache_.end());
+                    summary_snapshot = context_summary_;
+                    compacted_count_snapshot = compacted_turns_count_;
+                }
+
+                if (compacted_count_snapshot > 0 && !summary_snapshot.empty()) {
+                    std::string pill_label = std::format("🗜️ Context compacted: {} earlier turns summarized into memory", compacted_count_snapshot);
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.25f, 0.35f, 0.6f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.32f, 0.45f, 0.8f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.85f, 1.0f, 1.0f));
+                    if (ImGui::Button(pill_label.c_str())) {
+                        show_context_summary_details_ = !show_context_summary_details_;
+                    }
+                    ImGui::PopStyleColor(3);
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Click to %s earlier context summary", show_context_summary_details_ ? "collapse" : "expand");
+                    }
+                    if (show_context_summary_details_) {
+                        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.14f, 0.18f, 0.9f));
+                        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+                        if (ImGui::BeginChild("ContextSummaryDetail", ImVec2(0, 100.0f), true)) {
+                            ImGui::TextWrapped("%s", summary_snapshot.c_str());
+                        }
+                        ImGui::EndChild();
+                        ImGui::PopStyleVar();
+                        ImGui::PopStyleColor();
+                    }
+                    ImGui::Separator();
                 }
                 
                 for (size_t i = 0; i < chat_snapshot.size() && i < cache_snapshot.size(); ++i) {
@@ -1100,6 +1130,8 @@ namespace rouen::cards {
                 std::lock_guard<std::mutex> const lock(chat_history_mutex_);
                 chat_history_.clear();
                 message_cache_.clear();
+                context_summary_.clear();
+                compacted_turns_count_ = 0;
                 layout_dirty_ = true;
             }
             
@@ -1189,6 +1221,17 @@ namespace rouen::cards {
             ? debug_indices.size() - max_debug_messages : 0;
         for (size_t i = debug_start; i < debug_indices.size(); ++i) {
             selected_indices.insert(debug_indices[i]);
+        }
+
+        if (compacted_turns_count_ > 0 && !context_summary_.empty()) {
+            glz::json_t pill;
+            pill["type"] = "TextBlock";
+            pill["text"] = std::format("🗜️ Context compacted: {} earlier turns summarized into memory.", compacted_turns_count_);
+            pill["isSubtle"] = true;
+            pill["horizontalAlignment"] = "Center";
+            pill["size"] = "Small";
+            pill["color"] = "Accent";
+            body.push_back(std::move(pill));
         }
 
         if (conv_start > 0) {
@@ -1368,6 +1411,8 @@ namespace rouen::cards {
             std::lock_guard<std::mutex> const lock(chat_history_mutex_);
             chat_history_.clear();
             message_cache_.clear();
+            context_summary_.clear();
+            compacted_turns_count_ = 0;
             layout_dirty_ = true;
         }
     }
@@ -1857,15 +1902,58 @@ namespace rouen::cards {
                     }
 
                     // Create conversion from our message format to the format expected by sendMessage with mutex protection
-                    std::vector<std::pair<std::string, std::string>> conversation_for_llm;
+                    std::vector<std::pair<std::string, std::string>> raw_conversation;
+                    std::string current_summary;
                     {
                         std::lock_guard<std::mutex> const lock(chat_history_mutex_);
                         for (const auto& chat_msg : chat_history_) {
                             if (chat_msg.first == "user" || chat_msg.first == "assistant") {
-                                conversation_for_llm.emplace_back(chat_msg.first, chat_msg.second);
+                                raw_conversation.emplace_back(chat_msg.first, chat_msg.second);
                             }
                         }
+                        current_summary = context_summary_;
                     }
+
+                    // Compact conversation history if turns exceed persona threshold
+                    auto compaction_result = helpers::ContextCompactor::compact(
+                        raw_conversation,
+                        active_persona,
+                        current_summary,
+                        [&](const std::string& prompt, const std::string& text_to_summarize) -> std::string {
+                            try {
+                                auto summary_llm = helpers::LLMConfig::create_llm_instance();
+                                if (!summary_llm) return "";
+                                auto sum_fetcher = std::make_shared<http::fetch>(30);
+                                sum_fetcher->set_max_retries(1);
+                                auto cfg = helpers::LLMConfig::get_current_config();
+                                summary_llm->add_instructions(prompt);
+                                auto sum_resp = summary_llm->sendMessage(
+                                    "Please summarize the following conversation history concisely:\n\n" + text_to_summarize,
+                                    [sum_fetcher](const std::string& u, const std::string& b, auto hdr) {
+                                        return sum_fetcher->post(u, b, hdr);
+                                    },
+                                    "user",
+                                    cfg.model_name,
+                                    "",
+                                    0.1f
+                                );
+                                if (!sum_resp.choices.empty() && !sum_resp.choices[0].message.content.empty()) {
+                                    return sum_resp.choices[0].message.content;
+                                }
+                            } catch (const std::exception& e) {
+                                LOG_COMPONENT("AIChat", LOG_LEVEL_WARN, std::format("LLM summarization failed: {}. Falling back to structured summarizer.", e.what()));
+                            }
+                            return "";
+                        }
+                    );
+
+                    if (compaction_result.was_compacted) {
+                        std::lock_guard<std::mutex> const lock(chat_history_mutex_);
+                        context_summary_ = compaction_result.summary;
+                        compacted_turns_count_ = compaction_result.compacted_turns;
+                    }
+
+                    std::vector<std::pair<std::string, std::string>> conversation_for_llm = std::move(compaction_result.compacted_conversation);
                     
                     // Try to use function calling if we have a Gemini adapter directly
                     auto fetcher = std::make_shared<http::fetch>(ai_request_timeout_seconds_);
@@ -2042,6 +2130,17 @@ namespace rouen::cards {
                     async_context->conversation_snapshot.emplace_back(msg.first, msg.second);
                 }
             }
+
+            auto compaction_result = helpers::ContextCompactor::compact(
+                async_context->conversation_snapshot,
+                helpers::PersonaManager::instance().get_active_persona(),
+                context_summary_
+            );
+            if (compaction_result.was_compacted) {
+                context_summary_ = compaction_result.summary;
+                compacted_turns_count_ = compaction_result.compacted_turns;
+            }
+            async_context->conversation_snapshot = std::move(compaction_result.compacted_conversation);
             
             // Create a shared fetcher instance for this request to avoid accessing member fetcher_
             async_context->fetcher = std::make_shared<http::fetch>(ai_request_timeout_seconds_);

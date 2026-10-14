@@ -36,6 +36,13 @@ namespace rouen::cards {
             internal_turn_count_.store(count, std::memory_order_relaxed);
         }
 
+        [[nodiscard]] const std::string& get_context_summary() const noexcept {
+            return context_summary_;
+        }
+        [[nodiscard]] size_t get_compacted_turns_count() const noexcept {
+            return compacted_turns_count_;
+        }
+
         struct LiveToolActivity {
             std::string tool_name;
             std::string summary;
@@ -98,6 +105,9 @@ namespace rouen::cards {
         mutable std::mutex active_tools_mutex_;
         std::deque<LiveToolActivity> active_tool_activities_;
         mutable std::mutex chat_history_mutex_;
+        std::string context_summary_{};
+        size_t compacted_turns_count_{0};
+        bool show_context_summary_details_{false};
         
         std::mutex dictation_mutex_;
         std::optional<std::string> pending_dictation_result_{std::nullopt};

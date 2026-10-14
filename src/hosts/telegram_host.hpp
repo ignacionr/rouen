@@ -58,6 +58,7 @@ struct telegram_chat_session {
     int64_t last_message_time{0};
     std::vector<telegram_message> messages;
     bool voice_enabled{false};
+    std::string context_summary;
 
     struct glaze {
         using T = telegram_chat_session;
@@ -68,7 +69,8 @@ struct telegram_chat_session {
             "last_message_text", &T::last_message_text,
             "last_message_time", &T::last_message_time,
             "messages", &T::messages,
-            "voice_enabled", &T::voice_enabled
+            "voice_enabled", &T::voice_enabled,
+            "context_summary", &T::context_summary
         );
     };
 };

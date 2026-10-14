@@ -1049,6 +1049,12 @@ add_executable(test_workspace_rules
 target_link_libraries(test_workspace_rules PRIVATE rouen_test_modules SQLite::SQLite3)
 add_test(NAME WorkspaceRulesTest COMMAND test_workspace_rules)
 
+add_executable(test_ai_context_compaction
+    test_ai_context_compaction.cpp
+)
+target_link_libraries(test_ai_context_compaction PRIVATE rouen_test_modules SQLite::SQLite3)
+add_test(NAME AIContextCompactionTest COMMAND test_ai_context_compaction)
+
 add_gtest_executable(test_editor_diagnostics test_editor_diagnostics.cpp)
 target_sources(test_editor_diagnostics PRIVATE ../src/fonts.cpp)
 target_link_libraries(test_editor_diagnostics PRIVATE imcolortextedit ${SDL3_LIBRARIES})
@@ -1066,7 +1072,7 @@ target_link_libraries(test_vcproject_workflow PRIVATE rouen_test_modules SQLite:
 
 
 # Set output directory for test executables
-set_target_properties(test_bybit_currency_fix test_example_math test_notes_repository_legacy test_series_repository test_rss_watermark test_syntax_checker test_code_indexer test_code_editor test_diff_engine test_cmake_workflow test_vcproject_workflow PROPERTIES
+set_target_properties(test_bybit_currency_fix test_example_math test_notes_repository_legacy test_series_repository test_rss_watermark test_syntax_checker test_code_indexer test_code_editor test_workspace_rules test_ai_context_compaction test_diff_engine test_cmake_workflow test_vcproject_workflow PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 

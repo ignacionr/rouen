@@ -1,6 +1,7 @@
 #include "telegram_host.hpp"
 #include "rouen_mesh_host.hpp"
 #include "../helpers/config_service.hpp"
+#include "../helpers/context_compactor.hpp"
 
 namespace rouen::hosts {
 
@@ -1008,25 +1009,69 @@ void telegram_host::route_incoming_message(const telegram_message& msg) {
 
                 if (!target_persona) return;
 
-                std::vector<std::pair<std::string, std::string>> conversation_history;
+                std::vector<std::pair<std::string, std::string>> raw_history;
+                std::string session_summary;
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
                     auto it = sessions_map_.find(chat_id);
                     if (it != sessions_map_.end()) {
                         size_t count = it->second.messages.size();
-                        size_t start = (count > 20) ? (count - 20) : 0;
-                        for (size_t i = start; i < count; ++i) {
+                        for (size_t i = 0; i < count; ++i) {
                             if (i < count - 1) {
                                 const auto& m = it->second.messages[i];
-                                conversation_history.push_back({m.is_outgoing ? "assistant" : "user", m.text});
+                                raw_history.push_back({m.is_outgoing ? "assistant" : "user", m.text});
                             }
                         }
+                        session_summary = it->second.context_summary;
                     }
                 }
 
-                while (!conversation_history.empty() && conversation_history.front().first == "assistant") {
-                    conversation_history.erase(conversation_history.begin());
+                // Apply context compaction using persona configuration (or max 20 default)
+                helpers::Persona effective_persona = *target_persona;
+                if (effective_persona.max_context_turns > 20) {
+                    effective_persona.max_context_turns = 20;
                 }
+                if (effective_persona.preserve_recent_turns > 10) {
+                    effective_persona.preserve_recent_turns = 10;
+                }
+
+                auto compaction_result = helpers::ContextCompactor::compact(
+                    raw_history,
+                    effective_persona,
+                    session_summary,
+                    [&](const std::string& prompt, const std::string& text_to_summarize) -> std::string {
+                        try {
+                            auto sum_llm = rouen::hosts::LLMHost::create_llm_instance(target_persona->llm_config_name);
+                            if (!sum_llm) return "";
+                            http::fetch sum_fetcher{25};
+                            sum_llm->add_instructions(prompt);
+                            auto cfg = rouen::hosts::LLMHost::get_current_config(target_persona->llm_config_name);
+                            auto resp = sum_llm->sendMessage(
+                                "Please summarize this conversation history:\n\n" + text_to_summarize,
+                                [&sum_fetcher](const std::string& u, const std::string& d, auto h) { return sum_fetcher.post(u, d, h); },
+                                "user",
+                                cfg.model_name,
+                                "",
+                                0.1f
+                            );
+                            if (!resp.choices.empty() && !resp.choices[0].message.content.empty()) {
+                                return resp.choices[0].message.content;
+                            }
+                        } catch (...) {}
+                        return "";
+                    }
+                );
+
+                if (compaction_result.was_compacted) {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    auto it = sessions_map_.find(chat_id);
+                    if (it != sessions_map_.end()) {
+                        it->second.context_summary = compaction_result.summary;
+                        save_state();
+                    }
+                }
+
+                std::vector<std::pair<std::string, std::string>> conversation_history = std::move(compaction_result.compacted_conversation);
 
                 std::string reply = run_ai_persona_completion(target_persona, incoming_text, conversation_history, 0);
                 if (reply.empty()) {
@@ -1090,6 +1135,7 @@ bool telegram_host::clear_session_messages(int64_t chat_id) {
     auto it = sessions_map_.find(chat_id);
     if (it != sessions_map_.end()) {
         it->second.messages.clear();
+        it->second.context_summary.clear();
         it->second.last_message_text = "Context cleared";
         it->second.last_message_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         save_state();
