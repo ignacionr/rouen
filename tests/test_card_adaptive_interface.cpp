@@ -46,6 +46,7 @@
 #include "../src/cards/media/media_companion.hpp"
 #include "../src/cards/media/radio.hpp"
 #include "../src/cards/media/radiocut.hpp"
+#include "../src/cards/media/youtube_search.hpp"
 #include "../src/cards/development/cmake.hpp"
 #include "../src/cards/development/diff_card.hpp"
 #include "../src/cards/information/directory_card.hpp"
@@ -5371,6 +5372,130 @@ TEST(worldcup_dashboardAdaptiveTest, MalformedActionHandling) {
     EXPECT_NO_THROW(wc_card.handle_action("{\"verb\":\"wc_filter_group\",\"data\":null}"));
     EXPECT_NO_THROW(wc_card.handle_action("{\"verb\":\"wc_select_match\",\"data\":null}"));
 }
+
+TEST(youtube_searchAdaptiveTest, JsonSerialization) {
+    auto dummy_open_url = std::make_shared<std::function<void(const std::string&)>>([](const std::string&) {});
+    registrar::add<std::function<void(const std::string&)>>("open_url", dummy_open_url);
+
+    rouen::cards::youtube_search yt_card{};
+    std::string card_json = yt_card.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(card_json);
+    EXPECT_EQ(doc.type, "AdaptiveCard");
+    EXPECT_EQ(doc.version, "1.5");
+
+    bool found_header = false;
+    bool found_query_input = false;
+    bool found_channel_fact = false;
+    bool found_duration_fact = false;
+    bool found_views_fact = false;
+
+    for (const auto& elem : doc.body) {
+        if (elem.type == "Container") {
+            for (const auto& col_set : elem.items) {
+                if (col_set.type == "ColumnSet") {
+                    for (const auto& col : col_set.columns) {
+                        for (const auto& item : col.items) {
+                            if (item.type == "TextBlock") {
+                                if (item.text.find("YouTube Video Explorer") != std::string::npos) {
+                                    found_header = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (const auto& item : elem.items) {
+                if (item.type == "Input.Text" && item.id == "yt_query") {
+                    found_query_input = true;
+                }
+                if (item.type == "FactSet") {
+                    for (const auto& fact : item.facts) {
+                        if (fact.title.find("Channel:") != std::string::npos) found_channel_fact = true;
+                        if (fact.title.find("Duration:") != std::string::npos) found_duration_fact = true;
+                        if (fact.title.find("Views:") != std::string::npos) found_views_fact = true;
+                    }
+                }
+            }
+        }
+        if (elem.type == "FactSet") {
+            for (const auto& fact : elem.facts) {
+                if (fact.title.find("Channel:") != std::string::npos) found_channel_fact = true;
+                if (fact.title.find("Duration:") != std::string::npos) found_duration_fact = true;
+                if (fact.title.find("Views:") != std::string::npos) found_views_fact = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_header);
+    EXPECT_TRUE(found_query_input);
+    EXPECT_TRUE(found_channel_fact);
+    EXPECT_TRUE(found_duration_fact);
+    EXPECT_TRUE(found_views_fact);
+
+    bool found_search_action = false;
+    bool found_play_action = false;
+    bool found_open_url_action = false;
+    for (const auto& act : doc.actions) {
+        if (act.verb == "yt_search" || act.title.find("Search") != std::string::npos) {
+            found_search_action = true;
+        }
+        if (act.verb == "yt_play" || act.title.find("Play") != std::string::npos) {
+            found_play_action = true;
+        }
+        if (act.type == "Action.OpenUrl" || act.url.find("youtube.com") != std::string::npos) {
+            found_open_url_action = true;
+        }
+    }
+    EXPECT_TRUE(found_search_action);
+    EXPECT_TRUE(found_play_action);
+    EXPECT_TRUE(found_open_url_action);
+}
+
+TEST(youtube_searchAdaptiveTest, ActionDispatch) {
+    rouen::cards::youtube_search yt_card{};
+    EXPECT_FALSE(yt_card.is_adaptive_view_mode());
+
+    // 1. yt_search
+    yt_card.handle_action(R"raw({"type":"Action.Execute","verb":"yt_search","data":{"query":"CppCon 2026 Modules"}})raw");
+    EXPECT_EQ(yt_card.get_last_action(), "yt_search");
+    EXPECT_EQ(yt_card.get_search_query(), "CppCon 2026 Modules");
+
+    // 2. yt_play
+    yt_card.handle_action(R"raw({"type":"Action.Execute","verb":"yt_play","data":{"url":"https://youtube.com/watch?v=sample123"}})raw");
+    EXPECT_EQ(yt_card.get_last_action(), "yt_play");
+    EXPECT_TRUE(yt_card.is_playing());
+    EXPECT_EQ(yt_card.get_active_video_url(), "https://youtube.com/watch?v=sample123");
+    EXPECT_EQ(yt_card.get_active_video_id(), "sample123");
+
+    // 3. yt_queue
+    yt_card.handle_action(R"raw({"type":"Action.Execute","verb":"yt_queue","data":{"url":"https://youtube.com/watch?v=queue456"}})raw");
+    EXPECT_EQ(yt_card.get_last_action(), "yt_queue");
+    EXPECT_TRUE(yt_card.is_queued());
+    EXPECT_EQ(yt_card.get_queued_video_url(), "https://youtube.com/watch?v=queue456");
+
+    // 4. toggle_adaptive_view
+    yt_card.handle_action(R"raw({"type":"Action.Execute","verb":"toggle_adaptive_view"})raw");
+    EXPECT_TRUE(yt_card.is_adaptive_view_mode());
+    yt_card.handle_action(R"raw({"type":"Action.Execute","verb":"toggle_adaptive_view"})raw");
+    EXPECT_FALSE(yt_card.is_adaptive_view_mode());
+}
+
+TEST(youtube_searchAdaptiveTest, MalformedActionHandling) {
+    rouen::cards::youtube_search yt_card{};
+    EXPECT_NO_THROW(yt_card.handle_action(""));
+    EXPECT_NO_THROW(yt_card.handle_action("not a json string"));
+    EXPECT_NO_THROW(yt_card.handle_action("{"));
+    EXPECT_NO_THROW(yt_card.handle_action("{\"verb\": 1234}"));
+    EXPECT_NO_THROW(yt_card.handle_action("{\"verb\": \"unknown_verb_xyz\"}"));
+    EXPECT_NO_THROW(yt_card.handle_action("{\"verb\":\"yt_search\",\"data\":null}"));
+    EXPECT_NO_THROW(yt_card.handle_action("{\"verb\":\"yt_play\",\"data\":null}"));
+    EXPECT_NO_THROW(yt_card.handle_action("{\"verb\":\"yt_queue\",\"data\":null}"));
+}
+
 
 
 

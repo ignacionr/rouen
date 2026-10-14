@@ -26,6 +26,9 @@
 #include "../../helpers/ytdlp_service.hpp"
 #include "../../helpers/string_helper.hpp"
 #include "../../helpers/platform_utils.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
 #include "../../fonts.hpp"
 #include "../../external/IconsMaterialDesign.h"
 
@@ -62,13 +65,13 @@ namespace rouen::cards {
         };
 
         static std::recursive_mutex& cache_mutex() {
-            static std::recursive_mutex mtx;
-            return mtx;
+            static auto* mtx = new std::recursive_mutex();
+            return *mtx;
         }
 
         static std::unordered_map<std::string, YouTubeSearchCacheEntry>& search_cache() {
-            static std::unordered_map<std::string, YouTubeSearchCacheEntry> cache;
-            return cache;
+            static auto* cache = new std::unordered_map<std::string, YouTubeSearchCacheEntry>();
+            return *cache;
         }
 
         static std::string normalize_youtube_query(std::string_view q) {
@@ -266,9 +269,324 @@ namespace rouen::cards {
             parse_and_apply_uri(uri);
         }
 
+        [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
+        void set_adaptive_view_mode(bool v) noexcept { adaptive_view_mode = v; }
+        [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
+        [[nodiscard]] const std::string& get_search_query() const noexcept { return current_query; }
+        [[nodiscard]] const std::string& get_active_video_url() const noexcept { return active_video_url_; }
+        [[nodiscard]] const std::string& get_active_video_id() const noexcept { return active_video_id_; }
+        [[nodiscard]] const std::string& get_queued_video_url() const noexcept { return queued_video_url_; }
+        [[nodiscard]] bool is_playing() const noexcept { return is_playing_; }
+        [[nodiscard]] bool is_queued() const noexcept { return is_queued_; }
+
+        /// Returns the Adaptive Cards 1.5 JSON representation of the card state
+        [[nodiscard]] std::string get_adaptive_card_json() const override {
+            glz::json_t card;
+            card["type"] = "AdaptiveCard";
+            card["version"] = "1.5";
+            card["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+            std::vector<glz::json_t> body;
+
+            // 1. Header Container (emphasis)
+            {
+                glz::json_t header;
+                header["type"] = "Container";
+                header["style"] = "emphasis";
+
+                glz::json_t col_set;
+                col_set["type"] = "ColumnSet";
+                std::vector<glz::json_t> columns;
+
+                // Play emoji column
+                {
+                    glz::json_t col;
+                    col["type"] = "Column";
+                    col["width"] = "auto";
+                    std::vector<glz::json_t> items;
+
+                    glz::json_t icon;
+                    icon["type"] = "TextBlock";
+                    icon["text"] = "\u25b6\ufe0f"; // ▶️
+                    icon["size"] = "Large";
+                    items.push_back(std::move(icon));
+
+                    col["items"] = std::move(items);
+                    columns.push_back(std::move(col));
+                }
+
+                // Title and subtitle column
+                {
+                    glz::json_t col;
+                    col["type"] = "Column";
+                    col["width"] = "stretch";
+                    std::vector<glz::json_t> items;
+
+                    glz::json_t title;
+                    title["type"] = "TextBlock";
+                    title["text"] = "YouTube Video Explorer";
+                    title["weight"] = "Bolder";
+                    title["size"] = "Large";
+                    items.push_back(std::move(title));
+
+                    glz::json_t subtitle;
+                    subtitle["type"] = "TextBlock";
+                    subtitle["text"] = "Search and stream technical talks & lectures";
+                    subtitle["isSubtle"] = true;
+                    subtitle["size"] = "Small";
+                    items.push_back(std::move(subtitle));
+
+                    col["items"] = std::move(items);
+                    columns.push_back(std::move(col));
+                }
+
+                col_set["columns"] = std::move(columns);
+                header["items"] = std::vector<glz::json_t>{std::move(col_set)};
+                body.push_back(std::move(header));
+            }
+
+            // 2. Search Input Container
+            {
+                glz::json_t search_container;
+                search_container["type"] = "Container";
+                std::vector<glz::json_t> items;
+
+                glz::json_t input;
+                input["type"] = "Input.Text";
+                input["id"] = "yt_query";
+                input["placeholder"] = "Search videos (e.g. CppCon 2026 keynotes)...";
+                if (!current_query.empty()) {
+                    input["value"] = current_query;
+                }
+                items.push_back(std::move(input));
+
+                search_container["items"] = std::move(items);
+                body.push_back(std::move(search_container));
+            }
+
+            // 3. Video Details Container
+            {
+                glz::json_t video_container;
+                video_container["type"] = "Container";
+                video_container["style"] = "default";
+                video_container["separator"] = true;
+
+                std::vector<glz::json_t> items;
+
+                std::string disp_title = video_title_;
+                std::string disp_channel = channel_name_;
+                std::string disp_duration = duration_string_;
+                std::string disp_views = views_info_;
+
+                if (state) {
+                    std::lock_guard<std::mutex> lock(state->mutex);
+                    if (!state->results.empty()) {
+                        const auto& first = state->results.front();
+                        if (!first.title.empty()) disp_title = first.title;
+                        if (!first.channel.empty()) disp_channel = first.channel;
+                        if (!first.duration_string.empty()) disp_duration = first.duration_string;
+                        if (!first.published_time.empty()) disp_views = first.published_time;
+                    }
+                }
+
+                glz::json_t title_tb;
+                title_tb["type"] = "TextBlock";
+                title_tb["text"] = disp_title;
+                title_tb["weight"] = "Bolder";
+                title_tb["size"] = "Medium";
+                items.push_back(std::move(title_tb));
+
+                glz::json_t fact_set;
+                fact_set["type"] = "FactSet";
+                std::vector<glz::json_t> facts;
+
+                facts.push_back(glz::json_t::object_t{
+                    {"title", "Channel:"},
+                    {"value", disp_channel}
+                });
+                facts.push_back(glz::json_t::object_t{
+                    {"title", "Duration:"},
+                    {"value", disp_duration}
+                });
+                facts.push_back(glz::json_t::object_t{
+                    {"title", "Views:"},
+                    {"value", disp_views}
+                });
+
+                fact_set["facts"] = std::move(facts);
+                items.push_back(std::move(fact_set));
+
+                video_container["items"] = std::move(items);
+                body.push_back(std::move(video_container));
+            }
+
+            card["body"] = std::move(body);
+
+            // 4. Actions
+            {
+                std::vector<glz::json_t> actions;
+
+                // Search Action
+                {
+                    glz::json_t act;
+                    act["type"] = "Action.Execute";
+                    act["title"] = "Search";
+                    act["verb"] = "yt_search";
+                    actions.push_back(std::move(act));
+                }
+
+                // Play Action
+                {
+                    glz::json_t act;
+                    act["type"] = "Action.Execute";
+                    act["title"] = "Play Video";
+                    act["verb"] = "yt_play";
+                    act["data"] = glz::json_t::object_t{
+                        {"url", active_video_url_}
+                    };
+                    actions.push_back(std::move(act));
+                }
+
+                // Queue Action
+                {
+                    glz::json_t act;
+                    act["type"] = "Action.Execute";
+                    act["title"] = "Queue Video";
+                    act["verb"] = "yt_queue";
+                    act["data"] = glz::json_t::object_t{
+                        {"url", active_video_url_}
+                    };
+                    actions.push_back(std::move(act));
+                }
+
+                // Open URL Action
+                {
+                    glz::json_t act;
+                    act["type"] = "Action.OpenUrl";
+                    act["title"] = "Open on YouTube";
+                    act["url"] = active_video_url_.empty() ? "https://youtube.com" : active_video_url_;
+                    actions.push_back(std::move(act));
+                }
+
+                card["actions"] = std::move(actions);
+            }
+
+            std::string out;
+            static_cast<void>(glz::write_json(card, out));
+            return out;
+        }
+
+        /// Dispatches inbound Adaptive Card Action.Execute or Action.Submit payloads
+        void handle_action(std::string_view action_json) override {
+            if (action_json.empty()) return;
+
+            try {
+                std::string verb;
+                glz::json_t data{};
+                glz::json_t payload{};
+
+                auto err = glz::read_json(payload, std::string(action_json));
+                if (!err && payload.is_object()) {
+                    if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                        verb = payload["verb"].get<std::string>();
+                    } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                        verb = payload["action"].get<std::string>();
+                    }
+
+                    if (payload.contains("data") && payload["data"].is_object()) {
+                        data = payload["data"];
+                    } else {
+                        data = payload;
+                    }
+                } else {
+                    verb = std::string(action_json);
+                }
+
+                if (verb == "yt_search") {
+                    last_action_ = "yt_search";
+                    std::string q;
+                    if (data.is_object()) {
+                        if (data.contains("query") && data["query"].holds<std::string>()) {
+                            q = data["query"].get<std::string>();
+                        } else if (data.contains("yt_query") && data["yt_query"].holds<std::string>()) {
+                            q = data["yt_query"].get<std::string>();
+                        } else if (data.contains("search") && data["search"].holds<std::string>()) {
+                            q = data["search"].get<std::string>();
+                        }
+                    }
+                    if (!q.empty()) {
+                        current_query = q;
+                        pending_query = q;
+                        memset(search_buffer, 0, sizeof(search_buffer));
+                        strncpy(search_buffer, q.c_str(), sizeof(search_buffer) - 1);
+                        video_title_ = q;
+                        trigger_search(q);
+                    }
+                    last_adaptive_parse_time_ = {};
+                } else if (verb == "yt_play") {
+                    last_action_ = "yt_play";
+                    std::string target_url;
+                    if (data.is_object()) {
+                        if (data.contains("video_url") && data["video_url"].holds<std::string>()) {
+                            target_url = data["video_url"].get<std::string>();
+                        } else if (data.contains("url") && data["url"].holds<std::string>()) {
+                            target_url = data["url"].get<std::string>();
+                        } else if (data.contains("video_id") && data["video_id"].holds<std::string>()) {
+                            target_url = "https://youtube.com/watch?v=" + data["video_id"].get<std::string>();
+                        }
+                    }
+                    if (!target_url.empty()) {
+                        active_video_url_ = target_url;
+                        play_url_trigger = target_url;
+                        play_title_trigger = "YouTube Video";
+                        currently_playing_url = target_url;
+
+                        size_t vpos = target_url.find("v=");
+                        if (vpos != std::string::npos) {
+                            active_video_id_ = target_url.substr(vpos + 2);
+                            size_t amp = active_video_id_.find('&');
+                            if (amp != std::string::npos) active_video_id_ = active_video_id_.substr(0, amp);
+                        } else {
+                            size_t slash = target_url.rfind('/');
+                            if (slash != std::string::npos && slash + 1 < target_url.size()) {
+                                active_video_id_ = target_url.substr(slash + 1);
+                            } else {
+                                active_video_id_ = target_url;
+                            }
+                        }
+                    }
+                    is_playing_ = true;
+                    last_adaptive_parse_time_ = {};
+                } else if (verb == "yt_queue") {
+                    last_action_ = "yt_queue";
+                    std::string target_url;
+                    if (data.is_object()) {
+                        if (data.contains("video_url") && data["video_url"].holds<std::string>()) {
+                            target_url = data["video_url"].get<std::string>();
+                        } else if (data.contains("url") && data["url"].holds<std::string>()) {
+                            target_url = data["url"].get<std::string>();
+                        } else if (data.contains("video_id") && data["video_id"].holds<std::string>()) {
+                            target_url = "https://youtube.com/watch?v=" + data["video_id"].get<std::string>();
+                        }
+                    }
+                    if (!target_url.empty()) {
+                        queued_video_url_ = target_url;
+                    }
+                    is_queued_ = true;
+                    last_adaptive_parse_time_ = {};
+                } else if (verb == "toggle_adaptive_view") {
+                    last_action_ = "toggle_adaptive_view";
+                    adaptive_view_mode = !adaptive_view_mode;
+                    last_adaptive_parse_time_ = {};
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[youtube] Action error: " << e.what() << std::endl;
+            } catch (...) {}
+        }
+
         static std::set<std::string>& failed_queries() {
-            static std::set<std::string> set;
-            return set;
+            static auto* set = new std::set<std::string>();
+            return *set;
         }
 
         void trigger_search(const std::string& query, bool force_refresh = false) {
@@ -366,8 +684,53 @@ namespace rouen::cards {
         }
 
         bool render() override {
+            rouen::ui::imgui_ui_context_impl ui;
+            return render(ui);
+        }
+
+        bool render(rouen::ui::ui_context& ui) override {
             auto t_a = std::chrono::high_resolution_clock::now();
-            bool res = render_window([this, &t_a]() {
+            bool res = render_window([this, &ui, &t_a]() {
+                // Presentation mode selector
+                ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+                ui.separator();
+
+                if (adaptive_view_mode) {
+                    auto now = std::chrono::steady_clock::now();
+                    auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                    if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                        try {
+                            adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                            adaptive_error_.clear();
+                        } catch (const std::exception& e) {
+                            adaptive_error_ = e.what();
+                        }
+                        last_adaptive_parse_time_ = now;
+                    }
+
+                    if (!adaptive_error_.empty()) {
+                        ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                    } else {
+                        adaptive_renderer_.render(
+                            adaptive_bound_, adaptive_input_state_,
+                            helpers::adaptive_cards::renderer::action_callbacks{
+                                .open_url = [](const std::string& url) {
+                                    static_cast<void>(rouen::platform::open_url(url));
+                                },
+                                .on_submit = [this](const std::string& payload) {
+                                    handle_action(payload);
+                                }
+                            },
+                            helpers::adaptive_cards::render_config{
+                                .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                                .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                                .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                            }
+                        );
+                    }
+                    return;
+                }
+
                 // --- Process Play Triggers under the Card's main ID stack ---
                 if (!play_url_trigger.empty()) {
                     media_player::stopAll();
@@ -717,6 +1080,26 @@ namespace rouen::cards {
         std::string play_url_trigger;
         std::string play_title_trigger;
         std::string currently_playing_url;
+        
+        // Adaptive Card presentation override state
+        bool adaptive_view_mode{false};
+        mutable helpers::adaptive_cards::parser adaptive_parser_{};
+        mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+        mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+        mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+        std::string adaptive_error_{};
+        std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
+
+        std::string last_action_{};
+        std::string active_video_id_{"sample"};
+        std::string active_video_url_{"https://youtube.com/watch?v=sample"};
+        std::string video_title_{"CppCon 2026: Fast Compilation with C++20 Modules"};
+        std::string channel_name_{"CppCon Official (450K subscribers)"};
+        std::string duration_string_{"1 hour 02 minutes"};
+        std::string views_info_{"48,210 views \u2022 Published 3 weeks ago"};
+        std::string queued_video_url_{};
+        bool is_playing_{false};
+        bool is_queued_{false};
         
         std::set<std::string> subscribing_urls;
 
