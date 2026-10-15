@@ -23,12 +23,23 @@
 #include <fstream>
 
 namespace media_player_alarm_helper {
+    inline std::mutex& alarm_mutex_instance() {
+        static std::mutex s_alarm_mutex;
+        return s_alarm_mutex;
+    }
+
+    inline std::mutex& toll_mutex_instance() {
+        static std::mutex s_toll_mutex;
+        return s_toll_mutex;
+    }
+
     inline media_player_item& alarm_item_instance() {
         static media_player_item alarm_item;
         return alarm_item;
     }
     
     inline void play_sound_loop(std::string_view file_path) {
+        std::lock_guard<std::mutex> lock(alarm_mutex_instance());
         auto& alarm_item = alarm_item_instance();
         auto resource_path = rouen::platform::get_resource_path(std::string(file_path), "");
         alarm_item.url = resource_path.string();
@@ -37,6 +48,7 @@ namespace media_player_alarm_helper {
     }
     
     inline void stop_sound_loop() {
+        std::lock_guard<std::mutex> lock(alarm_mutex_instance());
         auto& alarm_item = alarm_item_instance();
         alarm_item.stopMedia();
     }
@@ -47,6 +59,7 @@ namespace media_player_alarm_helper {
     }
 
     inline void play_chime(std::string_view file_path = "img/chime.wav") {
+        std::lock_guard<std::mutex> lock(toll_mutex_instance());
         auto& toll_item = toll_item_instance();
         auto resource_path = rouen::platform::get_resource_path(std::string(file_path), "");
         toll_item.url = resource_path.string();
@@ -55,6 +68,7 @@ namespace media_player_alarm_helper {
     }
 
     inline void stop_chime() {
+        std::lock_guard<std::mutex> lock(toll_mutex_instance());
         auto& toll_item = toll_item_instance();
         toll_item.stopMedia();
     }

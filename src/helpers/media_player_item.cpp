@@ -160,7 +160,9 @@ void media_player_item::stopMedia() {
     }
 
     if (local_audio_stream) {
-        SDL_DestroyAudioStream(local_audio_stream);
+        if (SDL_WasInit(SDL_INIT_AUDIO)) {
+            SDL_DestroyAudioStream(local_audio_stream);
+        }
         local_audio_stream = nullptr;
     }
 

@@ -81,3 +81,25 @@ TEST_F(AudioTimeProgressionTest, ResumeTimeProgressionForAudioOnlyContent) {
 
     EXPECT_GT(total_delta, 1.0) << "Error: Media time position indication is frozen or not progressing!";
 }
+
+#include "../src/helpers/media_player_alarm.hpp"
+
+TEST_F(AudioTimeProgressionTest, ConcurrentChimePlaybackThreadSafety) {
+    std::vector<std::thread> workers;
+    for (int t = 0; t < 8; ++t) {
+        workers.emplace_back([t]() {
+            for (int i = 0; i < 5; ++i) {
+                if ((t + i) % 2 == 0) {
+                    media_player_alarm_helper::play_chime("img/chime.wav");
+                } else {
+                    media_player_alarm_helper::stop_chime();
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+        });
+    }
+    for (auto& w : workers) {
+        w.join();
+    }
+    media_player_alarm_helper::stop_chime();
+}

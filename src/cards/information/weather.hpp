@@ -32,11 +32,21 @@ inline struct tm* rouen_gmtime(const std::time_t* timep, struct tm* result) {
 #endif
 }
 
+inline struct tm* rouen_localtime(const std::time_t* timep, struct tm* result) {
+#ifdef _WIN32
+    localtime_s(result, timep);
+    return result;
+#else
+    return localtime_r(timep, result);
+#endif
+}
+
 namespace rouen::cards {
 
 class weather : public card {
 public:
     weather(std::string_view location) {
+        s_weather_instance_count.fetch_add(1);
         // Set custom colors for the Weather card
         colors[0] = {0.4f, 0.6f, 0.8f, 1.0f}; // Blue primary color
         colors[1] = {0.5f, 0.7f, 0.9f, 0.7f}; // Lighter blue secondary color
@@ -62,7 +72,9 @@ public:
     }
     
     ~weather() override {
-        stop_toll();
+        if (s_weather_instance_count.fetch_sub(1) <= 1) {
+            stop_toll();
+        }
     }
 
     std::vector<mcp_function> get_mcp_functions() const override {
@@ -241,7 +253,7 @@ public:
             "trigger_clock_toll",
             "Manually trigger clock tolling sound for a specified count (1-12) or half-past (1).",
             R"mcp({"type":"object","properties":{"count":{"type":"integer","description":"Number of tolls to play (1 to 12)"}},"required":["count"]})mcp",
-            [this](const std::string& params) -> std::string {
+            [](const std::string& params) -> std::string {
                 struct toll_params {
                     int count{1};
                 };
@@ -347,7 +359,6 @@ public:
                 std::time_t local_tt = std::chrono::system_clock::to_time_t(local_tp);
                 std::tm tm_local;
                 rouen_gmtime(&local_tt, &tm_local);
-                check_time_and_toll(tm_local);
 
                 std::string time_str = std::format("{:02d}:{:02d}:{:02d}", tm_local.tm_hour, tm_local.tm_min, tm_local.tm_sec);
                 std::string date_str = std::format("{:02d}/{:02d}/{:04d}", tm_local.tm_mday, tm_local.tm_mon + 1, tm_local.tm_year + 1900);
@@ -947,7 +958,12 @@ private:
         std::time_t local_tt = std::chrono::system_clock::to_time_t(now_tp);
         std::tm tm_local;
         rouen_gmtime(&local_tt, &tm_local);
-        check_time_and_toll(tm_local);
+
+        // Clock tolling uses physical machine local time
+        std::time_t sys_tt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        std::tm sys_tm;
+        rouen_localtime(&sys_tt, &sys_tm);
+        check_time_and_toll(sys_tm);
 
         std::string time_str = std::format("{:02d}:{:02d}:{:02d}", tm_local.tm_hour, tm_local.tm_min, tm_local.tm_sec);
         std::string date_str = std::format("{:02d}/{:02d}/{:04d}", tm_local.tm_mday, tm_local.tm_mon + 1, tm_local.tm_year + 1900);
@@ -978,7 +994,7 @@ private:
         // Display time in large font
         ImGui::SetWindowFontScale(1.6f);
         ImGui::TextColored(accent_color, "%s", time_str.c_str());
-        if (is_tolling.load()) {
+        if (s_is_tolling.load()) {
             ImGui::SameLine();
             ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), " %s", ICON_MD_NOTIFICATIONS_ACTIVE);
         }
@@ -1219,70 +1235,75 @@ private:
         ImGui::Separator();
         ImGui::Spacing();
         ImGui::TextColored(colors[2], "%s Clock Chimes & Tolling:", ICON_MD_NOTIFICATIONS_ACTIVE);
-        bool chime_val = chime_enabled.load();
+        bool chime_val = s_chime_enabled.load();
         if (ImGui::Checkbox("Toll at half-past (1x) and o'clock (1-12x)", &chime_val)) {
-            chime_enabled.store(chime_val);
+            s_chime_enabled.store(chime_val);
             save_settings();
         }
         ImGui::SameLine();
         if (ImGui::Button("Test Toll")) {
             trigger_toll(3);
         }
-        if (is_tolling.load()) {
+        if (s_is_tolling.load()) {
             ImGui::SameLine();
-            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), " Tolling (%d remaining)...", toll_count_remaining.load());
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), " Tolling (%d remaining)...", s_toll_count_remaining.load());
         }
     }
     
 private:
-    void stop_toll() const {
-        toll_stop_flag.store(true);
-        if (toll_thread.joinable()) {
-            toll_thread.join();
+    static void stop_toll() {
+        std::lock_guard<std::mutex> lock(s_toll_mutex);
+        s_toll_stop_flag.store(true);
+        if (s_toll_thread && s_toll_thread->joinable()) {
+            s_toll_thread->join();
         }
+        s_toll_thread.reset();
     }
 
-    void trigger_toll(int count) const {
+    static void trigger_toll(int count) {
         if (count <= 0) return;
 
         stop_toll();
-        toll_stop_flag.store(false);
-        is_tolling.store(true);
-        toll_count_remaining.store(count);
 
-        toll_thread = std::thread([this, count]() {
-            for (int i = 0; i < count && !toll_stop_flag.load(); ++i) {
-                toll_count_remaining.store(count - i);
+        std::lock_guard<std::mutex> lock(s_toll_mutex);
+        s_toll_stop_flag.store(false);
+        s_is_tolling.store(true);
+        s_toll_count_remaining.store(count);
+
+        s_toll_thread = std::make_unique<std::thread>([count]() {
+            for (int i = 0; i < count && !s_toll_stop_flag.load(); ++i) {
+                s_toll_count_remaining.store(count - i);
                 media_player_alarm_helper::play_chime("img/chime.wav");
 
-                for (int ms = 0; ms < 3000 && !toll_stop_flag.load(); ms += 20) {
+                for (int ms = 0; ms < 3000 && !s_toll_stop_flag.load(); ms += 20) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(20));
                 }
             }
-            is_tolling.store(false);
-            toll_count_remaining.store(0);
+            s_is_tolling.store(false);
+            s_toll_count_remaining.store(0);
         });
     }
 
-    void check_time_and_toll(const std::tm& tm_local) const {
-        if (!chime_enabled.load()) return;
+    static void check_time_and_toll(const std::tm& tm_local) {
+        if (!s_chime_enabled.load()) return;
 
         int current_slot = (tm_local.tm_year * 17568) + (tm_local.tm_yday * 48) + (tm_local.tm_hour * 2) + (tm_local.tm_min >= 30 ? 1 : 0);
 
-        if (last_tolled_slot_ == -1) {
-            last_tolled_slot_ = current_slot;
+        int expected = -1;
+        if (s_last_tolled_slot.compare_exchange_strong(expected, current_slot)) {
             return;
         }
 
-        if (current_slot != last_tolled_slot_) {
-            last_tolled_slot_ = current_slot;
-
-            if (tm_local.tm_min == 0) {
-                int count = tm_local.tm_hour % 12;
-                if (count == 0) count = 12;
-                trigger_toll(count);
-            } else if (tm_local.tm_min == 30) {
-                trigger_toll(1);
+        int last_slot = s_last_tolled_slot.load();
+        if (current_slot != last_slot) {
+            if (s_last_tolled_slot.compare_exchange_strong(last_slot, current_slot)) {
+                if (tm_local.tm_min == 0) {
+                    int count = tm_local.tm_hour % 12;
+                    if (count == 0) count = 12;
+                    trigger_toll(count);
+                } else if (tm_local.tm_min == 30) {
+                    trigger_toll(1);
+                }
             }
         }
     }
@@ -1295,7 +1316,7 @@ private:
             
             glz::json_t json;
             json["cast_position"] = static_cast<double>(cast_position);
-            json["chime_enabled"] = chime_enabled.load();
+            json["chime_enabled"] = s_chime_enabled.load();
             
             std::ofstream file(config_path);
             if (file.is_open()) {
@@ -1323,7 +1344,7 @@ private:
                         cast_position = static_cast<int>(json["cast_position"].get<double>());
                     }
                     if (json.contains("chime_enabled")) {
-                        chime_enabled.store(json["chime_enabled"].get<bool>());
+                        s_chime_enabled.store(json["chime_enabled"].get<bool>());
                     }
                 }
                 file.close();
@@ -1350,12 +1371,14 @@ private:
     char location_buffer_[64]{};
     int cast_position{0};
 
-    mutable std::atomic<bool> chime_enabled{true};
-    mutable int last_tolled_slot_{-1};
-    mutable std::atomic<bool> is_tolling{false};
-    mutable std::atomic<int> toll_count_remaining{0};
-    mutable std::atomic<bool> toll_stop_flag{false};
-    mutable std::thread toll_thread;
+    static inline std::atomic<int> s_weather_instance_count{0};
+    static inline std::atomic<bool> s_chime_enabled{true};
+    static inline std::atomic<int> s_last_tolled_slot{-1};
+    static inline std::atomic<bool> s_is_tolling{false};
+    static inline std::atomic<int> s_toll_count_remaining{0};
+    static inline std::atomic<bool> s_toll_stop_flag{false};
+    static inline std::mutex s_toll_mutex;
+    static inline std::unique_ptr<std::thread> s_toll_thread;
 };
 
 } // namespace rouen::cards

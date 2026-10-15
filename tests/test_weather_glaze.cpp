@@ -163,3 +163,75 @@ TEST(WeatherHostTest, ApiKeyDetectionAndConsecutiveFailures) {
     EXPECT_TRUE(host.hasApiKey());
     EXPECT_EQ(host.getConsecutiveFailures(), 0);
 }
+
+TEST(WeatherClockTollTest, SlotCalculationAndDedupLogic) {
+    auto compute_slot = [](int year, int yday, int hour, int min) {
+        return (year * 17568) + (yday * 48) + (hour * 2) + (min >= 30 ? 1 : 0);
+    };
+
+    // 09:00:00 vs 09:15:00 should be the same slot
+    int slot_900 = compute_slot(126, 288, 9, 0);
+    int slot_915 = compute_slot(126, 288, 9, 15);
+    EXPECT_EQ(slot_900, slot_915);
+
+    // 09:30:00 should be the next slot
+    int slot_930 = compute_slot(126, 288, 9, 30);
+    EXPECT_EQ(slot_930, slot_900 + 1);
+
+    // 10:00:00 should be the next slot after 09:30
+    int slot_1000 = compute_slot(126, 288, 10, 0);
+    EXPECT_EQ(slot_1000, slot_930 + 1);
+
+    // Atomic deduplication test across multiple simulated cards/threads
+    std::atomic<int> shared_last_slot{-1};
+    std::atomic<int> toll_count_triggered{0};
+
+    auto simulate_check = [&](int slot, int min, int hour) {
+        int expected = -1;
+        if (shared_last_slot.compare_exchange_strong(expected, slot)) {
+            return; // initial slot setup
+        }
+        int last = shared_last_slot.load();
+        if (slot != last) {
+            if (shared_last_slot.compare_exchange_strong(last, slot)) {
+                int count = (min == 0) ? (hour % 12 == 0 ? 12 : hour % 12) : 1;
+                toll_count_triggered.fetch_add(count);
+            }
+        }
+    };
+
+    // Initialize at 08:50
+    int slot_850 = compute_slot(126, 288, 8, 50);
+    simulate_check(slot_850, 50, 8);
+    EXPECT_EQ(toll_count_triggered.load(), 0);
+
+    // Simulate 10 cards concurrently checking time at 09:00:00
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 10; ++i) {
+        threads.emplace_back([&]() {
+            simulate_check(slot_900, 0, 9);
+        });
+    }
+    for (auto& th : threads) {
+        th.join();
+    }
+    // Exactly ONE card should trigger the 9 tolls!
+    EXPECT_EQ(toll_count_triggered.load(), 9);
+
+    // Repeat check in same slot: count must remain 9
+    simulate_check(slot_915, 15, 9);
+    EXPECT_EQ(toll_count_triggered.load(), 9);
+
+    // Advance to 09:30:00 concurrently from 10 cards
+    threads.clear();
+    for (int i = 0; i < 10; ++i) {
+        threads.emplace_back([&]() {
+            simulate_check(slot_930, 30, 9);
+        });
+    }
+    for (auto& th : threads) {
+        th.join();
+    }
+    // Exactly 1 half-past toll added -> total 10
+    EXPECT_EQ(toll_count_triggered.load(), 10);
+}
