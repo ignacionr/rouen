@@ -54,6 +54,42 @@ namespace ProcessHelper {
     }
 
     /**
+     * Execute a command and return its output as a string
+     * 
+     * @param command The command to execute
+     * @return The command output as a string, empty string if failed
+     */
+    inline std::string executeCommand(const std::string& command) {
+        // Create a custom deleter to avoid attributes warning
+        auto pipeDeleter = [](FILE* pipe) {
+            if (pipe) {
+                pclose(pipe);
+            }
+        };
+        
+        std::string command_to_run = command;
+        if constexpr (!rouen::platform::is_windows) {
+            command_to_run = std::string(R"(export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:/opt/homebrew/bin:/usr/local/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:$PATH" && )") + command;
+        }
+
+        // Open a pipe to read the command output using the custom deleter
+        std::unique_ptr<FILE, decltype(pipeDeleter)> pipe(popen(command_to_run.c_str(), "r"), pipeDeleter);
+        if (!pipe) {
+            PROCESS_ERROR_FMT("Error executing command: {}", command_to_run);
+            return "";
+        }
+        
+        // Read the output
+        std::array<char, 128> buffer;
+        std::stringstream output;
+        while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe.get()) != nullptr) {
+            output << buffer.data();
+        }
+        
+        return output.str();
+    }
+
+    /**
      * Execute a command with timeout and output truncation protection.
      */
     inline CommandResult executeCommandWithTimeout(
@@ -205,42 +241,6 @@ namespace ProcessHelper {
         return result;
 #endif
     }
-    /**
-     * Execute a command and return its output as a string
-     * 
-     * @param command The command to execute
-     * @return The command output as a string, empty string if failed
-     */
-    inline std::string executeCommand(const std::string& command) {
-        // Create a custom deleter to avoid attributes warning
-        auto pipeDeleter = [](FILE* pipe) {
-            if (pipe) {
-                pclose(pipe);
-            }
-        };
-        
-        std::string command_to_run = command;
-        if constexpr (!rouen::platform::is_windows) {
-            command_to_run = std::string(R"(export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:/opt/homebrew/bin:/usr/local/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:$PATH" && )") + command;
-        }
-
-        // Open a pipe to read the command output using the custom deleter
-        std::unique_ptr<FILE, decltype(pipeDeleter)> pipe(popen(command_to_run.c_str(), "r"), pipeDeleter);
-        if (!pipe) {
-            PROCESS_ERROR_FMT("Error executing command: {}", command_to_run);
-            return "";
-        }
-        
-        // Read the output
-        std::array<char, 128> buffer;
-        std::stringstream output;
-        while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
-            output << buffer.data();
-        }
-        
-        return output.str();
-    }
-    
 
     /**
      * Execute a command in a specific directory and return its output
