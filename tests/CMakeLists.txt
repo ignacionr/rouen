@@ -479,6 +479,7 @@ add_gtest_rss_executable(test_rt_media test_rt_media.cpp)
 # RSS Watermark Test
 add_gtest_rss_executable(test_rss_watermark test_rss_watermark.cpp)
 target_sources(test_rss_watermark PRIVATE 
+    ../src/fonts.cpp
     ../src/hosts/event_bus_host.cpp
     ../src/hosts/rss_host.cpp
     ../src/models/rss/feed_xml_parser.cpp
