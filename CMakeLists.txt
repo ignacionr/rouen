@@ -145,7 +145,12 @@ if(NOT COMPILE_GIT_HASH)
 endif()
 set(ROUEN_VERSION "${ROUEN_VERSION_MAJOR}.${ROUEN_VERSION_MINOR}.${ROUEN_VERSION_PATCH}")
 add_compile_definitions(ROUEN_VERSION="${ROUEN_VERSION}")
-add_compile_definitions(COMPILE_GIT_HASH="${COMPILE_GIT_HASH}")
+set_source_files_properties(
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/rouen.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/main_wnd_loop.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/hosts/api_server_host.cpp
+  PROPERTIES COMPILE_DEFINITIONS "COMPILE_GIT_HASH=\"${COMPILE_GIT_HASH}\""
+)
 message(STATUS "Build version: ${ROUEN_VERSION} (git commit: ${COMPILE_GIT_HASH})")
 
 # Enable ccache if available to improve rebuild times

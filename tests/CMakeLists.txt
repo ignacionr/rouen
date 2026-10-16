@@ -305,8 +305,77 @@ add_gtest_executable(test_adaptive_cards test_adaptive_cards.cpp)
 if(NOT MSVC)
     target_compile_options(test_adaptive_cards PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
 endif()
-add_gtest_executable(test_adaptive_process_card test_adaptive_process_card.cpp)
-target_sources(test_adaptive_process_card PRIVATE
+
+# Add QuickJS static library for tests if not already defined by main CMakeLists
+if(NOT TARGET quickjs)
+    set(QUICKJS_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/quickjs.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/dtoa.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/libunicode.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/cutils.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/libregexp.c
+    )
+    if(NOT WIN32)
+        list(APPEND QUICKJS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/quickjs-libc.c)
+    endif()
+    add_library(quickjs STATIC ${QUICKJS_SOURCES})
+    set_target_properties(quickjs PROPERTIES LINKER_LANGUAGE C)
+    target_include_directories(quickjs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs)
+    if(NOT MSVC)
+        target_compile_definitions(quickjs PRIVATE _GNU_SOURCE CONFIG_VERSION="2024-01-13")
+    else()
+        target_compile_definitions(quickjs PRIVATE CONFIG_VERSION="2024-01-13")
+    endif()
+    set_source_files_properties(${QUICKJS_SOURCES} PROPERTIES LANGUAGE C)
+    if(NOT MSVC)
+        set_source_files_properties(${QUICKJS_SOURCES} PROPERTIES COMPILE_FLAGS "-Wno-array-bounds -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough")
+    endif()
+endif()
+
+# Shared RSS + media object library compiled once for RSS/media and full-app tests
+add_library(rouen_test_rss_common OBJECT
+    ../src/fonts.cpp
+    ../src/hosts/event_bus_host.cpp
+    ../src/hosts/rss_host.cpp
+    ../src/models/rss/feed_xml_parser.cpp
+    ../src/models/rss/rss_item_repo.cpp
+    ../src/helpers/media_player.cpp
+    ../src/helpers/media_player_item.cpp
+    ../src/helpers/ytdlp_service.cpp
+    ../src/helpers/audio_capture.cpp
+    ../src/helpers/adlib_engine.cpp
+    ../src/helpers/mp4_writer.cpp
+    ../src/helpers/image_cache.cpp
+    ../src/helpers/vu_meter.cpp
+)
+if(APPLE)
+    target_sources(rouen_test_rss_common PRIVATE ../src/helpers/mac_mic_permissions.mm)
+    target_link_libraries(rouen_test_rss_common PUBLIC "-framework Foundation" "-framework AVFoundation")
+endif()
+target_include_directories(rouen_test_rss_common PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+target_link_libraries(rouen_test_rss_common PUBLIC
+    rouen_test_modules
+    tinyxml2::tinyxml2
+    CURL::libcurl
+    SQLite::SQLite3
+    ${SDL3_LIBRARIES}
+    ${SDL3_IMAGE_LIBRARIES}
+    imgui::imgui
+    ${AVFORMAT_LIBRARIES}
+    ${AVCODEC_LIBRARIES}
+    ${AVUTIL_LIBRARIES}
+    ${SWSCALE_LIBRARIES}
+    ${SWRESAMPLE_LIBRARIES}
+)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR MSVC)
+    target_add_strict_warnings(rouen_test_rss_common)
+endif()
+
+# Shared full-app object library compiled once for full-stack card/host/scripting tests
+add_library(rouen_test_app_common OBJECT
     ../src/cards/interface/card.cpp
     ../src/cards/productivity/theme_card.cpp
     ../src/cards/productivity/invoice_card.cpp
@@ -314,21 +383,23 @@ target_sources(test_adaptive_process_card PRIVATE
     ../src/cards/information/rss.cpp
     ../src/cards/information/rss_item.cpp
     ../src/cards/information/telegram.cpp
+    ../src/cards/information/bybit_registrar.cpp
+    ../src/cards/information/movies_registrar.cpp
+    ../src/cards/information/worldcup_registrar.cpp
     ../src/hosts/api_server_host.cpp
     ../external/mongoose-7.15/mongoose.c
     ../src/hosts/mcp_host.cpp
     ../src/hosts/llm_host.cpp
-    ../src/hosts/event_bus_host.cpp
     ../src/hosts/universal_sync_host.cpp
     ../src/helpers/sync_crypto_service.cpp
     ../src/hosts/git_sync_host.cpp
-    ../src/hosts/rss_host.cpp
     ../src/hosts/footprints_host.cpp
     ../src/hosts/rouen_mesh_host.cpp
     ../src/hosts/telegram_host.cpp
     ../src/hosts/process_host.cpp
     ../src/helpers/ui_automation_explorer.cpp
     ../src/helpers/directory_watch.cpp
+    ../src/cards/media/chess_com_registrar.cpp
     ../src/cards/media/chess_com_integration.cpp
     ../src/cards/media/media_companion.cpp
     ../src/cards/development/cmake.cpp
@@ -336,6 +407,7 @@ target_sources(test_adaptive_process_card PRIVATE
     ../src/cards/development/diff_card.cpp
     ../src/cards/development/fs-directory.cpp
     ../src/cards/development/git.cpp
+    ../src/cards/development/github_registrar.cpp
     ../src/cards/development/github/github_card.cpp
     ../src/cards/development/github/ci_card.cpp
     ../src/cards/development/github/login_screen.cpp
@@ -347,7 +419,6 @@ target_sources(test_adaptive_process_card PRIVATE
     ../src/cards/system/terminal_output.cpp
     ../src/cards/system/terminal_commands.cpp
     ../src/hosts/quickjs_host.cpp
-    ../src/helpers/filetype_handler.cpp
     ../src/helpers/capture_helper.cpp
     ../src/cards/development/git_overlay.cpp
     ../src/cards/production/adlib.cpp
@@ -355,99 +426,59 @@ target_sources(test_adaptive_process_card PRIVATE
     ../src/models/git_scanner.cpp
     ../src/hosts/plugin_host.cpp
     ../external/imguicolortextedit/TextEditor.cpp
-    ../src/helpers/ytdlp_service.cpp
     ../src/helpers/piped_process.cpp
     ../src/helpers/card_decorations.cpp
-    ../src/helpers/adlib_engine.cpp
-    ../src/helpers/audio_capture.cpp
-    ../src/helpers/mp4_writer.cpp
-    ../src/helpers/vu_meter.cpp
-    ../src/helpers/theme_manager.cpp
-    ../src/helpers/media_player.cpp
-    ../src/helpers/media_player_item.cpp
-    ../src/helpers/image_cache.cpp
     ../src/helpers/glass_top_bar.cpp
-    ../src/models/rss/feed_xml_parser.cpp
-    ../src/models/rss/rss_item_repo.cpp
-    ../src/fonts.cpp
 )
 if(APPLE)
-    target_sources(test_adaptive_process_card PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm ../src/models/calendar/calendar_fetcher_apple.mm)
-    target_link_libraries(test_adaptive_process_card PRIVATE "-framework AVFoundation" "-framework Foundation" "-framework ApplicationServices" "-framework Cocoa" "-framework EventKit")
+    target_sources(rouen_test_app_common PRIVATE ../src/helpers/app_icon.mm ../src/models/calendar/calendar_fetcher_apple.mm)
+    target_link_libraries(rouen_test_app_common PUBLIC "-framework AVFoundation" "-framework Foundation" "-framework ApplicationServices" "-framework Cocoa" "-framework EventKit")
 endif()
-target_link_libraries(test_adaptive_process_card PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} CURL::libcurl OpenSSL::Crypto OpenSSL::SSL ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES} tinyxml2::tinyxml2 PDFWriter imcolortextedit quickjs $<IF:$<TARGET_EXISTS:imgui_backends>,imgui_backends,> $<IF:$<TARGET_EXISTS:pdfium::pdfium>,pdfium::pdfium,$<IF:$<TARGET_EXISTS:pdfium>,pdfium,>>)
+target_include_directories(rouen_test_app_common PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs
+    ${CMAKE_CURRENT_SOURCE_DIR}/../plugin-sdk
+)
+target_sources(rouen_test_app_common INTERFACE $<TARGET_OBJECTS:rouen_test_rss_common>)
+target_link_libraries(rouen_test_app_common PUBLIC
+    rouen_test_rss_common
+    rouen_test_modules
+    SQLite::SQLite3
+    ${SDL3_LIBRARIES}
+    ${SDL3_IMAGE_LIBRARIES}
+    CURL::libcurl
+    OpenSSL::Crypto
+    OpenSSL::SSL
+    ${AVFORMAT_LIBRARIES}
+    ${AVCODEC_LIBRARIES}
+    ${AVUTIL_LIBRARIES}
+    ${SWSCALE_LIBRARIES}
+    ${SWRESAMPLE_LIBRARIES}
+    tinyxml2::tinyxml2
+    PDFWriter
+    imcolortextedit
+    quickjs
+    imgui::imgui
+    $<IF:$<TARGET_EXISTS:imgui_backends>,imgui_backends,>
+    $<IF:$<TARGET_EXISTS:pdfium::pdfium>,pdfium::pdfium,$<IF:$<TARGET_EXISTS:pdfium>,pdfium,>>
+)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR MSVC)
+    target_add_strict_warnings(rouen_test_app_common)
+endif()
+if(NOT MSVC)
+    target_compile_options(rouen_test_app_common PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
+endif()
+
+add_gtest_executable(test_adaptive_process_card test_adaptive_process_card.cpp)
+target_link_libraries(test_adaptive_process_card PRIVATE rouen_test_app_common)
 if(NOT MSVC)
     target_compile_options(test_adaptive_process_card PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
 endif()
+
 add_gtest_executable(test_card_adaptive_interface test_card_adaptive_interface.cpp)
-target_sources(test_card_adaptive_interface PRIVATE
-    ../src/cards/interface/card.cpp
-    ../src/cards/productivity/theme_card.cpp
-    ../src/cards/productivity/invoice_card.cpp
-    ../src/cards/information/ai_chat.cpp
-    ../src/cards/information/rss.cpp
-    ../src/cards/information/rss_item.cpp
-    ../src/cards/information/telegram.cpp
-    ../src/hosts/api_server_host.cpp
-    ../external/mongoose-7.15/mongoose.c
-    ../src/hosts/mcp_host.cpp
-    ../src/hosts/llm_host.cpp
-    ../src/hosts/event_bus_host.cpp
-    ../src/hosts/universal_sync_host.cpp
-    ../src/helpers/sync_crypto_service.cpp
-    ../src/hosts/git_sync_host.cpp
-    ../src/hosts/rss_host.cpp
-    ../src/hosts/footprints_host.cpp
-    ../src/hosts/rouen_mesh_host.cpp
-    ../src/hosts/telegram_host.cpp
-    ../src/hosts/process_host.cpp
-    ../src/helpers/ui_automation_explorer.cpp
-    ../src/helpers/directory_watch.cpp
-    ../src/cards/media/chess_com_integration.cpp
-    ../src/cards/media/media_companion.cpp
-    ../src/cards/development/cmake.cpp
-    ../src/cards/development/vcproject_card.cpp
-    ../src/cards/development/diff_card.cpp
-    ../src/cards/development/fs-directory.cpp
-    ../src/cards/development/git.cpp
-    ../src/cards/development/github/github_card.cpp
-    ../src/cards/development/github/ci_card.cpp
-    ../src/cards/development/github/login_screen.cpp
-    ../src/cards/development/github/repo_screen.cpp
-    ../src/cards/productivity/calculator.cpp
-    ../src/cards/productivity/converter.cpp
-    ../src/cards/system/terminal.cpp
-    ../src/cards/system/terminal_bash.cpp
-    ../src/cards/system/terminal_output.cpp
-    ../src/cards/system/terminal_commands.cpp
-    ../src/hosts/quickjs_host.cpp
-    ../src/helpers/filetype_handler.cpp
-    ../src/helpers/capture_helper.cpp
-    ../src/cards/development/git_overlay.cpp
-    ../src/cards/production/adlib.cpp
-    ../src/models/git_process_helper.cpp
-    ../src/models/git_scanner.cpp
-    ../src/hosts/plugin_host.cpp
-    ../external/imguicolortextedit/TextEditor.cpp
-    ../src/helpers/ytdlp_service.cpp
-    ../src/helpers/piped_process.cpp
-    ../src/helpers/card_decorations.cpp
-    ../src/helpers/adlib_engine.cpp
-    ../src/helpers/audio_capture.cpp
-    ../src/helpers/mp4_writer.cpp
-    ../src/helpers/vu_meter.cpp
-    ../src/helpers/theme_manager.cpp
-    ../src/helpers/media_player.cpp
-    ../src/helpers/media_player_item.cpp
-    ../src/helpers/image_cache.cpp
-    ../src/helpers/glass_top_bar.cpp
-    ../src/fonts.cpp
-)
-if(APPLE)
-    target_sources(test_card_adaptive_interface PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm ../src/models/calendar/calendar_fetcher_apple.mm)
-    target_link_libraries(test_card_adaptive_interface PRIVATE "-framework AVFoundation" "-framework Foundation" "-framework ApplicationServices" "-framework Cocoa" "-framework EventKit")
-endif()
-target_link_libraries(test_card_adaptive_interface PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} CURL::libcurl OpenSSL::Crypto OpenSSL::SSL ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES} tinyxml2::tinyxml2 PDFWriter imcolortextedit quickjs $<IF:$<TARGET_EXISTS:imgui_backends>,imgui_backends,> $<IF:$<TARGET_EXISTS:pdfium::pdfium>,pdfium::pdfium,$<IF:$<TARGET_EXISTS:pdfium>,pdfium,>>)
+target_link_libraries(test_card_adaptive_interface PRIVATE rouen_test_app_common)
 if(NOT MSVC)
     target_compile_options(test_card_adaptive_interface PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
 endif()
@@ -478,105 +509,17 @@ add_gtest_rss_executable(test_rt_media test_rt_media.cpp)
 
 # RSS Watermark Test
 add_gtest_rss_executable(test_rss_watermark test_rss_watermark.cpp)
-target_sources(test_rss_watermark PRIVATE 
-    ../src/fonts.cpp
-    ../src/hosts/event_bus_host.cpp
-    ../src/hosts/rss_host.cpp
-    ../src/models/rss/feed_xml_parser.cpp
-    ../src/models/rss/rss_item_repo.cpp
-    ../src/helpers/media_player.cpp
-    ../src/helpers/media_player_item.cpp
-    ../src/helpers/ytdlp_service.cpp
-    ../src/helpers/audio_capture.cpp
-    ../src/helpers/adlib_engine.cpp
-    ../src/helpers/mp4_writer.cpp
-    ../src/helpers/image_cache.cpp
-    ../src/helpers/vu_meter.cpp
-)
-if(APPLE)
-    target_sources(test_rss_watermark PRIVATE ../src/helpers/mac_mic_permissions.mm)
-    target_link_libraries(test_rss_watermark PRIVATE "-framework Foundation" "-framework AVFoundation")
-endif()
-target_link_libraries(test_rss_watermark 
-    PRIVATE 
-    SQLite::SQLite3
-    ${SDL3_LIBRARIES}
-    ${SDL3_IMAGE_LIBRARIES}
-    imgui::imgui
-    ${AVFORMAT_LIBRARIES}
-    ${AVCODEC_LIBRARIES}
-    ${AVUTIL_LIBRARIES}
-    ${SWSCALE_LIBRARIES}
-    ${SWRESAMPLE_LIBRARIES}
-)
+target_link_libraries(test_rss_watermark PRIVATE rouen_test_rss_common)
 add_test(NAME RSSWatermarkTest COMMAND test_rss_watermark)
 
 # RSS Diagnostics Test
 add_gtest_rss_executable(test_rss_diagnostics test_rss_diagnostics.cpp)
-target_sources(test_rss_diagnostics PRIVATE 
-    ../src/hosts/event_bus_host.cpp
-    ../src/hosts/rss_host.cpp
-    ../src/models/rss/feed_xml_parser.cpp
-    ../src/models/rss/rss_item_repo.cpp
-    ../src/helpers/media_player.cpp
-    ../src/helpers/media_player_item.cpp
-    ../src/helpers/ytdlp_service.cpp
-    ../src/helpers/audio_capture.cpp
-    ../src/helpers/adlib_engine.cpp
-    ../src/helpers/mp4_writer.cpp
-    ../src/helpers/image_cache.cpp
-    ../src/helpers/vu_meter.cpp
-)
-if(APPLE)
-    target_sources(test_rss_diagnostics PRIVATE ../src/helpers/mac_mic_permissions.mm)
-    target_link_libraries(test_rss_diagnostics PRIVATE "-framework Foundation" "-framework AVFoundation")
-endif()
-target_link_libraries(test_rss_diagnostics 
-    PRIVATE 
-    SQLite::SQLite3
-    ${SDL3_LIBRARIES}
-    ${SDL3_IMAGE_LIBRARIES}
-    imgui::imgui
-    ${AVFORMAT_LIBRARIES}
-    ${AVCODEC_LIBRARIES}
-    ${AVUTIL_LIBRARIES}
-    ${SWSCALE_LIBRARIES}
-    ${SWRESAMPLE_LIBRARIES}
-)
+target_link_libraries(test_rss_diagnostics PRIVATE rouen_test_rss_common)
 add_test(NAME RSSDiagnosticsTest COMMAND test_rss_diagnostics)
 
 # Audio Time Progression Test
 add_gtest_rss_executable(test_audio_time_progression test_audio_time_progression.cpp)
-target_sources(test_audio_time_progression PRIVATE 
-    ../src/hosts/event_bus_host.cpp
-    ../src/hosts/rss_host.cpp
-    ../src/models/rss/feed_xml_parser.cpp
-    ../src/models/rss/rss_item_repo.cpp
-    ../src/helpers/media_player.cpp
-    ../src/helpers/media_player_item.cpp
-    ../src/helpers/ytdlp_service.cpp
-    ../src/helpers/audio_capture.cpp
-    ../src/helpers/adlib_engine.cpp
-    ../src/helpers/mp4_writer.cpp
-    ../src/helpers/image_cache.cpp
-    ../src/helpers/vu_meter.cpp
-)
-if(APPLE)
-    target_sources(test_audio_time_progression PRIVATE ../src/helpers/mac_mic_permissions.mm)
-    target_link_libraries(test_audio_time_progression PRIVATE "-framework Foundation" "-framework AVFoundation")
-endif()
-target_link_libraries(test_audio_time_progression 
-    PRIVATE 
-    SQLite::SQLite3
-    ${SDL3_LIBRARIES}
-    ${SDL3_IMAGE_LIBRARIES}
-    imgui::imgui
-    ${AVFORMAT_LIBRARIES}
-    ${AVCODEC_LIBRARIES}
-    ${AVUTIL_LIBRARIES}
-    ${SWSCALE_LIBRARIES}
-    ${SWRESAMPLE_LIBRARIES}
-)
+target_link_libraries(test_audio_time_progression PRIVATE rouen_test_rss_common)
 
 # Objectives Test
 add_gtest_executable(test_objectives test_objectives.cpp)
@@ -587,76 +530,7 @@ target_link_libraries(test_objectives
 
 # Deck Scrolling Test
 add_gtest_executable(test_deck_scrolling test_deck_scrolling.cpp)
-target_sources(test_deck_scrolling PRIVATE
-    ../src/hosts/event_bus_host.cpp
-    ../src/cards/interface/card.cpp
-    ../src/helpers/image_cache.cpp
-    ../src/hosts/process_host.cpp
-    ../src/hosts/rss_host.cpp
-    ../src/hosts/footprints_host.cpp
-    ../src/hosts/rouen_mesh_host.cpp
-    ../src/hosts/telegram_host.cpp
-    ../src/hosts/api_server_host.cpp
-    ../external/mongoose-7.15/mongoose.c
-    ../src/cards/information/telegram.cpp
-    ../src/hosts/llm_host.cpp
-    ../src/hosts/git_sync_host.cpp
-    ../src/hosts/universal_sync_host.cpp
-    ../src/helpers/sync_crypto_service.cpp
-    ../src/hosts/plugin_host.cpp
-    ../src/hosts/quickjs_host.cpp
-    ../src/helpers/media_player.cpp
-    ../src/helpers/media_player_item.cpp
-    ../src/helpers/ytdlp_service.cpp
-    ../src/helpers/audio_capture.cpp
-    ../src/helpers/adlib_engine.cpp
-    ../src/helpers/mp4_writer.cpp
-    ../src/helpers/vu_meter.cpp
-    ../src/helpers/directory_watch.cpp
-    ../src/helpers/ui_automation_explorer.cpp
-    ../src/helpers/piped_process.cpp
-    ../src/models/git_scanner.cpp
-    ../src/models/git_process_helper.cpp
-    ../src/models/rss/feed_xml_parser.cpp
-    ../src/models/rss/rss_item_repo.cpp
-    ../src/fonts.cpp
-    ../src/cards/information/ai_chat.cpp
-    ../src/cards/information/rss.cpp
-    ../src/cards/information/rss_item.cpp
-    ../src/cards/productivity/converter.cpp
-    ../src/cards/productivity/calculator.cpp
-    ../src/cards/productivity/invoice_card.cpp
-    ../src/cards/productivity/theme_card.cpp
-    ../src/cards/development/cmake.cpp
-    ../src/cards/development/fs-directory.cpp
-    ../src/cards/development/git.cpp
-    ../src/cards/development/git_overlay.cpp
-    ../src/cards/development/github_registrar.cpp
-    ../src/cards/development/github/ci_card.cpp
-    ../src/cards/development/github/github_card.cpp
-    ../src/cards/development/github/login_screen.cpp
-    ../src/cards/development/github/repo_screen.cpp
-    ../src/cards/information/bybit_registrar.cpp
-    ../src/cards/information/movies_registrar.cpp
-    ../src/cards/media/chess_com_integration.cpp
-    ../src/cards/media/media_companion.cpp
-    ../src/cards/production/adlib.cpp
-    ../src/cards/system/terminal.cpp
-    ../src/cards/system/terminal_output.cpp
-    ../src/cards/system/terminal_bash.cpp
-    ../src/cards/system/terminal_commands.cpp
-    ../src/hosts/mcp_host.cpp
-    ../src/helpers/filetype_handler.cpp
-    ../src/helpers/card_decorations.cpp
-    ../src/helpers/capture_helper.cpp
-    ../src/helpers/glass_top_bar.cpp
-    ../external/imguicolortextedit/TextEditor.cpp
-)
-if(APPLE)
-    target_sources(test_deck_scrolling PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm ../src/models/calendar/calendar_fetcher_apple.mm)
-    target_link_libraries(test_deck_scrolling PRIVATE "-framework Cocoa" "-framework Foundation" "-framework AVFoundation" "-framework ApplicationServices" "-framework EventKit")
-endif()
-target_link_libraries(test_deck_scrolling PRIVATE quickjs pdfium PDFWriter tinyxml2::tinyxml2 SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} OpenSSL::Crypto OpenSSL::SSL imgui::imgui $<IF:$<TARGET_EXISTS:imgui_backends>,imgui_backends,> CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES})
+target_link_libraries(test_deck_scrolling PRIVATE rouen_test_app_common)
 
 # Camera Device List Test
 add_gtest_executable(test_camera_device_list test_camera_device_list.cpp)
@@ -703,101 +577,14 @@ endif()
 add_gtest_http_executable(test_gemini_adapter test_gemini_adapter.cpp)
 
 # MCP Test
-add_executable(test_mcp 
-    test_mcp.cpp 
-    ../src/hosts/event_bus_host.cpp
-    ../src/hosts/mcp_host.cpp
-    ../src/hosts/universal_sync_host.cpp
-    ../src/helpers/sync_crypto_service.cpp
-    ../src/hosts/git_sync_host.cpp
-    ../src/hosts/rss_host.cpp
-    ../src/models/rss/feed_xml_parser.cpp
-    ../src/models/rss/rss_item_repo.cpp
-    ../src/models/git_process_helper.cpp
-    ../src/models/git_scanner.cpp
-    ../src/helpers/media_player.cpp
-    ../src/helpers/media_player_item.cpp
-    ../src/helpers/ytdlp_service.cpp
-    ../src/helpers/audio_capture.cpp
-    ../src/helpers/adlib_engine.cpp
-    ../src/helpers/mp4_writer.cpp
-    ../src/helpers/vu_meter.cpp
-    ../src/helpers/image_cache.cpp
-    ../src/helpers/card_decorations.cpp
-    ../src/cards/interface/card.cpp
-    ../src/cards/information/rss.cpp
-    ../src/cards/information/rss_item.cpp
-    ../src/cards/information/ai_chat.cpp
-    ../src/cards/information/telegram.cpp
-    ../src/cards/media/chess_com_integration.cpp
-    ../src/cards/media/media_companion.cpp
-    ../src/cards/productivity/calculator.cpp
-    ../src/cards/productivity/converter.cpp
-    ../src/cards/productivity/invoice_card.cpp
-    ../src/cards/productivity/theme_card.cpp
-    ../src/cards/development/cmake.cpp
-    ../src/cards/development/vcproject_card.cpp
-    ../src/cards/development/fs-directory.cpp
-    ../src/cards/development/git.cpp
-    ../src/cards/development/git_overlay.cpp
-    ../src/cards/development/diff_card.cpp
-    ../src/cards/development/github_registrar.cpp
-    ../src/cards/development/github/github_card.cpp
-    ../src/cards/development/github/ci_card.cpp
-    ../src/cards/development/github/login_screen.cpp
-    ../src/cards/development/github/repo_screen.cpp
-    ../src/cards/production/adlib.cpp
-    ../src/cards/system/terminal.cpp
-    ../src/cards/system/terminal_bash.cpp
-    ../src/cards/system/terminal_output.cpp
-    ../src/cards/system/terminal_commands.cpp
-    ../src/hosts/llm_host.cpp
-    ../src/hosts/process_host.cpp
-    ../src/hosts/footprints_host.cpp
-    ../src/hosts/rouen_mesh_host.cpp
-    ../src/hosts/telegram_host.cpp
-    ../src/hosts/api_server_host.cpp
-    ../external/mongoose-7.15/mongoose.c
-    ../src/hosts/quickjs_host.cpp
-    ../src/hosts/plugin_host.cpp
-    ../src/helpers/directory_watch.cpp
-    ../src/helpers/ui_automation_explorer.cpp
-    ../src/helpers/piped_process.cpp
-    ../src/helpers/filetype_handler.cpp
-    ../src/helpers/glass_top_bar.cpp
-    ../src/helpers/capture_helper.cpp
-    ../external/imguicolortextedit/TextEditor.cpp
-    ../src/fonts.cpp
-)
-if(APPLE)
-    target_sources(test_mcp PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm ../src/models/calendar/calendar_fetcher_apple.mm)
-    target_link_libraries(test_mcp PRIVATE "-framework Cocoa" "-framework Foundation" "-framework AVFoundation" "-framework ApplicationServices" "-framework EventKit")
-endif()
+add_executable(test_mcp test_mcp.cpp)
 target_link_libraries(test_mcp 
     PRIVATE 
-    rouen_test_modules
+    rouen_test_app_common
     GTest::gtest 
     GTest::gtest_main
     GTest::gmock
     GTest::gmock_main
-    CURL::libcurl
-    OpenSSL::Crypto
-    OpenSSL::SSL
-    imgui::imgui
-    $<IF:$<TARGET_EXISTS:imgui_backends>,imgui_backends,>
-    imcolortextedit
-    quickjs
-    PDFWriter
-    tinyxml2::tinyxml2
-    SQLite::SQLite3
-    ${SDL3_LIBRARIES}
-    ${SDL3_IMAGE_LIBRARIES}
-    ${AVFORMAT_LIBRARIES}
-    ${AVCODEC_LIBRARIES}
-    ${AVUTIL_LIBRARIES}
-    ${SWSCALE_LIBRARIES}
-    ${SWRESAMPLE_LIBRARIES}
-    $<IF:$<TARGET_EXISTS:pdfium::pdfium>,pdfium::pdfium,$<IF:$<TARGET_EXISTS:pdfium>,pdfium,>>
 )
 add_test(NAME MCPTest COMMAND test_mcp)
 set_target_properties(test_mcp PROPERTIES
@@ -810,8 +597,10 @@ endif()
 # Telegram Performance & Efficacy Test
 add_executable(test_telegram_perf 
     test_telegram_perf.cpp 
+    ../src/hosts/rouen_mesh_host.cpp
     ../src/hosts/telegram_host.cpp
     ../src/hosts/llm_host.cpp
+    ../external/mongoose-7.15/mongoose.c
 )
 if(APPLE)
     target_link_libraries(test_telegram_perf PRIVATE "-framework Foundation")
@@ -819,13 +608,15 @@ endif()
 target_link_libraries(test_telegram_perf 
     PRIVATE 
     rouen_test_modules
+    OpenSSL::Crypto
+    OpenSSL::SSL
     GTest::gtest 
     GTest::gtest_main
     GTest::gmock
     GTest::gmock_main
     CURL::libcurl
     imgui::imgui
-    tinyxml2
+    tinyxml2::tinyxml2
     SQLite::SQLite3
     ${SDL3_LIBRARIES}
     ${SDL3_IMAGE_LIBRARIES}
@@ -1086,132 +877,9 @@ elseif(WIN32)
     target_link_libraries(test_ui_automation_explorer PRIVATE ole32 oleaut32 uiautomationcore gdi32 user32 gdiplus)
 endif()
 
-# Add QuickJS static library for tests if not already defined by main CMakeLists
-if(NOT TARGET quickjs)
-    set(QUICKJS_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/quickjs.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/dtoa.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/libunicode.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/cutils.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/libregexp.c
-    )
-    if(NOT WIN32)
-        list(APPEND QUICKJS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/quickjs-libc.c)
-    endif()
-    add_library(quickjs STATIC ${QUICKJS_SOURCES})
-    set_target_properties(quickjs PROPERTIES LINKER_LANGUAGE C)
-    target_include_directories(quickjs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs)
-    if(NOT MSVC)
-        target_compile_definitions(quickjs PRIVATE _GNU_SOURCE CONFIG_VERSION="2024-01-13")
-    else()
-        target_compile_definitions(quickjs PRIVATE CONFIG_VERSION="2024-01-13")
-    endif()
-    set_source_files_properties(${QUICKJS_SOURCES} PROPERTIES LANGUAGE C)
-    if(NOT MSVC)
-        set_source_files_properties(${QUICKJS_SOURCES} PROPERTIES COMPILE_FLAGS "-Wno-array-bounds -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough")
-    endif()
-endif()
-
 # QuickJS Unit Test
 add_gtest_executable(test_quickjs test_quickjs.cpp)
-target_sources(test_quickjs PRIVATE
-    ../src/hosts/quickjs_host.cpp
-    ../src/hosts/event_bus_host.cpp
-    ../src/cards/interface/card.cpp
-    ../src/helpers/image_cache.cpp
-    ../src/hosts/process_host.cpp
-    ../src/hosts/rss_host.cpp
-    ../src/hosts/footprints_host.cpp
-    ../src/hosts/rouen_mesh_host.cpp
-    ../src/hosts/telegram_host.cpp
-    ../src/cards/information/telegram.cpp
-    ../src/hosts/api_server_host.cpp
-    ../external/mongoose-7.15/mongoose.c
-    ../src/hosts/llm_host.cpp
-    ../src/hosts/git_sync_host.cpp
-    ../src/hosts/universal_sync_host.cpp
-    ../src/helpers/sync_crypto_service.cpp
-    ../src/hosts/plugin_host.cpp
-    ../src/helpers/media_player.cpp
-    ../src/helpers/media_player_item.cpp
-    ../src/helpers/ytdlp_service.cpp
-    ../src/helpers/audio_capture.cpp
-    ../src/helpers/adlib_engine.cpp
-    ../src/helpers/mp4_writer.cpp
-    ../src/helpers/vu_meter.cpp
-    ../src/helpers/directory_watch.cpp
-    ../src/helpers/ui_automation_explorer.cpp
-    ../src/helpers/piped_process.cpp
-    ../src/models/git_scanner.cpp
-    ../src/models/git_process_helper.cpp
-    ../src/models/rss/feed_xml_parser.cpp
-    ../src/models/rss/rss_item_repo.cpp
-    ../src/fonts.cpp
-    ../src/cards/information/ai_chat.cpp
-    ../src/cards/information/rss.cpp
-    ../src/cards/information/rss_item.cpp
-    ../src/cards/productivity/converter.cpp
-    ../src/cards/productivity/calculator.cpp
-    ../src/cards/productivity/invoice_card.cpp
-    ../src/cards/productivity/theme_card.cpp
-    ../src/cards/development/cmake.cpp
-    ../src/cards/development/fs-directory.cpp
-    ../src/cards/development/git.cpp
-    ../src/cards/development/git_overlay.cpp
-    ../src/cards/development/github_registrar.cpp
-    ../src/cards/development/github/ci_card.cpp
-    ../src/cards/development/github/github_card.cpp
-    ../src/cards/development/github/login_screen.cpp
-    ../src/cards/development/github/repo_screen.cpp
-    ../src/cards/information/bybit_registrar.cpp
-    ../src/cards/information/movies_registrar.cpp
-    ../src/cards/information/worldcup_registrar.cpp
-    ../src/cards/media/chess_com_registrar.cpp
-    ../src/cards/media/chess_com_integration.cpp
-    ../src/cards/media/media_companion.cpp
-    ../src/cards/production/adlib.cpp
-    ../src/cards/system/terminal.cpp
-    ../src/cards/system/terminal_output.cpp
-    ../src/cards/system/terminal_bash.cpp
-    ../src/cards/system/terminal_commands.cpp
-    ../src/hosts/mcp_host.cpp
-    ../src/helpers/filetype_handler.cpp
-    ../src/helpers/card_decorations.cpp
-    ../src/helpers/capture_helper.cpp
-    ../external/imguicolortextedit/TextEditor.cpp
-    ../src/helpers/glass_top_bar.cpp
-)
-if(APPLE)
-    target_sources(test_quickjs PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm ../src/models/calendar/calendar_fetcher_apple.mm)
-    target_link_libraries(test_quickjs PRIVATE "-framework Cocoa" "-framework Foundation" "-framework AVFoundation" "-framework ApplicationServices" "-framework EventKit")
-endif()
-target_include_directories(test_quickjs PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/..
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../external
-    ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs
-    ${CMAKE_CURRENT_SOURCE_DIR}/../plugin-sdk
-)
-target_link_libraries(test_quickjs PRIVATE 
-    rouen_test_modules
-    quickjs
-    pdfium
-    PDFWriter
-    tinyxml2::tinyxml2
-    SQLite::SQLite3 
-    CURL::libcurl 
-    OpenSSL::Crypto
-    OpenSSL::SSL
-    ${SDL3_LIBRARIES}
-    ${SDL3_IMAGE_LIBRARIES}
-    imgui::imgui
-    $<IF:$<TARGET_EXISTS:imgui_backends>,imgui_backends,>
-    ${AVFORMAT_LIBRARIES}
-    ${AVCODEC_LIBRARIES}
-    ${AVUTIL_LIBRARIES}
-    ${SWSCALE_LIBRARIES}
-    ${SWRESAMPLE_LIBRARIES}
-)
+target_link_libraries(test_quickjs PRIVATE rouen_test_app_common)
 if(NOT MSVC)
     target_compile_options(test_quickjs PRIVATE -Wno-error -Wno-c99-extensions -Wno-old-style-cast -Wno-sign-conversion -Wno-unused-parameter -Wno-shorten-64-to-32 -Wno-implicit-int-float-conversion)
 endif()

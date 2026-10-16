@@ -38,7 +38,7 @@ enum class WalletType {
 };
 
 // Convert WalletType to string for API calls
-std::string walletTypeToString(WalletType type) {
+inline std::string walletTypeToString(WalletType type) {
     switch (type) {
         case WalletType::UNIFIED: return "UNIFIED";
         case WalletType::FUND: return "FUND";

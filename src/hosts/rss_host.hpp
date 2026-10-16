@@ -68,6 +68,8 @@ public:
 
     ~RSSHost();
 
+    static inline bool no_initial_cards{false};
+
     std::chrono::system_clock::time_point last_refresh_time() const;
     
     int refresh_interval_s() const;

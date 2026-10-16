@@ -176,6 +176,7 @@ int main(int argc, char* argv[]) {
             upgrade_source = std::string(arg.substr(10));
         } else if (arg == "--no-initial-cards" || arg == "--no-cards") {
             deck::no_initial_cards = true;
+            rouen::hosts::RSSHost::no_initial_cards = true;
         } else if (arg == "--mesh" || arg == "--connect-mesh" || arg == "--mesh-connect") {
             connect_mesh_on_startup = true;
         } else if (arg.starts_with("--mesh-server=")) {
