@@ -237,6 +237,9 @@ LLMConfigManager::LLMConfigManager() {
     registrar::add<std::function<void()>>("llm_config_reload", std::make_shared<std::function<void()>>([this]() {
         this->reload();
     }));
+    registrar::add<std::function<bool(std::string_view)>>("llm_config_merge", std::make_shared<std::function<bool(std::string_view)>>([this](std::string_view json_content) {
+        return this->merge_from_json(json_content);
+    }));
 
     auto config_dir = rouen::platform::get_user_config_directory();
     config_dir /= "llm_configs.json";
@@ -534,6 +537,63 @@ void LLMConfigManager::load_configs() {
     } catch (const std::exception& e) {
         LOG_COMPONENT("LLMConfigManager", LOG_LEVEL_ERROR, std::string("Error loading LLM configs: ") + e.what());
         setup_default_configs();
+    }
+}
+
+bool LLMConfigManager::merge_from_json(std::string_view json_content) {
+    if (json_content.empty()) {
+        return false;
+    }
+
+    is_sync_suppressed_ = true;
+    struct Guard {
+        bool& flag;
+        ~Guard() { flag = false; }
+    } guard{is_sync_suppressed_};
+
+    try {
+        LLMConfigSaveModel remote_model;
+        auto err = glz::read<glz::opts{.error_on_unknown_keys = false}>(remote_model, json_content);
+        if (err) {
+            LOG_COMPONENT("LLMConfigManager", LOG_LEVEL_ERROR, "Failed to parse remote llm_configs.json for merge");
+            return false;
+        }
+
+        for (const auto& remote_cfg : remote_model.configs) {
+            if (remote_cfg.name.empty()) continue;
+
+            LLMConfigEntry* existing = nullptr;
+            for (auto& local_cfg : configs_) {
+                if (local_cfg.name == remote_cfg.name) {
+                    existing = &local_cfg;
+                    break;
+                }
+            }
+
+            if (existing) {
+                if (!remote_cfg.provider.empty()) existing->provider = remote_cfg.provider;
+                if (!remote_cfg.base_url.empty()) existing->base_url = remote_cfg.base_url;
+                if (!remote_cfg.model_name.empty()) existing->model_name = remote_cfg.model_name;
+                if (!remote_cfg.thinking_level.empty()) existing->thinking_level = remote_cfg.thinking_level;
+                // Preserve local non-empty API key when remote key is empty
+                if (!remote_cfg.api_key.empty()) {
+                    existing->api_key = remote_cfg.api_key;
+                }
+            } else {
+                configs_.push_back(remote_cfg);
+            }
+        }
+
+        if (!remote_model.default_config_name.empty() && get_config(remote_model.default_config_name)) {
+            default_config_name_ = remote_model.default_config_name;
+        }
+
+        ensure_standard_configs();
+        save_configs();
+        return true;
+    } catch (const std::exception& e) {
+        LOG_COMPONENT("LLMConfigManager", LOG_LEVEL_ERROR, std::string("Error merging LLM configs: ") + e.what());
+        return false;
     }
 }
 

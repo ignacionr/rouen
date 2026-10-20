@@ -323,6 +323,7 @@ namespace rouen::hosts {
             load_configs();
         }
 
+        bool merge_from_json(std::string_view json_content);
         bool ensure_standard_configs();
         void save_configs() const;
 

@@ -315,7 +315,7 @@ void test_persona_llm_config_resolution() {
 
     // 1. Verify standard configs restoration even if an incomplete set is passed
     lcm.ensure_standard_configs();
-    test_helpers::assert_string_equal("Gemini Flash", lcm.get_default_config_name(), "Default config is Gemini Flash");
+    test_helpers::assert_string_equal("Gemini 3.8 Flash", lcm.get_default_config_name(), "Default config is Gemini 3.8 Flash");
     const auto* gemini_cfg = lcm.get_config("Gemini Flash");
     test_helpers::assert_true(gemini_cfg != nullptr, "Gemini Flash config exists in LLMConfigManager");
     if (gemini_cfg) {
@@ -392,6 +392,133 @@ void test_local_theme_preserved_across_incremental_sync() {
                                       "Newer local Amber themes.json preserved when unrelated dataset updates");
 }
 
+void test_llm_config_smart_merge() {
+    std::cout << "\n--- Testing LLMConfigManager Smart Merge & Credential Preservation ---\n";
+    auto& lcm = rouen::hosts::LLMConfigManager::instance();
+    lcm.ensure_standard_configs();
+
+    // 1. Set a local API key on Gemini 4 Argon
+    if (const auto* argon = lcm.get_config("Gemini 4 Argon")) {
+        auto updated_argon = *argon;
+        updated_argon.api_key = "local_secret_argon_key";
+        lcm.update_config("Gemini 4 Argon", updated_argon);
+    }
+
+    // 2. Merge remote JSON that has empty api_key for Gemini 4 Argon and adds a new profile
+    std::string remote_json = R"({
+        "default_config_name": "Gemini 4 Argon",
+        "configs": [
+            {
+                "name": "Gemini 4 Argon",
+                "provider": "gemini",
+                "api_key": "",
+                "base_url": "https://generativelanguage.googleapis.com",
+                "model_name": "gemini-4-argon",
+                "thinking_level": "high"
+            },
+            {
+                "name": "Mesh Synced Custom Model",
+                "provider": "custom",
+                "api_key": "remote_custom_key",
+                "base_url": "http://localhost:8099/v1",
+                "model_name": "qwen-coder-mesh",
+                "thinking_level": "medium"
+            }
+        ]
+    })";
+
+    bool merge_ok = lcm.merge_from_json(remote_json);
+    test_helpers::assert_true(merge_ok, "LLMConfigManager::merge_from_json succeeded");
+
+    const auto* argon_after = lcm.get_config("Gemini 4 Argon");
+    test_helpers::assert_true(argon_after != nullptr, "Gemini 4 Argon exists after merge");
+    if (argon_after) {
+        test_helpers::assert_string_equal("local_secret_argon_key", argon_after->api_key,
+                                          "Local non-empty API key preserved when remote key is empty");
+    }
+
+    const auto* custom_after = lcm.get_config("Mesh Synced Custom Model");
+    test_helpers::assert_true(custom_after != nullptr, "New remote profile added during merge");
+    if (custom_after) {
+        test_helpers::assert_string_equal("qwen-coder-mesh", custom_after->model_name,
+                                          "Remote custom model name preserved");
+        test_helpers::assert_string_equal("remote_custom_key", custom_after->api_key,
+                                          "Remote custom API key imported");
+    }
+}
+
+void test_reactive_persona_and_llm_sync() {
+    std::cout << "\n--- Testing Reactive Event-Driven Persona & LLM Sync ---\n";
+    auto& sync = rouen::hosts::UniversalSyncHost::instance();
+    auto& crypto = rouen::sync::SyncCryptoService::instance();
+    auto& pm = rouen::helpers::PersonaManager::instance();
+    auto& lcm = rouen::hosts::LLMConfigManager::instance();
+
+    crypto.set_passphrase("ReactiveSyncPassphrase123");
+    sync.initialize_canary();
+
+    int personas_updated_count = 0;
+    int llm_reload_count = 0;
+    registrar::add<std::function<void()>>("personas_updated", std::make_shared<std::function<void()>>([&]() {
+        personas_updated_count++;
+    }));
+    registrar::add<std::function<void()>>("llm_config_reload", std::make_shared<std::function<void()>>([&]() {
+        llm_reload_count++;
+    }));
+
+    auto hook = registrar::try_get<std::function<void(std::string_view, std::string_view)>>("mesh_sync_registry_update");
+    test_helpers::assert_true(hook != nullptr, "mesh_sync_registry_update hook is registered in registrar");
+
+    if (hook) {
+        // 1. Simulate incoming REGISTRY_SET for a persona
+        rouen::helpers::Persona reactive_p;
+        reactive_p.name = "Reactive Mesh Architect";
+        reactive_p.description = "Arrived in real time over WebSocket REGISTRY_SET.";
+        reactive_p.allowed_mcps = {"mesh", "deck"};
+        reactive_p.system_prompt = "You are Reactive Mesh Architect.";
+        reactive_p.llm_config_name = "Gemini 4 Argon";
+        reactive_p.temperature = 0.1f;
+        reactive_p.thinking_level = "high";
+
+        std::string p_json = glz::write<glz::opts{.prettify = true}>(reactive_p).value_or("");
+        auto p_env = crypto.encrypt_envelope("personas", "reactive-mesh-architect.json", p_json, 9999999999ULL, false);
+        test_helpers::assert_true(p_env.has_value(), "Encrypted reactive persona envelope");
+
+        (*hook)("sync/v1/personas/reactive-mesh-architect.json", *p_env);
+
+        const auto* loaded_p = pm.get_persona_by_name("Reactive Mesh Architect");
+        test_helpers::assert_true(loaded_p != nullptr, "Reactive Mesh Architect immediately loaded into PersonaManager");
+        if (loaded_p) {
+            test_helpers::assert_string_equal("Gemini 4 Argon", loaded_p->llm_config_name,
+                                              "Reactive persona has Gemini 4 Argon llm_config_name");
+        }
+        test_helpers::assert_true(personas_updated_count >= 1, "personas_updated event was emitted");
+
+        // 2. Simulate incoming REGISTRY_SET for config/llm_configs.json
+        std::string llm_json = R"({
+            "default_config_name": "Gemini 3.8 Flash",
+            "configs": [
+                {
+                    "name": "Reactive Endpoint Model",
+                    "provider": "gemini",
+                    "api_key": "reactive_key",
+                    "base_url": "https://generativelanguage.googleapis.com",
+                    "model_name": "gemini-4-argon",
+                    "thinking_level": "high"
+                }
+            ]
+        })";
+        auto llm_env = crypto.encrypt_envelope("config", "llm_configs.json", llm_json, 9999999999ULL, false);
+        test_helpers::assert_true(llm_env.has_value(), "Encrypted reactive llm_configs envelope");
+
+        (*hook)("sync/v1/config/llm_configs.json", *llm_env);
+
+        const auto* loaded_llm = lcm.get_config("Reactive Endpoint Model");
+        test_helpers::assert_true(loaded_llm != nullptr, "Reactive Endpoint Model immediately merged into LLMConfigManager");
+        test_helpers::assert_true(llm_reload_count >= 1, "llm_config_reload event was emitted");
+    }
+}
+
 int main() {
     auto orig_cwd = std::filesystem::current_path();
     auto temp_home = std::filesystem::temp_directory_path() / "test_universal_mesh_sync_home";
@@ -420,6 +547,8 @@ int main() {
     test_personas_universal_sync();
     test_persona_llm_config_resolution();
     test_local_theme_preserved_across_incremental_sync();
+    test_llm_config_smart_merge();
+    test_reactive_persona_and_llm_sync();
 
     std::filesystem::current_path(orig_cwd);
     std::filesystem::remove_all(temp_home);

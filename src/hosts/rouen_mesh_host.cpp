@@ -1548,6 +1548,14 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
                                 config_svc->set_env_value("OPENWEATHER_KEY", set_req.value, true);
                             }
                         }
+
+                        if (set_req.key.starts_with("sync/v1/personas/") ||
+                            set_req.key == "sync/v1/config/llm_configs.json" ||
+                            set_req.key == "sync/v1/config/personas.json") {
+                            if (auto sync_hook = registrar::try_get<std::function<void(std::string_view, std::string_view)>>("mesh_sync_registry_update")) {
+                                (*sync_hook)(set_req.key, set_req.value);
+                            }
+                        }
                     }
                     process_incoming_notifications();
                 }

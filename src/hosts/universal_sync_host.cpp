@@ -159,13 +159,32 @@ namespace rouen::hosts {
             if (copy_file_if_newer(cache_dir / "config" / "personas.json",
                                    rouen::platform::get_user_config_directory() / "personas.json")) {
                 rouen::helpers::PersonaManager::instance().reload();
+                personas_imported = true;
             }
         }
-        if (copy_file_if_newer(cache_dir / "config" / "llm_configs.json",
-                               rouen::platform::get_user_config_directory() / "llm_configs.json")) {
-            auto llm_reload = registrar::try_get<std::function<void()>>("llm_config_reload");
-            if (llm_reload) {
-                (*llm_reload)();
+        if (personas_imported) {
+            if (auto personas_updated = registrar::try_get<std::function<void()>>("personas_updated")) {
+                (*personas_updated)();
+            }
+        }
+
+        auto staged_llm_path = cache_dir / "config" / "llm_configs.json";
+        if (std::filesystem::exists(staged_llm_path)) {
+            std::ifstream llm_in(staged_llm_path, std::ios::binary);
+            if (llm_in.is_open()) {
+                std::string llm_content((std::istreambuf_iterator<char>(llm_in)), std::istreambuf_iterator<char>());
+                llm_in.close();
+                bool merged = false;
+                if (auto merge_fn = registrar::try_get<std::function<bool(std::string_view)>>("llm_config_merge")) {
+                    merged = (*merge_fn)(llm_content);
+                } else if (copy_file_if_newer(staged_llm_path, rouen::platform::get_user_config_directory() / "llm_configs.json")) {
+                    merged = true;
+                }
+                if (merged) {
+                    if (auto llm_reload = registrar::try_get<std::function<void()>>("llm_config_reload")) {
+                        (*llm_reload)();
+                    }
+                }
             }
         }
 
@@ -189,6 +208,70 @@ namespace rouen::hosts {
             }
         );
         registrar::add("universal_sync_item", sync_item_fn);
+
+        auto registry_update_fn = std::make_shared<std::function<void(std::string_view, std::string_view)>>(
+            [this](std::string_view reg_key, std::string_view encrypted_payload) {
+                if (encrypted_payload.empty()) return;
+                if (!reg_key.starts_with("sync/v1/personas/") &&
+                    reg_key != "sync/v1/config/llm_configs.json" &&
+                    reg_key != "sync/v1/config/personas.json") {
+                    return;
+                }
+
+                auto& crypto = rouen::sync::SyncCryptoService::instance();
+                if (!crypto.is_configured()) return;
+
+                auto dec = crypto.decrypt_envelope(encrypted_payload);
+                if (!dec.has_value()) return;
+
+                auto cache_dir = get_mesh_cache_path();
+                auto target_dir = cache_dir / dec->dataset;
+                std::error_code ec;
+                std::filesystem::create_directories(target_dir, ec);
+                auto target_file = target_dir / dec->key;
+
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    applied_registry_timestamps_[std::string(reg_key)] = dec->updated_at;
+                    if (dec->deleted) {
+                        std::filesystem::remove(target_file, ec);
+                    } else {
+                        std::ofstream out(target_file, std::ios::binary | std::ios::trunc);
+                        if (out.is_open()) {
+                            out << dec->plaintext;
+                        }
+                    }
+                }
+
+                if (dec->dataset == "personas") {
+                    if (rouen::helpers::PersonaManager::instance().import_from_directory(cache_dir / "personas")) {
+                        if (auto personas_updated = registrar::try_get<std::function<void()>>("personas_updated")) {
+                            (*personas_updated)();
+                        }
+                    }
+                } else if (dec->dataset == "config" && dec->key == "llm_configs.json" && !dec->deleted) {
+                    bool merged = false;
+                    if (auto merge_fn = registrar::try_get<std::function<bool(std::string_view)>>("llm_config_merge")) {
+                        merged = (*merge_fn)(dec->plaintext);
+                    } else if (copy_file_if_newer(target_file, rouen::platform::get_user_config_directory() / "llm_configs.json")) {
+                        merged = true;
+                    }
+                    if (merged) {
+                        if (auto llm_reload = registrar::try_get<std::function<void()>>("llm_config_reload")) {
+                            (*llm_reload)();
+                        }
+                    }
+                } else if (dec->dataset == "config" && dec->key == "personas.json" && !dec->deleted) {
+                    if (copy_file_if_newer(target_file, rouen::platform::get_user_config_directory() / "personas.json")) {
+                        rouen::helpers::PersonaManager::instance().reload();
+                        if (auto personas_updated = registrar::try_get<std::function<void()>>("personas_updated")) {
+                            (*personas_updated)();
+                        }
+                    }
+                }
+            }
+        );
+        registrar::add("mesh_sync_registry_update", registry_update_fn);
 
         rouen::helpers::PersonaManager::instance().set_sync_hook(
             [this](std::string_view dataset, std::string_view key, std::string_view content, bool is_deleted) {
