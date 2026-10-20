@@ -37,6 +37,7 @@
 #endif
 
 #include "../src/helpers/gemini_adapter.hpp"
+#include "../src/hosts/llm_host.hpp"
 
 using namespace rouen::helpers;
 
@@ -632,7 +633,7 @@ TEST(PersonaManagerTest, ThinkingLevelConfigurationAndDefaults) {
     }
 
     if (dev_arch) {
-        EXPECT_EQ(dev_arch->get_effective_thinking_level(), "low");
+        EXPECT_EQ(dev_arch->get_effective_thinking_level(), "high");
     }
     if (default_p) {
         EXPECT_EQ(default_p->get_effective_thinking_level(), "high");
@@ -917,8 +918,8 @@ TEST(PersonaManagerTest, AutonomousEngineerExtendedIterationsAndTokens) {
     EXPECT_EQ(arch_p->max_tool_iterations, 100);
     EXPECT_EQ(arch_p->max_output_tokens, 16384);
 
-    EXPECT_EQ(def_p->max_tool_iterations, 50);
-    EXPECT_EQ(def_p->max_output_tokens, 8192);
+    EXPECT_EQ(def_p->max_tool_iterations, 100);
+    EXPECT_EQ(def_p->max_output_tokens, 16384);
 }
 
 TEST(PersonaManagerTest, RouenAssistantTaskExecutionDelegationRule) {
@@ -1379,4 +1380,157 @@ TEST(GeminiAdapterTest, SendMessageWithFunctionCallingFallsBackOnCandidate429) {
     EXPECT_NE(requested_urls[0].find("gemini-3.8-flash"), std::string::npos);
     EXPECT_NE(requested_urls[1].find("gemini-3.1-flash-lite"), std::string::npos);
 }
+
+TEST(PersonaMultiModelTest, LLMConfigManagerRegistersAllFourGeminiProfiles) {
+    auto& lcm = rouen::hosts::LLMConfigManager::instance();
+    lcm.ensure_standard_configs();
+
+    const auto* argon = lcm.get_config("Gemini 4 Argon");
+    ASSERT_NE(argon, nullptr);
+    EXPECT_EQ(argon->provider, "gemini");
+    EXPECT_EQ(argon->model_name, "gemini-4-argon");
+    EXPECT_EQ(argon->thinking_level, "high");
+
+    const auto* flash = lcm.get_config("Gemini 3.8 Flash");
+    ASSERT_NE(flash, nullptr);
+    EXPECT_EQ(flash->provider, "gemini");
+    EXPECT_EQ(flash->model_name, "gemini-3.8-flash");
+    EXPECT_EQ(flash->thinking_level, "high");
+
+    const auto* pro_tools = lcm.get_config("Gemini Pro Custom Tools");
+    ASSERT_NE(pro_tools, nullptr);
+    EXPECT_EQ(pro_tools->provider, "gemini");
+    EXPECT_EQ(pro_tools->model_name, "gemini-3.1-pro-preview-customtools");
+    EXPECT_EQ(pro_tools->thinking_level, "high");
+
+    const auto* lite = lcm.get_config("Gemini Flash Lite");
+    ASSERT_NE(lite, nullptr);
+    EXPECT_EQ(lite->provider, "gemini");
+    EXPECT_EQ(lite->model_name, "gemini-3.5-flash-lite");
+    EXPECT_EQ(lite->thinking_level, "minimal");
+
+    // Backward compatibility for "Gemini Flash"
+    const auto* legacy_flash = lcm.get_config("Gemini Flash");
+    ASSERT_NE(legacy_flash, nullptr);
+    EXPECT_EQ(legacy_flash->model_name, "gemini-3.8-flash");
+}
+
+TEST(PersonaMultiModelTest, PersonaSpecializationAndMigrationMatrix) {
+    auto& pm = PersonaManager::instance();
+    auto& lcm = rouen::hosts::LLMConfigManager::instance();
+    lcm.ensure_standard_configs();
+
+    // Simulate legacy personas with "Gemini Flash" and run migration
+    for (auto& p : pm.personas_) {
+        if (p.name == "Autonomous Engineer" || p.name == "Persona Architect" ||
+            p.name == "Code & Git Architect" || p.name == "Terminal Specialist") {
+            p.llm_config_name = "Gemini Flash";
+        }
+    }
+    pm.sanitize_and_migrate_personas();
+
+    const auto* ae = pm.get_persona_by_name("Autonomous Engineer");
+    ASSERT_NE(ae, nullptr);
+    EXPECT_EQ(ae->llm_config_name, "Gemini 4 Argon");
+    EXPECT_FLOAT_EQ(ae->temperature, 0.1f);
+    EXPECT_EQ(ae->thinking_level, "high");
+    EXPECT_EQ(ae->max_tool_iterations, 100);
+    EXPECT_EQ(ae->max_output_tokens, 16384);
+
+    const auto* pa = pm.get_persona_by_name("Persona Architect");
+    ASSERT_NE(pa, nullptr);
+    EXPECT_EQ(pa->llm_config_name, "Gemini 4 Argon");
+    EXPECT_FLOAT_EQ(pa->temperature, 0.2f);
+    EXPECT_EQ(pa->thinking_level, "high");
+    EXPECT_EQ(pa->max_tool_iterations, 50);
+    EXPECT_EQ(pa->max_output_tokens, 8192);
+
+    const auto* cga = pm.get_persona_by_name("Code & Git Architect");
+    ASSERT_NE(cga, nullptr);
+    EXPECT_EQ(cga->llm_config_name, "Gemini Pro Custom Tools");
+    EXPECT_FLOAT_EQ(cga->temperature, 0.2f);
+    EXPECT_EQ(cga->thinking_level, "high");
+    EXPECT_EQ(cga->max_tool_iterations, 100);
+    EXPECT_EQ(cga->max_output_tokens, 16384);
+
+    const auto* ra = pm.get_persona_by_name("Rouen Assistant");
+    ASSERT_NE(ra, nullptr);
+    EXPECT_EQ(ra->llm_config_name, "Gemini 3.8 Flash");
+    EXPECT_FLOAT_EQ(ra->temperature, 0.1f);
+    EXPECT_EQ(ra->thinking_level, "high");
+    EXPECT_EQ(ra->max_tool_iterations, 100);
+    EXPECT_EQ(ra->max_output_tokens, 16384);
+
+    const auto* aca = pm.get_persona_by_name("Adaptive Card Architect");
+    ASSERT_NE(aca, nullptr);
+    EXPECT_EQ(aca->llm_config_name, "Gemini 3.8 Flash");
+    EXPECT_FLOAT_EQ(aca->temperature, 0.2f);
+    EXPECT_EQ(aca->thinking_level, "high");
+    EXPECT_EQ(aca->max_tool_iterations, 50);
+    EXPECT_EQ(aca->max_output_tokens, 16384);
+
+    const auto* mkd = pm.get_persona_by_name("Media & Knowledge Director");
+    ASSERT_NE(mkd, nullptr);
+    EXPECT_EQ(mkd->llm_config_name, "Gemini 3.8 Flash");
+    EXPECT_FLOAT_EQ(mkd->temperature, 0.3f);
+    EXPECT_EQ(mkd->thinking_level, "medium");
+    EXPECT_EQ(mkd->max_tool_iterations, 20);
+    EXPECT_EQ(mkd->max_output_tokens, 8192);
+
+    const auto* ppl = pm.get_persona_by_name("Personal Productivity Lead");
+    ASSERT_NE(ppl, nullptr);
+    EXPECT_EQ(ppl->llm_config_name, "Gemini 3.8 Flash");
+    EXPECT_FLOAT_EQ(ppl->temperature, 0.2f);
+    EXPECT_EQ(ppl->thinking_level, "low");
+    EXPECT_EQ(ppl->max_tool_iterations, 20);
+    EXPECT_EQ(ppl->max_output_tokens, 8192);
+
+    const auto* term = pm.get_persona_by_name("Terminal Specialist");
+    ASSERT_NE(term, nullptr);
+    EXPECT_EQ(term->llm_config_name, "Gemini Flash Lite");
+    EXPECT_FLOAT_EQ(term->temperature, 0.1f);
+    EXPECT_EQ(term->thinking_level, "minimal");
+    EXPECT_EQ(term->max_tool_iterations, 15);
+    EXPECT_EQ(term->max_output_tokens, 8192);
+
+    const auto* edit = pm.get_persona_by_name("Editor Specialist");
+    ASSERT_NE(edit, nullptr);
+    EXPECT_EQ(edit->llm_config_name, "Gemini Flash Lite");
+    EXPECT_FLOAT_EQ(edit->temperature, 0.1f);
+    EXPECT_EQ(edit->thinking_level, "low");
+    EXPECT_EQ(edit->max_tool_iterations, 20);
+    EXPECT_EQ(edit->max_output_tokens, 8192);
+
+    const auto* git = pm.get_persona_by_name("Git & GitHub Specialist");
+    ASSERT_NE(git, nullptr);
+    EXPECT_EQ(git->llm_config_name, "Gemini Flash Lite");
+    EXPECT_FLOAT_EQ(git->temperature, 0.1f);
+    EXPECT_EQ(git->thinking_level, "low");
+    EXPECT_EQ(git->max_tool_iterations, 20);
+    EXPECT_EQ(git->max_output_tokens, 8192);
+
+    for (const char* leaf_name : {"Archiver of all data", "Directory & Address Book", "Schedule & Timekeeper", "Financial Analyst", "System Health & Metrics", "Mesh Specialist"}) {
+        const auto* leaf = pm.get_persona_by_name(leaf_name);
+        ASSERT_NE(leaf, nullptr) << "Missing leaf specialist: " << leaf_name;
+        EXPECT_EQ(leaf->llm_config_name, "Gemini Flash Lite") << "For persona: " << leaf_name;
+        EXPECT_EQ(leaf->thinking_level, "minimal") << "For persona: " << leaf_name;
+        EXPECT_EQ(leaf->max_tool_iterations, 10) << "For persona: " << leaf_name;
+        EXPECT_EQ(leaf->max_output_tokens, 8192) << "For persona: " << leaf_name;
+    }
+
+    const auto* msd = pm.get_persona_by_name("Media & Stream Director");
+    ASSERT_NE(msd, nullptr);
+    EXPECT_EQ(msd->llm_config_name, "Gemini 3.8 Flash");
+    EXPECT_FLOAT_EQ(msd->temperature, 0.2f);
+    EXPECT_EQ(msd->thinking_level, "low");
+    EXPECT_EQ(msd->max_tool_iterations, 15);
+    EXPECT_EQ(msd->max_output_tokens, 8192);
+
+    // Verify LLMHost model resolution for Autonomous Engineer and Terminal Specialist
+    auto ae_settings = rouen::hosts::LLMHost::get_current_config(ae->llm_config_name);
+    EXPECT_EQ(ae_settings.model_name, "gemini-4-argon");
+    auto term_settings = rouen::hosts::LLMHost::get_current_config(term->llm_config_name);
+    EXPECT_EQ(term_settings.model_name, "gemini-3.5-flash-lite");
+}
+
 

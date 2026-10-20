@@ -575,6 +575,7 @@ endif()
 
 # Gemini Adapter Test
 add_gtest_http_executable(test_gemini_adapter test_gemini_adapter.cpp)
+target_sources(test_gemini_adapter PRIVATE ../src/hosts/llm_host.cpp)
 
 # MCP Test
 add_executable(test_mcp test_mcp.cpp)

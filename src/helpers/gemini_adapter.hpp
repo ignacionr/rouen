@@ -671,9 +671,17 @@ namespace rouen::helpers {
         }
 
     public:
-        GeminiAdapter(const std::string& api_key, [[maybe_unused]] const std::string& base_url = "", std::string thinking_level = "") 
-            : api_key_(trim(api_key)), model_("gemini-3.8-flash"), thinking_level_(std::move(thinking_level)) {
-            CONFIG_DEBUG_FMT("Created Gemini adapter with API key: {}...", api_key_.empty() ? "" : api_key_.substr(0, std::min(size_t(8), api_key_.length())));
+        GeminiAdapter(const std::string& api_key, const std::string& model_or_url = "", std::string thinking_level = "") 
+            : api_key_(trim(api_key)), 
+              model_((!model_or_url.empty() && !model_or_url.starts_with("http"))
+                     ? (model_or_url.starts_with("models/") ? model_or_url.substr(7) : model_or_url)
+                     : "gemini-3.8-flash"),
+              thinking_level_(std::move(thinking_level)) {
+            CONFIG_DEBUG_FMT("Created Gemini adapter with model {} and API key: {}...", model_, api_key_.empty() ? "" : api_key_.substr(0, std::min(size_t(8), api_key_.length())));
+        }
+
+        [[nodiscard]] const std::string& get_model() const noexcept {
+            return model_;
         }
 
         void set_thinking_level(std::string_view level) {
@@ -685,8 +693,7 @@ namespace rouen::helpers {
         }
 
         GeminiAdapter new_conversation() const {
-            auto adapter = GeminiAdapter(api_key_, "", thinking_level_);
-            adapter.model_ = model_;
+            auto adapter = GeminiAdapter(api_key_, model_, thinking_level_);
             return adapter;
         }
 

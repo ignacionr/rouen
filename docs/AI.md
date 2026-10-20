@@ -38,13 +38,16 @@ Rouen decouples model providers, endpoints, and credentials from hardcoded const
 
 Configurations are stored in user configuration space (`~/Library/Application Support/Rouen/llm_configs.json` on macOS) and can be configured through the **Settings** card:
 
-| Profile Name | Provider | Default Model | Base URL | Primary Auth Key |
-|---|---|---|---|---|
-| **Gemini Flash** | `gemini` | `gemini-3.8-flash` | `https://generativelanguage.googleapis.com` | `GEMINI_API_KEY` |
-| **Grok Default** | `grok` | `grok-3-latest` | `https://api.x.ai/v1` | `GROK_API_KEY` |
-| **OpenAI GPT-4** | `openai` | `gpt-4` | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
-| **Groq** | `groq` | `llama3-8b-8192` | `https://api.groq.com/openai/v1` | `GROK_API_KEY` |
-| **Local MLX** | `custom` | `mlx-community/Qwen3.5-9B-MLX-4bit` | `http://localhost:8098/v1` | Local token (`mlx-local`) |
+| Profile Name | Provider | Default Model | Thinking Level | Base URL | Primary Auth Key |
+|---|---|---|---|---|---|
+| **Gemini 4 Argon** | `gemini` | `gemini-4-argon` | `high` | `https://generativelanguage.googleapis.com` | `GEMINI_API_KEY` |
+| **Gemini 3.8 Flash** | `gemini` | `gemini-3.8-flash` | `high` | `https://generativelanguage.googleapis.com` | `GEMINI_API_KEY` |
+| **Gemini Pro Custom Tools** | `gemini` | `gemini-3.1-pro-preview-customtools` | `high` | `https://generativelanguage.googleapis.com` | `GEMINI_API_KEY` |
+| **Gemini Flash Lite** | `gemini` | `gemini-3.5-flash-lite` | `minimal` | `https://generativelanguage.googleapis.com` | `GEMINI_API_KEY` |
+| **Grok Default** | `grok` | `grok-3-latest` | — | `https://api.x.ai/v1` | `GROK_API_KEY` |
+| **OpenAI GPT-4** | `openai` | `gpt-4` | — | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
+| **Groq** | `groq` | `llama3-8b-8192` | — | `https://api.groq.com/openai/v1` | `GROK_API_KEY` |
+| **Local MLX** | `custom` | `mlx-community/Qwen3.5-9B-MLX-4bit` | — | `http://localhost:8098/v1` | Local token (`mlx-local`) |
 
 > [!NOTE]
 > Per Rouen engineering rules, model identifiers are not hardcoded statically when discovering capabilities. Providers query dynamic backend catalog endpoints (e.g. `GET /v1/models` or `GET /v1beta/models`) to inspect active available models.
@@ -119,41 +122,43 @@ The local configuration file (`~/Library/Application Support/Rouen/personas.json
 ![Rouen 3-Tier Persona Hierarchy](diagrams/persona_hierarchy.png)
 
 ### 1. Tier 1: Primary Orchestrator
-* **`Rouen Assistant`** (Active default persona, index 6):
+* **`Rouen Assistant`** (Active default persona, bound to **`Gemini 3.8 Flash`**):
   - **Role**: Coordinates top-level user requests.
-  - **Temperature**: `0.7` for natural conversational flexibility.
-  - **Authorized Sub-Personas**: `Code & Git Architect`, `Personal Productivity Lead`, `Media & Knowledge Director`, `Financial Analyst`, `System Health & Metrics`, `Persona Architect`.
+  - **Temperature**: `0.1` with `high` thinking level for reliable orchestration.
+  - **Authorized Sub-Personas**: `Autonomous Engineer`, `Code & Git Architect`, `Personal Productivity Lead`, `Media & Knowledge Director`, `Financial Analyst`, `System Health & Metrics`, `Persona Architect`, `Adaptive Card Architect`.
   - **Allowed MCPs**: Deck management, persona reconfiguration, mesh querying, and general utilities.
 
-### 2. Tier 2: Domain Group Leads
-* **`Persona Architect`**:
+### 2. Tier 2: Deep Engineers, Architects & Domain Group Leads
+* **`Autonomous Engineer`** (Bound to **`Gemini 4 Argon`** / `gemini-4-argon`):
+  - Full-lifecycle autonomous C++ engineer executing end-to-end TDD, compiler diagnostics, and `./inbox` processing (`temperature: 0.1`, `thinking_level: high`, `max_tool_iterations: 100`, `max_output_tokens: 16384`).
+* **`Persona Architect`** (Bound to **`Gemini 4 Argon`** / `gemini-4-argon`):
   - Focuses on persona engineering, prompt architecture, tool gating policies, and runtime persona reconfiguration (`create_persona`, `update_persona`, `delete_persona`).
   - Gated to: `persona`, `deck`, `notes`.
-  - Runs with `high` thinking level and `0.3` temperature for precise and robust persona design.
-* **`Code & Git Architect`**:
-  - Focuses on technical operations, code review, file edits, and system command orchestration.
+  - Runs with `high` thinking level and `0.2` temperature for precise and robust persona design.
+* **`Code & Git Architect`** (Bound to **`Gemini Pro Custom Tools`** / `gemini-3.1-pro-preview-customtools`):
+  - Focuses on technical operations, code review, file edits, and system command orchestration using a model fine-tuned for custom tool hierarchies.
   - Delegates to: `Terminal Specialist`, `Git & GitHub Specialist`, `Adaptive Card Architect`.
-* **`Personal Productivity Lead`**:
-  - Organizes schedules, contacts, and note archives.
+* **`Adaptive Card Architect`** (Bound to **`Gemini 3.8 Flash`** / `gemini-3.8-flash`):
+  - Designs and presents rich JSON Adaptive Cards and creates live Adaptive Process scripts (`zsh` on macOS, `powershell` on Windows) on demand (`temperature: 0.2`, `thinking_level: high`).
+* **`Personal Productivity Lead`** (Bound to **`Gemini 3.8 Flash`** / `gemini-3.8-flash`):
+  - Organizes schedules, contacts, and note archives (`temperature: 0.2`, `thinking_level: low`).
   - Delegates to: `Schedule & Timekeeper`, `Directory & Address Book`, `Archiver of all data`.
-* **`Media & Knowledge Director`**:
-  - Directs external research, news RSS ingestion, video playback, and Wikipedia summaries.
+* **`Media & Knowledge Director`** (Bound to **`Gemini 3.8 Flash`** / `gemini-3.8-flash`):
+  - Directs external research, news RSS ingestion, video playback, and Wikipedia summaries (`temperature: 0.3`, `thinking_level: medium`).
   - Delegates to: `Media & Stream Director`, `Archiver of all data`.
-* **`Financial Analyst`**:
-  - Gated to crypto market analysis, orderbook depths, and account balances (`bybit`).
-* **`System Health & Metrics`**:
-  - Monitors card rendering frame rates, FPS bottlenecks, slow render counts, and mesh node statuses (`metrics`, `mesh`).
 
 ### 3. Tier 3: Gated Leaf Specialists
-Leaf specialists have empty `allowed_personas` lists and strictly minimal `allowed_mcps`. They run with low temperature (`0.0` to `0.3`) for deterministic, hallucination-free execution:
-* **`Terminal Specialist`** (`allowed_mcps: ["terminal"]`, temp: `0.1`): Only allowed to run shell commands.
-* **`Editor Specialist`** (`allowed_mcps: ["editor"]`, temp: `0.1`): Dedicated strictly to file inspection and editing.
-* **`Git & GitHub Specialist`** (`allowed_mcps: ["git", "github"]`, temp: `0.2`): Manages repositories, branches, and commits.
-* **`Adaptive Card Architect`** (`allowed_mcps: ["deck", "adaptive_card", "terminal", "editor", "notes"]`, temp: `0.2`): Designs and presents rich JSON Adaptive Cards (flight passes, invoices, dashboards) and creates live Adaptive Process scripts (`zsh` on macOS, `powershell` on Windows) on demand.
-* **`Archiver of all data`** (`allowed_mcps: ["notes"]`, temp: `0.0`): Precision librarian persona safeguarding notes across sessions.
-* **`Schedule & Timekeeper`** (`allowed_mcps: ["calendar", "alarm", "pomodoro"]`, temp: `0.2`): Event scheduling and timer management.
-* **`Directory & Address Book`** (`allowed_mcps: ["contacts", "directory"]`, temp: `0.2`): Address book and contacts integration.
-* **`Mesh Specialist`** (`allowed_mcps: ["mesh", "terminal"]`, temp: `0.2`): Peer-to-peer mesh operations and diagnostics.
+Leaf specialists have empty `allowed_personas` lists and strictly minimal `allowed_mcps`. They are bound to **`Gemini Flash Lite`** (`gemini-3.5-flash-lite`, except `Media & Stream Director` on `Gemini 3.8 Flash`) with low temperature (`0.0` to `0.2`) and `minimal`/`low` thinking budgets for ultra-low latency, deterministic execution:
+* **`Terminal Specialist`** (`Gemini Flash Lite`, `allowed_mcps: ["terminal"]`, temp: `0.1`, thinking: `minimal`): Only allowed to run shell commands.
+* **`Editor Specialist`** (`Gemini Flash Lite`, `allowed_mcps: ["editor"]`, temp: `0.1`, thinking: `low`): Dedicated strictly to file inspection and editing.
+* **`Git & GitHub Specialist`** (`Gemini Flash Lite`, `allowed_mcps: ["git", "github"]`, temp: `0.1`, thinking: `low`): Manages repositories, branches, and commits.
+* **`Archiver of all data`** (`Gemini Flash Lite`, `allowed_mcps: ["notes"]`, temp: `0.0`, thinking: `minimal`): Precision librarian persona safeguarding notes across sessions.
+* **`Schedule & Timekeeper`** (`Gemini Flash Lite`, `allowed_mcps: ["calendar", "alarm", "pomodoro"]`, temp: `0.1`, thinking: `minimal`): Event scheduling and timer management.
+* **`Directory & Address Book`** (`Gemini Flash Lite`, `allowed_mcps: ["contacts", "directory"]`, temp: `0.1`, thinking: `minimal`): Address book and contacts integration.
+* **`Financial Analyst`** (`Gemini Flash Lite`, `allowed_mcps: ["bybit"]`, temp: `0.1`, thinking: `minimal`): Crypto market analysis, orderbook depths, and account balances.
+* **`System Health & Metrics`** (`Gemini Flash Lite`, `allowed_mcps: ["metrics", "mesh"]`, temp: `0.1`, thinking: `minimal`): Monitors card rendering frame rates, FPS bottlenecks, and mesh node statuses.
+* **`Mesh Specialist`** (`Gemini Flash Lite`, `allowed_mcps: ["mesh", "terminal"]`, temp: `0.1`, thinking: `minimal`): Peer-to-peer mesh operations and diagnostics.
+* **`Media & Stream Director`** (`Gemini 3.8 Flash`, `allowed_mcps: ["youtube", "cast", "media", "rss", "wikipedia"]`, temp: `0.2`, thinking: `low`): Player and cast feed controller.
 
 ### Concrete Configuration Snippet from `personas.json`
 

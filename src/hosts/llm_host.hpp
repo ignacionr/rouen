@@ -275,6 +275,13 @@ namespace rouen::hosts {
                     return &config;
                 }
             }
+            if (name == "Gemini Flash") {
+                for (const auto& config : configs_) {
+                    if (config.name == "Gemini 3.8 Flash") {
+                        return &config;
+                    }
+                }
+            }
             return nullptr;
         }
 
@@ -333,7 +340,7 @@ namespace rouen::hosts {
         void load_configs();
 
         std::vector<LLMConfigEntry> configs_;
-        std::string default_config_name_{"Gemini Flash"};
+        std::string default_config_name_{"Gemini 3.8 Flash"};
         mutable sync_hook_t sync_hook_;
         mutable bool is_sync_suppressed_{false};
     };

@@ -126,7 +126,7 @@ std::optional<LLMHost::LLMInstance> LLMHost::create_llm_instance(const std::stri
             settings.api_key = "mlx-local";
         } else {
             // Intelligent fallback: try other standard profiles with active configured credentials
-            std::vector<std::string> fallbacks = {"Gemini Flash", "Grok Default", "OpenAI GPT-4", "Local MLX"};
+            std::vector<std::string> fallbacks = {"Gemini 3.8 Flash", "Gemini Flash Lite", "Gemini Flash", "Grok Default", "OpenAI GPT-4", "Local MLX"};
             for (const auto& f : fallbacks) {
                 if (f == config_name) continue;
                 auto fb_settings = get_current_config(f);
@@ -258,8 +258,21 @@ bool LLMConfigManager::ensure_standard_configs() {
     auto config_service = rouen::helpers::ConfigService::instance();
     bool updated = false;
 
+    std::string gemini_key = config_service ? config_service->get_env_optional("GEMINI_API_KEY").value_or("") : "";
+    if (gemini_key.empty()) {
+        for (const auto& cfg : configs_) {
+            if (cfg.provider == "gemini" && !cfg.api_key.empty()) {
+                gemini_key = cfg.api_key;
+                break;
+            }
+        }
+    }
+
     bool has_mlx = false;
-    bool has_gemini = false;
+    bool has_gemini_argon = false;
+    bool has_gemini_38_flash = false;
+    bool has_gemini_pro_tools = false;
+    bool has_gemini_flash_lite = false;
     bool has_grok = false;
     bool has_openai = false;
 
@@ -278,11 +291,80 @@ bool LLMConfigManager::ensure_standard_configs() {
                 cfg.base_url = "http://localhost:8098/v1";
                 updated = true;
             }
+        } else if (cfg.name == "Gemini 4 Argon") {
+            has_gemini_argon = true;
+            if (cfg.model_name != "gemini-4-argon") {
+                cfg.model_name = "gemini-4-argon";
+                updated = true;
+            }
+            if (cfg.thinking_level != "high") {
+                cfg.thinking_level = "high";
+                updated = true;
+            }
+            if (cfg.base_url.empty()) {
+                cfg.base_url = "https://generativelanguage.googleapis.com";
+                updated = true;
+            }
+            if (cfg.api_key.empty() && !gemini_key.empty()) {
+                cfg.api_key = gemini_key;
+                updated = true;
+            }
+        } else if (cfg.name == "Gemini 3.8 Flash") {
+            has_gemini_38_flash = true;
+            if (cfg.model_name != "gemini-3.8-flash") {
+                cfg.model_name = "gemini-3.8-flash";
+                updated = true;
+            }
+            if (cfg.thinking_level != "high") {
+                cfg.thinking_level = "high";
+                updated = true;
+            }
+            if (cfg.base_url.empty()) {
+                cfg.base_url = "https://generativelanguage.googleapis.com";
+                updated = true;
+            }
+            if (cfg.api_key.empty() && !gemini_key.empty()) {
+                cfg.api_key = gemini_key;
+                updated = true;
+            }
+        } else if (cfg.name == "Gemini Pro Custom Tools") {
+            has_gemini_pro_tools = true;
+            if (cfg.model_name != "gemini-3.1-pro-preview-customtools") {
+                cfg.model_name = "gemini-3.1-pro-preview-customtools";
+                updated = true;
+            }
+            if (cfg.thinking_level != "high") {
+                cfg.thinking_level = "high";
+                updated = true;
+            }
+            if (cfg.base_url.empty()) {
+                cfg.base_url = "https://generativelanguage.googleapis.com";
+                updated = true;
+            }
+            if (cfg.api_key.empty() && !gemini_key.empty()) {
+                cfg.api_key = gemini_key;
+                updated = true;
+            }
+        } else if (cfg.name == "Gemini Flash Lite") {
+            has_gemini_flash_lite = true;
+            if (cfg.model_name != "gemini-3.5-flash-lite") {
+                cfg.model_name = "gemini-3.5-flash-lite";
+                updated = true;
+            }
+            if (cfg.thinking_level != "minimal") {
+                cfg.thinking_level = "minimal";
+                updated = true;
+            }
+            if (cfg.base_url.empty()) {
+                cfg.base_url = "https://generativelanguage.googleapis.com";
+                updated = true;
+            }
+            if (cfg.api_key.empty() && !gemini_key.empty()) {
+                cfg.api_key = gemini_key;
+                updated = true;
+            }
         } else if (cfg.name == "Gemini Flash") {
-            has_gemini = true;
-            if (cfg.model_name == "gemini-2.5-flash" || cfg.model_name == "gemini-3.6-flash" || 
-                cfg.model_name == "gemini-3.5-flash" || cfg.model_name.find("3.5") != std::string::npos || 
-                cfg.model_name.empty()) {
+            if (cfg.model_name != "gemini-3.8-flash") {
                 cfg.model_name = "gemini-3.8-flash";
                 updated = true;
             }
@@ -290,12 +372,9 @@ bool LLMConfigManager::ensure_standard_configs() {
                 cfg.base_url = "https://generativelanguage.googleapis.com";
                 updated = true;
             }
-            if (cfg.api_key.empty() && config_service) {
-                auto env_key = config_service->get_env_optional("GEMINI_API_KEY").value_or("");
-                if (!env_key.empty()) {
-                    cfg.api_key = env_key;
-                    updated = true;
-                }
+            if (cfg.api_key.empty() && !gemini_key.empty()) {
+                cfg.api_key = gemini_key;
+                updated = true;
             }
         } else if (cfg.name == "Grok Default") {
             has_grok = true;
@@ -318,14 +397,55 @@ bool LLMConfigManager::ensure_standard_configs() {
         }
     }
 
-    if (!has_gemini) {
-        LLMConfigEntry gemini_entry;
-        gemini_entry.name = "Gemini Flash";
-        gemini_entry.provider = "gemini";
-        gemini_entry.model_name = "gemini-3.8-flash";
-        gemini_entry.base_url = "https://generativelanguage.googleapis.com";
-        gemini_entry.api_key = config_service ? config_service->get_env_optional("GEMINI_API_KEY").value_or("") : "";
-        configs_.push_back(gemini_entry);
+    if (!has_gemini_argon) {
+        LLMConfigEntry argon_entry{
+            .name = "Gemini 4 Argon",
+            .provider = "gemini",
+            .api_key = gemini_key,
+            .base_url = "https://generativelanguage.googleapis.com",
+            .model_name = "gemini-4-argon",
+            .thinking_level = "high"
+        };
+        configs_.push_back(argon_entry);
+        updated = true;
+    }
+
+    if (!has_gemini_38_flash) {
+        LLMConfigEntry flash_entry{
+            .name = "Gemini 3.8 Flash",
+            .provider = "gemini",
+            .api_key = gemini_key,
+            .base_url = "https://generativelanguage.googleapis.com",
+            .model_name = "gemini-3.8-flash",
+            .thinking_level = "high"
+        };
+        configs_.push_back(flash_entry);
+        updated = true;
+    }
+
+    if (!has_gemini_pro_tools) {
+        LLMConfigEntry pro_tools_entry{
+            .name = "Gemini Pro Custom Tools",
+            .provider = "gemini",
+            .api_key = gemini_key,
+            .base_url = "https://generativelanguage.googleapis.com",
+            .model_name = "gemini-3.1-pro-preview-customtools",
+            .thinking_level = "high"
+        };
+        configs_.push_back(pro_tools_entry);
+        updated = true;
+    }
+
+    if (!has_gemini_flash_lite) {
+        LLMConfigEntry lite_entry{
+            .name = "Gemini Flash Lite",
+            .provider = "gemini",
+            .api_key = gemini_key,
+            .base_url = "https://generativelanguage.googleapis.com",
+            .model_name = "gemini-3.5-flash-lite",
+            .thinking_level = "minimal"
+        };
+        configs_.push_back(lite_entry);
         updated = true;
     }
 
@@ -363,8 +483,8 @@ bool LLMConfigManager::ensure_standard_configs() {
     }
 
     // Ensure default config name is valid and points to an existing entry
-    if (default_config_name_.empty() || !get_config(default_config_name_) || default_config_name_ == "Local MLX" || default_config_name_ == "Default") {
-        default_config_name_ = "Gemini Flash";
+    if (default_config_name_.empty() || !get_config(default_config_name_) || default_config_name_ == "Local MLX" || default_config_name_ == "Default" || default_config_name_ == "Gemini Flash") {
+        default_config_name_ = "Gemini 3.8 Flash";
         updated = true;
     }
 
