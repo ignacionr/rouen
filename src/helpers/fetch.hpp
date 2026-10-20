@@ -34,17 +34,38 @@ namespace http {
 
 class fetch; // Forward declaration for header callback usage
 
+inline std::mutex& curl_lifecycle_mutex() {
+    static std::mutex m;
+    return m;
+}
+
+inline void ensure_curl_global_init() {
+    static std::once_flag curl_initialized;
+    std::call_once(curl_initialized, []() {
+        std::lock_guard<std::mutex> const lock(curl_lifecycle_mutex());
+        curl_global_init(CURL_GLOBAL_ALL);
+        HTTP_INFO("CURL globally initialized");
+    });
+}
+
 // CURL RAII wrapper
 class curl_handle {
 public:
-    curl_handle() : handle(curl_easy_init()) {
+    curl_handle() : handle(nullptr) {
+        ensure_curl_global_init();
+        {
+            std::lock_guard<std::mutex> const lock(curl_lifecycle_mutex());
+            handle = curl_easy_init();
+        }
         if (!handle) {
             throw std::runtime_error("Failed to initialize CURL");
         }
+        curl_easy_setopt(handle, CURLOPT_NOSIGNAL, 1L);
     }
     
     ~curl_handle() {
         if (handle) {
+            std::lock_guard<std::mutex> const lock(curl_lifecycle_mutex());
             curl_easy_cleanup(handle);
         }
     }
@@ -871,9 +892,12 @@ private:
     std::string execute_with_retry(const std::string& url, Func&& request_func) {
         int attempts = 0;
         while (true) {
+            long delay = 0;
             try {
+                std::lock_guard<std::mutex> const lock(request_mutex_);
                 return request_func();
             } catch (const std::exception& e) {
+                std::lock_guard<std::mutex> const lock(request_mutex_);
                 attempts++;
                 std::string err_msg = e.what();
                 if ((err_msg.find("SSL") != std::string::npos || err_msg.find("cipher") != std::string::npos || err_msg.find("certificate") != std::string::npos || err_msg.find("CURL") != std::string::npos)) {
@@ -885,24 +909,20 @@ private:
                     HTTP_ERROR_FMT("Request to {} failed (http_code: {}): {}", url, last_http_code_, e.what());
                     throw;
                 }
-                long delay = retry_delay_seconds_ * (1 << (attempts - 1));
+                delay = retry_delay_seconds_ * (1 << (attempts - 1));
                 if (last_http_code_ == 429) {
                     delay = (std::max)(delay, 2L * attempts);
                 }
                 HTTP_WARN_FMT("Request to {} failed (attempt {}/{}): {}. Retrying in {}s...", 
                               url, attempts, max_retries_, e.what(), delay);
-                std::this_thread::sleep_for(std::chrono::seconds(delay));
             }
+            std::this_thread::sleep_for(std::chrono::seconds(delay));
         }
     }
     
     // Initialize CURL globally
     void initialize_curl() {
-        static std::once_flag curl_initialized;
-        std::call_once(curl_initialized, []() {
-            curl_global_init(CURL_GLOBAL_DEFAULT);
-            HTTP_INFO("CURL globally initialized");
-        });
+        ensure_curl_global_init();
     }
     
     // Configure SSL/TLS options for a CURL handle

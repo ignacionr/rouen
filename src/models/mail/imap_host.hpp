@@ -9,6 +9,7 @@
 #include <thread>
 
 #include <curl/curl.h>
+#include "../../helpers/fetch.hpp"
 
 namespace mail {
     class imap_host {
@@ -22,10 +23,7 @@ namespace mail {
             }
             
             // Initialize CURL globally if needed
-            static std::once_flag curl_init_flag;
-            std::call_once(curl_init_flag, []() {
-                curl_global_init(CURL_GLOBAL_DEFAULT);
-            });
+            http::ensure_curl_global_init();
         }
 
         ~imap_host() { 

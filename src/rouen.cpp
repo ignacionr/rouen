@@ -120,7 +120,7 @@ int main(int argc, char* argv[]) {
     // Initialize Windows debug console for development builds
     setup_windows_debug_console();
     // Initialize CURL globally on the main thread before starting any threads
-    curl_global_init(CURL_GLOBAL_ALL);
+    http::ensure_curl_global_init();
     bool cli_mode = false;
     bool daemon_mode = false;
     std::string notify_message;

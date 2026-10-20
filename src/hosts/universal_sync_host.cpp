@@ -92,6 +92,30 @@ namespace rouen::hosts {
                                                cache_dir / "config" / "llm_configs.json");
     }
 
+    static bool copy_file_if_newer(const std::filesystem::path& from, const std::filesystem::path& to) {
+        try {
+            if (!std::filesystem::exists(from)) {
+                return false;
+            }
+            if (std::filesystem::exists(to)) {
+                auto from_time = std::filesystem::last_write_time(from);
+                auto to_time = std::filesystem::last_write_time(to);
+                if (to_time >= from_time) {
+                    return false;
+                }
+            }
+            auto to_dir = to.parent_path();
+            if (!to_dir.empty()) {
+                std::filesystem::create_directories(to_dir);
+            }
+            std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing);
+            return true;
+        } catch (const std::exception& e) {
+            UNIV_SYNC_WARN_FMT("Failed to copy file from '{}' to '{}': {}", from.string(), to.string(), e.what());
+            return false;
+        }
+    }
+
     static void import_all_local_datasets(const std::filesystem::path& cache_dir, bool import_config) {
         UNIV_SYNC_INFO("Importing Markdown Notes...");
         models::notes::notes_repository notes_repo;
@@ -131,23 +155,28 @@ namespace rouen::hosts {
         UniversalSyncHost::copy_file_if_exists(cache_dir / "kpis.json", 
                                                rouen::platform::get_user_data_path("kpis.json"));
 
-        if (import_config) {
-            UNIV_SYNC_INFO("Copying configurations...");
-            UniversalSyncHost::copy_file_if_exists(cache_dir / "config" / "rouen.ini", 
-                                                   rouen::platform::get_user_config_directory() / "rouen.ini");
-            UniversalSyncHost::copy_file_if_exists(cache_dir / "config" / "themes.json", 
-                                                   rouen::platform::get_user_config_directory() / "themes.json");
-            if (!personas_imported) {
-                UniversalSyncHost::copy_file_if_exists(cache_dir / "config" / "personas.json", 
-                                                       rouen::platform::get_user_config_directory() / "personas.json");
+        if (!personas_imported) {
+            if (copy_file_if_newer(cache_dir / "config" / "personas.json",
+                                   rouen::platform::get_user_config_directory() / "personas.json")) {
                 rouen::helpers::PersonaManager::instance().reload();
             }
-            UniversalSyncHost::copy_file_if_exists(cache_dir / "config" / "llm_configs.json", 
-                                                   rouen::platform::get_user_config_directory() / "llm_configs.json");
+        }
+        if (copy_file_if_newer(cache_dir / "config" / "llm_configs.json",
+                               rouen::platform::get_user_config_directory() / "llm_configs.json")) {
             auto llm_reload = registrar::try_get<std::function<void()>>("llm_config_reload");
             if (llm_reload) {
                 (*llm_reload)();
             }
+        }
+
+        if (import_config) {
+            UNIV_SYNC_INFO("Copying configurations (preserving newer local files)...");
+            auto local_ini = rouen::platform::get_user_config_directory() / "rouen.ini";
+            if (!std::filesystem::exists(local_ini)) {
+                UniversalSyncHost::copy_file_if_exists(cache_dir / "config" / "rouen.ini", local_ini);
+            }
+            copy_file_if_newer(cache_dir / "config" / "themes.json",
+                               rouen::platform::get_user_config_directory() / "themes.json");
         } else {
             UNIV_SYNC_INFO("Skipping configuration import to keep local window state");
         }
@@ -195,7 +224,7 @@ namespace rouen::hosts {
 
                 if (is_mesh_sync_active() && !is_passphrase_mismatch()) {
                     UNIV_SYNC_INFO("Executing periodic incremental Mesh sync...");
-                    sync_twoway_mesh("Periodic incremental sync", true /* import_config */, true /* incremental */);
+                    sync_twoway_mesh("Periodic incremental sync", false /* import_config */, true /* incremental */);
                 }
             }
             UNIV_SYNC_INFO("Periodic Mesh Sync worker stopped.");
@@ -430,15 +459,23 @@ namespace rouen::hosts {
                     }
                 } else {
                     bool should_write = true;
-                    if (std::filesystem::exists(target_file)) {
-                        auto ftime = std::filesystem::last_write_time(target_file);
+                    auto file_mtime_sec = [](const std::filesystem::path& p) -> uint64_t {
+                        auto ftime = std::filesystem::last_write_time(p);
                         auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
                             ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now()
                         );
-                        uint64_t local_sec = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
+                        return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
                             sctp.time_since_epoch()).count());
-                        if (local_sec > item->updated_at) {
+                    };
+                    if (std::filesystem::exists(target_file)) {
+                        if (file_mtime_sec(target_file) > item->updated_at) {
                             should_write = false; // Local file in staging cache is newer
+                        }
+                    }
+                    if (should_write && rel_path.starts_with("config/")) {
+                        auto live_cfg_file = rouen::platform::get_user_config_directory() / rel_path.substr(7);
+                        if (std::filesystem::exists(live_cfg_file) && file_mtime_sec(live_cfg_file) > item->updated_at) {
+                            should_write = false; // Live local config file is newer than remote envelope
                         }
                     }
 
@@ -449,6 +486,15 @@ namespace rouen::hosts {
                         std::ofstream out(target_file, std::ios::binary);
                         if (out.is_open()) {
                             out.write(item->plaintext.data(), static_cast<std::streamsize>(item->plaintext.size()));
+                            out.close();
+                            if (item->updated_at > 0) {
+                                auto item_tp = std::chrono::system_clock::time_point(std::chrono::seconds(item->updated_at));
+                                auto ftime = std::filesystem::file_time_type::clock::now() +
+                                             std::chrono::duration_cast<std::filesystem::file_time_type::duration>(
+                                                 item_tp - std::chrono::system_clock::now());
+                                std::error_code ec;
+                                std::filesystem::last_write_time(target_file, ftime, ec);
+                            }
                             updated_count++;
                         }
                     }

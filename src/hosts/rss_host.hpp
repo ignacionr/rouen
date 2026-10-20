@@ -245,8 +245,14 @@ private:
     std::mutex last_refresh_mutex_;
     
     // Declared last so it is stopped/joined first during destruction
-    std::vector<std::jthread> active_fetch_threads_;
+    struct FetchWorker {
+        std::jthread thread;
+        std::shared_ptr<std::atomic<bool>> finished{std::make_shared<std::atomic<bool>>(false)};
+    };
+    std::vector<FetchWorker> active_fetch_threads_;
     std::mutex fetch_threads_mutex_;
+    std::mutex refresh_execution_mutex_;
+    std::atomic<size_t> active_refresh_workers_{0};
     std::jthread periodic_refresh_thread_;
     std::jthread duration_backfill_thread_;
     std::jthread init_thread_;

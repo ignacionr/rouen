@@ -9,12 +9,16 @@
 #include "../src/hosts/rouen_mesh_host.hpp"
 #include "../src/helpers/sync_crypto_service.hpp"
 #include "../src/helpers/persona_manager.hpp"
+#include "../src/helpers/platform_utils.hpp"
 #include "../src/hosts/llm_host.hpp"
 #include <cassert>
+#include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <thread>
 
 namespace test_helpers {
     void assert_true(bool condition, const std::string& test_name) {
@@ -338,7 +342,72 @@ void test_persona_llm_config_resolution() {
     test_helpers::assert_true(!mlx_settings.api_key.empty(), "Local MLX settings api_key is not empty");
 }
 
+void test_local_theme_preserved_across_incremental_sync() {
+    std::cout << "\n--- Testing Local Theme Config Preservation Across Incremental Sync ---\n";
+    auto& sync = rouen::hosts::UniversalSyncHost::instance();
+    auto& mesh = rouen::hosts::rouen_mesh_host::instance();
+    auto& crypto = rouen::sync::SyncCryptoService::instance();
+
+    rouen::hosts::mesh_host_config cfg{};
+    cfg.is_paired = true;
+    cfg.client_id = "test-node-theme";
+    mesh.set_config(cfg);
+    crypto.set_passphrase("ThemePreservationPassphrase123");
+    sync.initialize_canary();
+
+    auto cache_dir = sync.get_mesh_cache_path();
+    auto config_dir = rouen::platform::get_user_config_directory();
+    std::filesystem::create_directories(cache_dir / "config");
+    std::filesystem::create_directories(config_dir);
+
+    // 1. Simulate a stale staged themes.json in cache_dir (active_index: 5)
+    std::string stale_theme = R"({"active_index":5,"custom_themes":[{"name":"Amber"}]})";
+    {
+        std::ofstream out(cache_dir / "config" / "themes.json", std::ios::binary);
+        out << stale_theme;
+    }
+    auto past_time = std::filesystem::file_time_type::clock::now() - std::chrono::hours(2);
+    std::filesystem::last_write_time(cache_dir / "config" / "themes.json", past_time);
+
+    // 2. Simulate a newer local themes.json in user config dir (active_index: 0, Amber)
+    std::string amber_theme = R"({"active_index":0,"custom_themes":[{"name":"Amber"}]})";
+    {
+        std::ofstream out(config_dir / "themes.json", std::ios::binary);
+        out << amber_theme;
+    }
+
+    // 3. Publish an unrelated note update to the mesh registry so sync_in_mesh sees updated_count > 0
+    auto note_env = crypto.encrypt_envelope("notes", "unrelated_update.md", "# Unrelated Note\n", 9999999999ULL, false);
+    test_helpers::assert_true(note_env.has_value(), "Created unrelated note envelope");
+    mesh.set_registry_value("sync/v1/notes/unrelated_update.md", *note_env, false);
+
+    // 4. Run incremental sync_in_mesh with import_config = true
+    bool ok = sync.sync_in_mesh(true /* import_config */, true /* incremental */);
+    test_helpers::assert_true(ok, "sync_in_mesh succeeded");
+
+    // 5. Verify local themes.json was NOT overwritten by the stale staged themes.json
+    std::ifstream in(config_dir / "themes.json", std::ios::binary);
+    std::string current_theme((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    test_helpers::assert_string_equal(amber_theme, current_theme,
+                                      "Newer local Amber themes.json preserved when unrelated dataset updates");
+}
+
 int main() {
+    auto orig_cwd = std::filesystem::current_path();
+    auto temp_home = std::filesystem::temp_directory_path() / "test_universal_mesh_sync_home";
+    std::filesystem::remove_all(temp_home);
+    std::filesystem::create_directories(temp_home);
+    {
+        std::ofstream env_out(temp_home / ".env");
+        env_out << "# Isolated test .env\n";
+    }
+    std::filesystem::current_path(temp_home);
+#ifdef _WIN32
+    _putenv_s("APPDATA", temp_home.string().c_str());
+#else
+    setenv("HOME", temp_home.string().c_str(), 1);
+#endif
+
     std::cout << "========================================\n";
     std::cout << "Starting Universal Mesh Sync Unit Tests\n";
     std::cout << "========================================\n";
@@ -350,7 +419,10 @@ int main() {
     test_incremental_and_periodic_sync();
     test_personas_universal_sync();
     test_persona_llm_config_resolution();
+    test_local_theme_preserved_across_incremental_sync();
 
+    std::filesystem::current_path(orig_cwd);
+    std::filesystem::remove_all(temp_home);
     std::cout << "\n🎉 ALL UNIVERSAL MESH SYNC TESTS PASSED!\n";
     return 0;
 }
