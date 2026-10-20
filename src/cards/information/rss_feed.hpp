@@ -91,6 +91,9 @@ namespace rouen::cards
 
         ~rss_feed() override
         {
+            if (load_thread_.joinable()) {
+                load_thread_.join();
+            }
             on_close();
             if (feed_image_texture)
             {
@@ -204,14 +207,17 @@ namespace rouen::cards
             items_limit = 20; // Reset display limit
 
             // Load feed items asynchronously to prevent UI thread blocking
-            std::jthread([this, f_id = feed_id]() {
+            if (load_thread_.joinable()) {
+                load_thread_.join();
+            }
+            load_thread_ = std::jthread([this, f_id = feed_id]() {
                 try {
                     auto loaded_items = rss_host->get_feed_items(f_id, 100); // Limit to 100 items by default
                     std::lock_guard<std::mutex> lock(items_mutex_);
                     pending_items_ = std::move(loaded_items);
                     items_loaded_ = true;
                 } catch (...) {}
-            }).detach();
+            });
 
             // Load the feed image if available
             loadFeedImage();
@@ -302,17 +308,7 @@ namespace rouen::cards
                 
                 if (play_on_load) {
                     play_on_load = false; // Only trigger once
-                    if (!items.empty()) {
-                        // Find the freshest item (the one with the latest publish_date)
-                        auto freshest_it = std::max_element(items.begin(), items.end(), [](const auto& a, const auto& b) {
-                            return a.publish_date < b.publish_date;
-                        });
-                        
-                        if (freshest_it != items.end()) {
-                            std::string item_uri = std::format("rss-item:{}|||{}|||{}|||play", feed_id, freshest_it->link, freshest_it->title);
-                            "create_card"_sfn(item_uri);
-                        }
-                    }
+                    play_latest_item();
                 }
             }
             
@@ -1036,6 +1032,81 @@ namespace rouen::cards
             return std::format("rss-feed:{}", feed_id);
         }
 
+        bool matches_uri(std::string_view uri) const override
+        {
+            const std::string base = get_uri();
+            return uri == base || uri == (base + ":play");
+        }
+
+        void handle_uri(std::string_view uri) override
+        {
+            const std::string base = get_uri();
+            if (uri == (base + ":play")) {
+                if (!play_latest_item()) {
+                    play_on_load = true;
+                }
+            }
+        }
+
+        bool play_latest_item()
+        {
+            if (load_thread_.joinable()) {
+                load_thread_.join();
+            }
+            if (items_loaded_.exchange(false)) {
+                std::lock_guard<std::mutex> lock(items_mutex_);
+                items = std::move(pending_items_);
+            }
+            if (items.empty()) {
+                return false;
+            }
+
+            auto freshest_it = std::max_element(items.begin(), items.end(), [](const auto& a, const auto& b) {
+                return a.publish_date < b.publish_date;
+            });
+            if (freshest_it == items.end()) {
+                return false;
+            }
+
+            std::string media_url = get_item_media_url(*freshest_it);
+            if (!media_url.empty()) {
+                double resume_pos = 0.0;
+                if (freshest_it->watermark.has_value() && *freshest_it->watermark > 5.0) {
+                    if (!freshest_it->media_duration_seconds.has_value() ||
+                        (*freshest_it->media_duration_seconds - *freshest_it->watermark > 10.0)) {
+                        resume_pos = *freshest_it->watermark;
+                    }
+                }
+                media_player::stopAll();
+                auto& player_item = media_player::get_item(media_url);
+                player_item.url = media_url;
+                player_item.feed_id = freshest_it->feed_id;
+                player_item.item_link = freshest_it->link;
+                player_item.item_title = freshest_it->title;
+                player_item.watermark = freshest_it->watermark;
+                player_item.start_offset = resume_pos;
+                player_item.playMedia(this);
+                return true;
+            }
+
+            // Fallback: read article aloud if no media stream is present
+            rouen::platform::stop_speech();
+            {
+                std::lock_guard<std::mutex> lock(speaking_mutex);
+                currently_speaking_link = freshest_it->link;
+            }
+            std::string clean_desc = ::helpers::StringHelper::strip_html_tags(freshest_it->description);
+            std::string speech_text = freshest_it->title + ". " + clean_desc;
+            auto lang_voice = detect_language_and_select_voice(speech_text, freshest_it->link);
+            rouen::platform::speak_text_async(speech_text, lang_voice.second, lang_voice.first, [item_link = freshest_it->link]() {
+                std::lock_guard<std::mutex> lock(speaking_mutex);
+                if (currently_speaking_link == item_link) {
+                    currently_speaking_link = "";
+                }
+            });
+            return true;
+        }
+
         std::string get_adaptive_card_json() const override
         {
             return std::format(
@@ -1264,6 +1335,7 @@ namespace rouen::cards
         std::atomic<bool> refresh_in_progress_{false};
         std::vector<rouen::hosts::RSSHost::FeedItem> pending_items_;
         std::mutex items_mutex_;
+        std::jthread load_thread_;
 
         enum class TextureStatus {
             Pending,

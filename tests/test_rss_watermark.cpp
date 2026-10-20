@@ -13,11 +13,27 @@
 #include <cstdlib>
 #include <thread>
 #include "../src/cards/information/rss.hpp"
+#include "../src/cards/information/rss_feed.hpp"
+
+// Global/static pointer to keep the host alive to prevent background thread cleanup crashes
+static std::shared_ptr<rouen::hosts::RSSHost> g_keep_alive_host = nullptr;
 
 namespace rouen::cards {
     std::shared_ptr<hosts::RSSHost> rss::getHost() {
-        return nullptr;
+        return g_keep_alive_host;
     }
+}
+
+void card::apply_theme() {}
+
+namespace rouen::helpers {
+    void card_decorations::render_decorations(card*) {}
+}
+
+namespace rouen::hosts {
+    bool LLMHost::is_configured(const std::string&) { return false; }
+    LLMHost::LLMSettings LLMHost::get_current_config(const std::string&) { return {}; }
+    std::optional<LLMHost::LLMInstance> LLMHost::create_llm_instance(const std::string&) { return std::nullopt; }
 }
 
 // Redirect HOME to a temp directory for database isolation before including RSS host
@@ -42,9 +58,6 @@ public:
 #include "../src/helpers/media_player.hpp"
 #include "../src/helpers/media_player_item.hpp"
 #include "../src/hosts/rss_host.hpp"
-
-// Global/static pointer to keep the host alive to prevent background thread cleanup crashes
-static std::shared_ptr<rouen::hosts::RSSHost> g_keep_alive_host = nullptr;
 
 class RSSWatermarkTest : public ::testing::Test {
 protected:
@@ -360,4 +373,50 @@ TEST_F(RSSWatermarkTest, ResetWatermarkToZeroOnNaturalExit) {
         }
     }
     EXPECT_TRUE(in_memory_updated);
+}
+
+TEST_F(RSSWatermarkTest, DirectPlayShortcutPlaysInPlaceWithoutSpawningRSSItemCard) {
+    auto db_path = rouen::platform::get_user_data_path("rss.db");
+    long long feed_id = 0;
+    {
+        media::rss::sqliterepo init_repo(db_path.string());
+        feed_id = init_repo.upsert_feed("https://example.com/feed-direct", "Direct Play Feed", "https://example.com/image.png");
+
+        std::vector<std::tuple<std::string, std::string, std::string, std::string, std::string, std::string>> items;
+        items.emplace_back(
+            "Latest Episode",
+            "",
+            "https://example.com/item-direct-1",
+            "<video src=\"https://example.com/extracted.mp4\"></video>",
+            "2026-10-20 12:00:00",
+            "https://example.com/image.png"
+        );
+        init_repo.batch_upsert_items(feed_id, items);
+    }
+
+    g_keep_alive_host = std::make_shared<rouen::hosts::RSSHost>();
+
+    std::vector<std::string> created_cards;
+    registrar::add<std::function<void(std::string const&)>>(
+        "create_card",
+        std::make_shared<std::function<void(std::string const&)>>([&](std::string const& uri) {
+            created_cards.push_back(uri);
+        })
+    );
+
+    rouen::cards::rss_feed feed_card(std::format("{}", feed_id));
+    EXPECT_TRUE(feed_card.matches_uri(std::format("rss-feed:{}", feed_id)));
+    EXPECT_TRUE(feed_card.matches_uri(std::format("rss-feed:{}:play", feed_id)));
+    EXPECT_FALSE(feed_card.matches_uri(std::format("rss-feed:{}:play", feed_id + 999)));
+
+    feed_card.handle_uri(std::format("rss-feed:{}:play", feed_id));
+    EXPECT_TRUE(created_cards.empty()) << "Direct :play must NOT spawn an intermediate rss-item card";
+
+    EXPECT_TRUE(feed_card.play_latest_item());
+    EXPECT_TRUE(created_cards.empty());
+
+    auto& player_item = media_player::get_item("https://example.com/extracted.mp4");
+    EXPECT_EQ(player_item.item_title, "Latest Episode");
+    EXPECT_EQ(player_item.item_link, "https://example.com/item-direct-1");
+    player_item.stopMedia();
 }
