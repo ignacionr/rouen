@@ -150,7 +150,31 @@ Extend `rouen_mesh_host::handle_incoming_frame` for `mesh::frame_type::REGISTRY_
 
 ## Acceptance Criteria
 
-- [ ] Modifying any Persona on one Rouen instance immediately reflects on peer mesh instances within < 1 second.
-- [ ] Modifying or adding a named LLM profile propagates to peer instances without overwriting local machine credentials or wiping custom endpoints.
-- [ ] Two-way sync passes run without desynchronization, conflict loops, or missing LLM configurations, even when `import_config` is set to `false`.
-- [ ] Automated unit tests in `tests/test_universal_mesh_sync.cpp` validate reactive persona updates and credential-preserving config merges.
+- [x] Modifying any Persona on one Rouen instance immediately reflects on peer mesh instances within < 1 second.
+- [x] Modifying or adding a named LLM profile propagates to peer instances without overwriting local machine credentials or wiping custom endpoints.
+- [x] Two-way sync passes run without desynchronization, conflict loops, or missing LLM configurations, even when `import_config` is set to `false`.
+- [x] Automated unit tests in `tests/test_universal_mesh_sync.cpp` validate reactive persona updates and credential-preserving config merges.
+
+
+---
+
+## Resolution & Outcome Summary
+
+- **Final Status**: Done
+- **Resolution Date**: 2026-10-24
+- **Owner / Engineer**: Autonomous Engineer
+- **Commit Reference**: `a9e11cfcd5a5e5dd71f441a15b25921edf940743`
+
+### Summary of Changes / Findings
+- Decoupled `llm_configs.json` and `personas` synchronization from the desktop window layout `import_config` flag in `UniversalSyncHost::import_all_local_datasets()`.
+- Implemented `LLMConfigManager::merge_from_json()` and registered `"llm_config_merge"` in `registrar` to perform smart entity-level profile merging while preserving local non-empty API keys when incoming profiles have empty keys.
+- Added reactive WebSocket `REGISTRY_SET` ingestion hooks (`"mesh_sync_registry_update"`) in `rouen_mesh_host.cpp` and `UniversalSyncHost` so incoming `sync/v1/personas/*` and `sync/v1/config/llm_configs.json` updates are decrypted and applied immediately without waiting for periodic sync timers.
+
+### Affected Files & Components
+- [`src/hosts/llm_host.hpp`](file:///Users/ignaciorodriguez/src/rouen/src/hosts/llm_host.hpp) & [`src/hosts/llm_host.cpp`](file:///Users/ignaciorodriguez/src/rouen/src/hosts/llm_host.cpp) - Smart granular `merge_from_json` with credential preservation
+- [`src/hosts/rouen_mesh_host.cpp`](file:///Users/ignaciorodriguez/src/rouen/src/hosts/rouen_mesh_host.cpp) - Reactive `REGISTRY_SET` dispatch hook
+- [`src/hosts/universal_sync_host.cpp`](file:///Users/ignaciorodriguez/src/rouen/src/hosts/universal_sync_host.cpp) - Unconditional AI config merge and reactive envelope decryption handler
+- [`tests/test_universal_mesh_sync.cpp`](file:///Users/ignaciorodriguez/src/rouen/tests/test_universal_mesh_sync.cpp) - Added `test_llm_config_smart_merge` and `test_reactive_persona_and_llm_sync`
+
+### Test Verification
+- Executed `test_universal_mesh_sync`: Passed (all 7 test suites including smart merge and reactive WebSocket sync)

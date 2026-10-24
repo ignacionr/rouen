@@ -89,8 +89,30 @@ In [`src/cards/information/rss_feed.hpp`](file:///Users/inz/src/rouen/src/cards/
 
 ## Acceptance Criteria
 
-- [ ] Clicking the play button (`▶`) on a feed tile in the RSS Gallery opens (or focuses) the `rss_feed` card and starts playing the freshest item's media directly on the `rss_feed` card.
-- [ ] No `rss_item` card is created or opened when using the gallery play shortcut.
-- [ ] The inline media player controls on the `rss_feed` card reflect the active playback state (pause, stop, scrub bar, watermark persistence, and continuous play).
-- [ ] Clicking the play shortcut on the gallery when the corresponding `rss_feed` card is already open focuses the existing `rss_feed` card and plays the latest item without opening a duplicate `rss_feed` card.
-- [ ] Closing the `rss_feed` card stops playback owned by that feed card (`media_player::stopForOwner(this)`).
+- [x] Clicking the play button (`▶`) on a feed tile in the RSS Gallery opens (or focuses) the `rss_feed` card and starts playing the freshest item's media directly on the `rss_feed` card.
+- [x] No `rss_item` card is created or opened when using the gallery play shortcut.
+- [x] The inline media player controls on the `rss_feed` card reflect the active playback state (pause, stop, scrub bar, watermark persistence, and continuous play).
+- [x] Clicking the play shortcut on the gallery when the corresponding `rss_feed` card is already open focuses the existing `rss_feed` card and plays the latest item without opening a duplicate `rss_feed` card.
+- [x] Closing the `rss_feed` card stops playback owned by that feed card (`media_player::stopForOwner(this)`).
+
+
+---
+
+## Resolution & Outcome Summary
+
+- **Final Status**: Done
+- **Resolution Date**: 2026-10-24
+- **Owner / Engineer**: Autonomous Engineer
+- **Commit Reference**: `fd75e87e957779c1d74c6f0a89b223ae72fe4bea`
+
+### Summary of Changes / Findings
+- Implemented `rss_feed::play_latest_item()` in `src/cards/information/rss_feed.hpp` to resolve the freshest feed item and initiate media playback directly on the `rss_feed` card instance (`this`) with watermark resumption and TTS fallback, eliminating the intermediate `rss_item` card hop.
+- Overrode `matches_uri()` and `handle_uri()` on `rss_feed` so `rss-feed:<id>:play` matches an already-open `rss-feed:<id>` card and triggers immediate playback without spawning duplicate cards.
+- Managed asynchronous item loading with a joinable `std::jthread load_thread_` to ensure clean lifecycle semantics.
+
+### Affected Files & Components
+- [`src/cards/information/rss_feed.hpp`](file:///Users/ignaciorodriguez/src/rouen/src/cards/information/rss_feed.hpp) - Direct inline playback in `play_latest_item()`, `matches_uri`, and `handle_uri`
+- [`tests/test_rss_watermark.cpp`](file:///Users/ignaciorodriguez/src/rouen/tests/test_rss_watermark.cpp) - Added `DirectPlayShortcutPlaysInPlaceWithoutSpawningRSSItemCard` unit test
+
+### Test Verification
+- Executed `test_rss_watermark`: Passed (5/5 tests)

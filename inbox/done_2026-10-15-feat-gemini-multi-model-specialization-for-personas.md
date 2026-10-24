@@ -199,10 +199,35 @@ Every persona is updated with specific model bindings, temperature, thinking lev
 
 ## Acceptance Criteria
 
-- [ ] All four Gemini profiles (`Gemini 4 Argon`, `Gemini 3.8 Flash`, `Gemini Pro Custom Tools`, `Gemini Flash Lite`) are registered and accessible in `LLMConfigManager`.
-- [ ] Existing `personas.json` on disk automatically migrates to the specialized model profiles upon startup.
-- [ ] Autonomous Engineer and Persona Architect run on `gemini-4-argon`.
-- [ ] Code & Git Architect runs on `gemini-3.1-pro-preview-customtools`.
-- [ ] Rouen Assistant runs on `gemini-3.8-flash`.
-- [ ] Leaf utility specialists run on lightweight, low-latency `gemini-3.5-flash-lite`.
-- [ ] Unit tests pass and verify configuration integrity and model assignment.
+- [x] All four Gemini profiles (`Gemini 4 Argon`, `Gemini 3.8 Flash`, `Gemini Pro Custom Tools`, `Gemini Flash Lite`) are registered and accessible in `LLMConfigManager`.
+- [x] Existing `personas.json` on disk automatically migrates to the specialized model profiles upon startup.
+- [x] Autonomous Engineer and Persona Architect run on `gemini-4-argon`.
+- [x] Code & Git Architect runs on `gemini-3.1-pro-preview-customtools`.
+- [x] Rouen Assistant runs on `gemini-3.8-flash`.
+- [x] Leaf utility specialists run on lightweight, low-latency `gemini-3.5-flash-lite`.
+- [x] Unit tests pass and verify configuration integrity and model assignment.
+
+
+---
+
+## Resolution & Outcome Summary
+
+- **Final Status**: Done
+- **Resolution Date**: 2026-10-24
+- **Owner / Engineer**: Autonomous Engineer
+- **Commit Reference**: `7033fdc017052e8d40bada9b3e5c6d79c84c1b12`
+
+### Summary of Changes / Findings
+- Registered four specialized Gemini model profiles in `LLMConfigManager::ensure_standard_configs()`: `Gemini 4 Argon` (`gemini-4-argon`, `high`), `Gemini 3.8 Flash` (`gemini-3.8-flash`, `high`), `Gemini Pro Custom Tools` (`gemini-3.1-pro-preview-customtools`, `high`), and `Gemini Flash Lite` (`gemini-3.5-flash-lite`, `minimal`), while retaining backward compatibility for `Gemini Flash`.
+- Reconfigured the 3-tier persona hierarchy in `PersonaManager::setup_default_personas()` and `sanitize_and_migrate_personas()` to bind each persona to its specialized model, temperature, thinking level, iteration budget, and output token ceiling.
+- Updated `GeminiAdapter` constructor and `docs/AI.md` documentation to reflect multi-model specialization.
+
+### Affected Files & Components
+- [`src/hosts/llm_host.hpp`](file:///Users/ignaciorodriguez/src/rouen/src/hosts/llm_host.hpp) & [`src/hosts/llm_host.cpp`](file:///Users/ignaciorodriguez/src/rouen/src/hosts/llm_host.cpp) - Multi-model Gemini profile registration and fallback resolution
+- [`src/helpers/persona_manager.hpp`](file:///Users/ignaciorodriguez/src/rouen/src/helpers/persona_manager.hpp) - Specialized persona model bindings and automatic migration
+- [`src/helpers/gemini_adapter.hpp`](file:///Users/ignaciorodriguez/src/rouen/src/helpers/gemini_adapter.hpp) - Dynamic model selection in adapter constructor
+- [`docs/AI.md`](file:///Users/ignaciorodriguez/src/rouen/docs/AI.md) - Updated architecture and persona tier matrix documentation
+- [`tests/test_gemini_adapter.cpp`](file:///Users/ignaciorodriguez/src/rouen/tests/test_gemini_adapter.cpp) - Added `PersonaMultiModelTest` suite (`LLMConfigManagerRegistersAllFourGeminiProfiles`, `PersonaSpecializationAndMigrationMatrix`)
+
+### Test Verification
+- Executed `test_gemini_adapter`: Passed (all 39 tests including `PersonaMultiModelTest` and `PersonaManagerTest` suites)
