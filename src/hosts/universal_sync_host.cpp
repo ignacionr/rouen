@@ -45,6 +45,7 @@ namespace rouen::hosts {
 
         UNIV_SYNC_INFO("Exporting Markdown Notes...");
         models::notes::notes_repository notes_repo;
+        notes_repo.purge_conflict_notes();
         notes_repo.export_to_directory(cache_dir / "notes");
         notes_repo.set_sync_meta("notes_last_sync", models::notes::notes_repository::now_timestamp());
 
@@ -119,6 +120,7 @@ namespace rouen::hosts {
     static void import_all_local_datasets(const std::filesystem::path& cache_dir, bool import_config) {
         UNIV_SYNC_INFO("Importing Markdown Notes...");
         models::notes::notes_repository notes_repo;
+        notes_repo.purge_conflict_notes();
         notes_repo.import_from_directory(cache_dir / "notes");
         notes_repo.set_sync_meta("notes_last_sync", models::notes::notes_repository::now_timestamp());
 
@@ -520,6 +522,15 @@ namespace rouen::hosts {
                 std::string rel_path = wire_key.substr(8);
                 if (rel_path.empty() || rel_path.starts_with("_")) continue;
 
+                if (rel_path.starts_with("notes/") &&
+                    models::notes::notes_repository::is_conflict_marker(rel_path, std::filesystem::path(rel_path))) {
+                    auto conflict_file = cache_dir / std::filesystem::path(rel_path);
+                    std::error_code ec;
+                    std::filesystem::remove(conflict_file, ec);
+                    applied_registry_timestamps_[wire_key] = entry.updated_at_sec;
+                    continue;
+                }
+
                 if (incremental) {
                     auto it = applied_registry_timestamps_.find(wire_key);
                     if (it != applied_registry_timestamps_.end() && it->second >= entry.updated_at_sec) {
@@ -550,7 +561,7 @@ namespace rouen::hosts {
                         return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
                             sctp.time_since_epoch()).count());
                     };
-                    if (std::filesystem::exists(target_file)) {
+                    if (!rel_path.starts_with("notes/") && std::filesystem::exists(target_file)) {
                         if (file_mtime_sec(target_file) > item->updated_at) {
                             should_write = false; // Local file in staging cache is newer
                         }
@@ -644,6 +655,12 @@ namespace rouen::hosts {
 
                 std::string rel_path = std::filesystem::relative(entry.path(), cache_dir).generic_string();
                 if (rel_path.starts_with("_")) continue;
+                if (rel_path.starts_with("notes/") &&
+                    models::notes::notes_repository::is_conflict_marker(rel_path, entry.path())) {
+                    std::error_code ec;
+                    std::filesystem::remove(entry.path(), ec);
+                    continue;
+                }
 
                 std::ifstream in(entry.path(), std::ios::binary);
                 if (!in.is_open()) continue;

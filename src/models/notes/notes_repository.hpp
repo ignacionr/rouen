@@ -14,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -128,10 +129,40 @@ public:
 
     static std::string normalize_content(std::string_view text) {
         std::string result = normalize_newlines(text);
+        size_t start = 0;
+        while (start < result.size() && (result[start] == '\n' || result[start] == '\r')) {
+            ++start;
+        }
+        if (start > 0) {
+            result.erase(0, start);
+        }
         while (!result.empty() && std::isspace(static_cast<unsigned char>(result.back())) != 0) {
             result.pop_back();
         }
         return result;
+    }
+
+    static void extract_embedded_tags(std::string& content, std::string& tags) {
+        content = normalize_content(content);
+        while (content.rfind("<!-- tags:", 0) == 0) {
+            const auto marker_end = content.find("-->");
+            if (marker_end == std::string::npos) {
+                break;
+            }
+            const std::string extracted = trim(content.substr(10, marker_end - 10));
+            if (tags.empty() && !extracted.empty()) {
+                tags = extracted;
+            }
+            content.erase(0, marker_end + 3);
+            content = normalize_content(content);
+        }
+    }
+
+    static std::string compute_sync_payload(std::string_view title, std::string_view tags, std::string_view content) {
+        if (tags.empty()) {
+            return std::format("{}\n{}", title, content);
+        }
+        return std::format("{}\n[tags:{}]\n{}", title, tags, content);
     }
 
     static bool is_conflict_marker(std::string_view title, const std::filesystem::path& path) {
@@ -249,14 +280,32 @@ public:
             throw std::runtime_error("Note title cannot be empty");
         }
 
-        const std::string normalized_content = normalize_content(content);
+        std::string normalized_tags = trim(tags);
+        std::string normalized_content = normalize_content(content);
+        extract_embedded_tags(normalized_content, normalized_tags);
+
+        auto existing = get_note_by_title(normalized_title);
+        if (existing.has_value()) {
+            if (normalize_content(existing->content) == normalized_content && trim(existing->tags) == normalized_tags) {
+                return existing->id;
+            }
+            const std::string timestamp = now_timestamp();
+            db_.exec(
+                "UPDATE notes SET content = ?, tags = ?, updated_at = ? WHERE id = ?",
+                {},
+                normalized_content, normalized_tags, timestamp, existing->id
+            );
+            if (auto_rebuild_links) {
+                rebuild_links();
+            }
+            return existing->id;
+        }
 
         const std::string timestamp = now_timestamp();
         db_.exec(
-            "INSERT INTO notes (title, content, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?) "
-            "ON CONFLICT(title) DO UPDATE SET content = excluded.content, tags = excluded.tags, updated_at = excluded.updated_at",
+            "INSERT INTO notes (title, content, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
             {},
-            normalized_title, normalized_content, tags, timestamp, timestamp
+            normalized_title, normalized_content, normalized_tags, timestamp, timestamp
         );
 
         auto stored_note = get_note_by_title(normalized_title);
@@ -280,6 +329,22 @@ public:
         db_.exec("DELETE FROM note_file_hashes WHERE note_title = ?", {}, existing->title);
         rebuild_links();
         return true;
+    }
+
+    int purge_conflict_notes() {
+        int removed = 0;
+        db_.exec(
+            "SELECT COUNT(*) FROM notes WHERE title LIKE '% (conflict %' OR title LIKE '%(conflict%'",
+            [&removed](sqlite3_stmt* stmt) {
+                removed = sqlite3_column_int(stmt, 0);
+            }
+        );
+        if (removed > 0) {
+            db_.exec("DELETE FROM notes WHERE title LIKE '% (conflict %' OR title LIKE '%(conflict%'");
+            db_.exec("DELETE FROM note_file_hashes WHERE note_title LIKE '% (conflict %' OR note_title LIKE '%(conflict%'");
+            rebuild_links();
+        }
+        return removed;
     }
 
     std::vector<note_record> backlinks_for_title(const std::string& title) {
@@ -423,24 +488,65 @@ public:
         std::filesystem::create_directories(directory);
 
         auto notes = list_notes();
+        std::unordered_set<std::string> expected_filenames;
+
         for (const auto& note : notes) {
+            if (is_conflict_marker(note.title, {})) {
+                continue;
+            }
+
             const auto filename = std::format("{}.md", slugify(note.title));
+            expected_filenames.insert(filename);
             const auto path = directory / filename;
 
-            std::ofstream output(path, std::ios::binary);
-            if (!output) {
-                throw std::runtime_error(std::format("Unable to write note file: {}", path.string()));
+            std::string norm_tags = trim(note.tags);
+            std::string norm_content = normalize_content(note.content);
+            extract_embedded_tags(norm_content, norm_tags);
+
+            std::ostringstream rendered;
+            rendered << "# " << note.title << "\n\n";
+            if (!norm_tags.empty()) {
+                rendered << "<!-- tags:" << norm_tags << " -->\n\n";
+            }
+            rendered << norm_content;
+            const std::string rendered_str = rendered.str();
+
+            bool needs_write = true;
+            if (std::filesystem::exists(path)) {
+                std::ifstream existing_in(path, std::ios::binary);
+                if (existing_in) {
+                    std::ostringstream existing_oss;
+                    existing_oss << existing_in.rdbuf();
+                    if (existing_oss.str() == rendered_str) {
+                        needs_write = false;
+                    }
+                }
             }
 
-            const std::string norm_content = normalize_content(note.content);
-            output << "# " << note.title << "\n\n";
-            if (!note.tags.empty()) {
-                output << "<!-- tags:" << note.tags << " -->\n\n";
+            if (needs_write) {
+                std::ofstream output(path, std::ios::binary | std::ios::trunc);
+                if (!output) {
+                    throw std::runtime_error(std::format("Unable to write note file: {}", path.string()));
+                }
+                output.write(rendered_str.data(), static_cast<std::streamsize>(rendered_str.size()));
             }
-            output << norm_content;
 
-            const std::string serialized = std::format("{}\n{}", note.title, norm_content);
-            set_note_hash(note.title, path.string(), stable_hash(serialized));
+            const std::string serialized = compute_sync_payload(note.title, norm_tags, norm_content);
+            const std::string new_hash = stable_hash(serialized);
+            if (get_note_hash(note.title) != new_hash) {
+                set_note_hash(note.title, path.string(), new_hash);
+            }
+        }
+
+        std::error_code ec;
+        for (const auto& entry : std::filesystem::directory_iterator(directory, ec)) {
+            if (!entry.is_regular_file() || entry.path().extension() != ".md") {
+                continue;
+            }
+            const std::string fname = entry.path().filename().string();
+            if (!expected_filenames.contains(fname)) {
+                std::filesystem::remove(entry.path(), ec);
+            }
         }
 
         set_sync_meta("notes_last_sync", now_timestamp());
@@ -452,6 +558,7 @@ public:
         }
 
         const std::string last_sync = get_sync_meta("notes_last_sync");
+        bool any_changed = false;
 
         for (const auto& entry : std::filesystem::directory_iterator(directory)) {
             if (!entry.is_regular_file() || entry.path().extension() != ".md") {
@@ -475,50 +582,75 @@ public:
                 if (first_nl != std::string::npos) {
                     note_title = trim(markdown.substr(2, first_nl - 2));
                     markdown = markdown.substr(first_nl + 1);
-                    if (!markdown.empty() && markdown.front() == '\n') {
-                        markdown.erase(markdown.begin());
-                    }
                 } else {
                     note_title = trim(markdown.substr(2));
                     markdown.clear();
                 }
             }
 
-            if (markdown.rfind("<!-- tags:", 0) == 0) {
-                const auto marker_end = markdown.find("-->");
-                if (marker_end != std::string::npos) {
-                    tags = trim(markdown.substr(10, marker_end - 10));
-                    markdown.erase(0, marker_end + 3);
-                    while (!markdown.empty() && (markdown.front() == '\n' || markdown.front() == '\r')) {
-                        markdown.erase(markdown.begin());
-                    }
-                }
+            extract_embedded_tags(markdown, tags);
+
+            if (is_conflict_marker(note_title, entry.path())) {
+                std::error_code ec;
+                std::filesystem::remove(entry.path(), ec);
+                continue;
             }
 
-            markdown = normalize_content(markdown);
-
-            const std::string source_hash = stable_hash(std::format("{}\n{}", note_title, markdown));
+            const std::string source_hash = stable_hash(compute_sync_payload(note_title, tags, markdown));
+            const std::string legacy_source_hash = stable_hash(std::format("{}\n{}", note_title, markdown));
             const std::string known_hash = get_note_hash(note_title);
             auto local_note = get_note_by_title(note_title);
 
-            bool local_conflict = false;
-            const bool is_already_conflict = is_conflict_marker(note_title, entry.path());
+            if (local_note.has_value()) {
+                std::string local_tags = trim(local_note->tags);
+                std::string local_content = normalize_content(local_note->content);
+                extract_embedded_tags(local_content, local_tags);
 
-            if (!is_already_conflict && local_note.has_value() && normalize_content(local_note->content) != markdown && !last_sync.empty()) {
-                local_conflict = is_timestamp_newer(local_note->updated_at, last_sync) && source_hash != known_hash;
-            }
+                if (local_content == markdown && local_tags == tags) {
+                    if (local_note->content != local_content || local_note->tags != local_tags) {
+                        save_note(note_title, markdown, tags, false);
+                        any_changed = true;
+                    }
+                    if (known_hash != source_hash) {
+                        set_note_hash(note_title, entry.path().string(), source_hash);
+                    }
+                    continue;
+                }
 
-            if (local_conflict) {
-                const std::string conflict_title = std::format("{} (conflict {})", note_title, now_timestamp());
-                save_note(conflict_title, markdown, tags, false);
+                const std::string local_hash = stable_hash(compute_sync_payload(note_title, local_tags, local_content));
+                const std::string legacy_local_hash = stable_hash(std::format("{}\n{}", note_title, local_content));
+
+                const bool remote_matches_known = !known_hash.empty() && (source_hash == known_hash || legacy_source_hash == known_hash);
+                const bool local_matches_known = !known_hash.empty() && (local_hash == known_hash || legacy_local_hash == known_hash);
+
+                if (remote_matches_known && !local_matches_known) {
+                    // Local note was edited since last sync while staging file is still at the old synced baseline
+                    continue;
+                }
+
+                bool local_conflict = false;
+                if (!known_hash.empty() && !remote_matches_known && !local_matches_known && !last_sync.empty()) {
+                    local_conflict = is_timestamp_newer(local_note->updated_at, last_sync);
+                }
+
+                if (local_conflict) {
+                    const std::string conflict_title = std::format("{} (conflict {})", note_title, now_timestamp());
+                    save_note(conflict_title, markdown, tags, false);
+                } else {
+                    save_note(note_title, markdown, tags, false);
+                }
+                any_changed = true;
             } else {
                 save_note(note_title, markdown, tags, false);
+                any_changed = true;
             }
 
             set_note_hash(note_title, entry.path().string(), source_hash);
         }
 
-        rebuild_links();
+        if (any_changed) {
+            rebuild_links();
+        }
         set_sync_meta("notes_last_sync", now_timestamp());
     }
 
