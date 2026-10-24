@@ -610,6 +610,116 @@ void test_presence_reconnect_and_ephemeral_restoration() {
     host.clear();
 }
 
+void test_connection_lifecycle_no_dangling_pointers() {
+    std::cout << "\n--- Testing Connection Lifecycle & Dangling Pointer Prevention ---\n";
+    auto& host = rouen::hosts::rouen_mesh_host::instance();
+    host.clear();
+
+    rouen::hosts::rouen_mesh_host::config cfg{};
+    cfg.client_id = "rouen-test-lifecycle";
+    host.initialize(cfg);
+
+    // 1. Listener MG_EV_CLOSE must clear ctx->listener_conn so it does not dangle
+    struct mg_connection dummy_listener{};
+    rouen::mesh::route_listener_ctx listener_ctx{
+        .route_id = 42,
+        .target_client_id = "peer-node",
+        .target_port = 8081,
+        .local_port = 18081,
+        .listener_conn = &dummy_listener
+    };
+    dummy_listener.fn_data = &listener_ctx;
+
+    host.handle_route_listener_event(&dummy_listener, MG_EV_CLOSE, nullptr, &listener_ctx);
+    test_helpers::assert_true(dummy_listener.fn_data == nullptr, "Listener fn_data cleared on MG_EV_CLOSE");
+    test_helpers::assert_true(listener_ctx.listener_conn == nullptr, "listener_ctx.listener_conn cleared on MG_EV_CLOSE");
+
+    // 2. Stream accepted while disconnected must have local_conn cleared on subsequent on_ws_disconnected
+    struct mg_connection dummy_stream_conn{};
+    listener_ctx.listener_conn = &dummy_listener;
+    host.handle_route_listener_event(&dummy_stream_conn, MG_EV_ACCEPT, nullptr, &listener_ctx);
+    test_helpers::assert_true(dummy_stream_conn.fn_data != nullptr, "Accepted stream sets fn_data to route_stream_ctx");
+    auto* stream_ctx = static_cast<rouen::mesh::route_stream_ctx*>(dummy_stream_conn.fn_data);
+    test_helpers::assert_true(stream_ctx->local_conn == &dummy_stream_conn, "stream_ctx->local_conn points to accepted connection");
+
+    // Simulate failed reconnect triggering on_ws_disconnected
+    host.on_ws_disconnected("Reconnect failed");
+    test_helpers::assert_true(stream_ctx == nullptr || dummy_stream_conn.fn_data == nullptr,
+                              "on_ws_disconnected detaches stream fn_data");
+
+    // Simulate mg_close_conn zeroing and freeing dummy_stream_conn, then reconnecting WS
+    std::memset(&dummy_stream_conn, 0, sizeof(dummy_stream_conn));
+    host.on_ws_connected(nullptr);
+    test_helpers::assert_true(dummy_stream_conn.is_closing == 0,
+                              "Freed stream connection memory is not mutated after on_ws_disconnected");
+
+    // 3. End-to-end worker_loop MG_EV_CLOSE + reconnect() test (regression test for wake-from-sleep crash)
+    int srv_sock = ::socket(AF_INET, SOCK_STREAM, 0);
+    test_helpers::assert_true(srv_sock >= 0, "Created ephemeral local TCP server socket");
+    int opt = 1;
+    ::setsockopt(srv_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&opt), sizeof(opt));
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    addr.sin_port = 0; // ephemeral port
+    test_helpers::assert_true(::bind(srv_sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0, "Bound ephemeral TCP server");
+    socklen_t addr_len = sizeof(addr);
+    ::getsockname(srv_sock, reinterpret_cast<sockaddr*>(&addr), &addr_len);
+    uint16_t srv_port = ntohs(addr.sin_port);
+    ::listen(srv_sock, 4);
+
+    std::atomic<int> accepted_count{0};
+    std::thread srv_thread([srv_sock, &accepted_count]() {
+        for (int i = 0; i < 2; ++i) {
+            sockaddr_in cli_addr{};
+            socklen_t cli_len = sizeof(cli_addr);
+            int cli = ::accept(srv_sock, reinterpret_cast<sockaddr*>(&cli_addr), &cli_len);
+            if (cli >= 0) {
+                accepted_count.fetch_add(1);
+                // Immediately close socket to trigger MG_EV_CLOSE + free(c) inside mg_mgr_poll
+#ifdef _WIN32
+                ::closesocket(cli);
+#else
+                ::close(cli);
+#endif
+            }
+        }
+    });
+
+    host.clear();
+    cfg.server_url = "ws://127.0.0.1:" + std::to_string(srv_port) + "/ws/connect";
+    cfg.auth_mode = rouen::hosts::mesh_auth_mode::unauthenticated;
+    host.initialize(cfg);
+    host.start();
+
+    // Wait for first connection to be accepted and closed by server
+    for (int i = 0; i < 40 && accepted_count.load() < 1; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+
+    // Trigger reconnect after MG_EV_CLOSE has freed the first mg_connection
+    host.reconnect();
+    for (int i = 0; i < 40 && accepted_count.load() < 2; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+
+    host.stop();
+#ifdef _WIN32
+    ::closesocket(srv_sock);
+#else
+    ::close(srv_sock);
+#endif
+    if (srv_thread.joinable()) {
+        srv_thread.join();
+    }
+    test_helpers::assert_true(accepted_count.load() >= 2,
+                              "worker_loop cleanly reconnected after MG_EV_CLOSE without dangling pointer crash");
+
+    host.clear();
+}
+
 int main() {
     std::cout << "Rouen Mesh Host Unit Tests\n";
     std::cout << std::string(50, '=') << "\n";
@@ -666,6 +776,7 @@ int main() {
         test_self_healing_resilience();
         test_auto_connect_and_rdp_service_restoration();
         test_presence_reconnect_and_ephemeral_restoration();
+        test_connection_lifecycle_no_dangling_pointers();
 
         std::cout << "\n" << std::string(50, '=') << "\n";
         std::cout << "✅ All Rouen Mesh Host unit tests passed successfully!\n";

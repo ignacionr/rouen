@@ -417,6 +417,7 @@ private:
     void process_pending_route_requests(struct mg_mgr* mgr);
     void check_heartbeat_and_reconnect(struct mg_mgr* mgr, std::chrono::steady_clock::time_point now);
     void flush_pending_ws_streams();
+    void flush_pending_ws_frames(struct mg_mgr* mgr);
     void check_pending_ws_streams();
 
     mutable std::recursive_mutex mutex_;
@@ -435,7 +436,9 @@ private:
     std::atomic<uint32_t> next_route_id_{1001};
 
     struct mg_mgr* current_mgr_{nullptr};
+    struct mg_connection* ws_client_conn_{nullptr};
     struct mg_connection* active_ws_conn_{nullptr};
+    std::thread::id worker_thread_id_{};
 
     std::chrono::steady_clock::time_point last_ping_sent_{};
     std::chrono::steady_clock::time_point last_frame_received_{};
@@ -448,6 +451,7 @@ private:
     std::vector<mesh::mesh_client_dto> connected_clients_;
 
     std::vector<mesh::route_open_request> pending_route_requests_;
+    std::vector<std::vector<uint8_t>> pending_ws_frames_;
     std::vector<std::shared_ptr<mesh::route_stream_ctx>> pending_streams_awaiting_ws_;
     std::unordered_map<uint32_t, std::shared_ptr<mesh::route_listener_ctx>> active_listeners_;
     std::unordered_map<uint32_t, std::shared_ptr<mesh::route_stream_ctx>> active_streams_;
