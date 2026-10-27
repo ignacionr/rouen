@@ -2246,7 +2246,7 @@ mcp_host::mcp_host() {
 
     function_definition const update_inbox_item_def(
         "update_inbox_item",
-        "Updates an inbox report status header, appends Resolution & Outcome Summary, and renames the file according to inbox/README.md conventions (done_<slug>.md).",
+        "Updates an inbox report status header, appends Resolution & Outcome Summary, and archives the file according to inbox/README.md conventions (inbox/done/done_<slug>.md).",
         R"mcp({"type":"object","properties":{"file_path":{"type":"string","description":"Relative or absolute path to the inbox markdown file"},"status":{"type":"string","description":"Lifecycle status: done, in-progress, awaiting-answer, or rejected"},"resolution_summary":{"type":"string","description":"Summary details to append under Resolution & Outcome Summary"},"workspace_dir":{"type":"string","description":"Workspace directory root"}},"required":["file_path","status"]})mcp",
         [](const std::string& params) -> std::string {
             try {
@@ -2318,9 +2318,13 @@ mcp_host::mcp_host() {
 
                 if (display_status == "Done") {
                     std::string filename = current_path.filename().string();
-                    if (!filename.starts_with("done_")) {
-                        new_path = current_path.parent_path() / ("done_" + filename);
-                        std::error_code ec;
+                    std::string done_filename = filename.starts_with("done_") ? filename : ("done_" + filename);
+                    std::filesystem::path parent_dir = current_path.parent_path();
+                    std::filesystem::path done_dir = (parent_dir.filename() == "done") ? parent_dir : (parent_dir / "done");
+                    std::error_code ec;
+                    std::filesystem::create_directories(done_dir, ec);
+                    new_path = done_dir / done_filename;
+                    if (new_path != current_path) {
                         std::filesystem::rename(current_path, new_path, ec);
                         if (ec) {
                             new_path = current_path;

@@ -1104,7 +1104,7 @@ TEST(MCPTest, UpdateInboxItemLifecycle) {
     auto exec_res = mcp.execute_function("update_inbox_item", params);
     EXPECT_TRUE(exec_res.success) << "Execution error: " << exec_res.error_message;
 
-    std::filesystem::path expected_done_file = temp_dir / "done_2026-10-08-feat-sample-test.md";
+    std::filesystem::path expected_done_file = temp_dir / "done" / "done_2026-10-08-feat-sample-test.md";
     EXPECT_TRUE(std::filesystem::exists(expected_done_file));
 
     std::ifstream in(expected_done_file);

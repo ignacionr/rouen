@@ -27,6 +27,7 @@
 - Always query the LLM backend endpoint (e.g. `GET /v1/models` or `GET /v1beta/models`) to retrieve the list of active available models dynamically.
 
 ## Issue & Bug Fix Workflow (Inbox)
+- Only open/pending `.md` reports live directly in `./inbox/` (excluding `inbox/README.md`). Completed reports are archived in `./inbox/done/`. Never inspect or re-process files in `./inbox/done/` when asked to process the inbox.
 - When addressing bugs or feature requests filed in `./inbox`:
   1. **Understand**: Read the filed report and trace the affected architecture and code paths.
   2. **Diagnose**: Pinpoint root causes across affected systems.
@@ -36,6 +37,6 @@
   6. **Run and Pass**: Re-run the unit test and verify it passes (green), along with target builds and deployment.
   7. **Commit**: Create a conventional commit (`fix(...)` or `feat(...)`).
   8. **Push**: Push commit to remote `origin`.
-  9. **Rename Report**: Rename `inbox/<report>.md` to `inbox/done_<report>.md`.
+  9. **Archive Report**: Move `inbox/<report>.md` to `inbox/done/done_<report>.md`.
 
 

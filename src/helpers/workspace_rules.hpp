@@ -164,6 +164,7 @@ public:
 
         if (has_inbox) {
             out << "### INBOX ISSUE LIFECYCLE (9-STEP WORKFLOW)\n";
+            out << "- Only open/pending `.md` reports live at the top level of `./inbox/` (excluding `inbox/README.md`). Completed items are archived in `./inbox/done/`. Never read, investigate, or re-process files inside `./inbox/done/` or `done_*.md` unless explicitly requested by path.\n";
             out << "When processing an item in `./inbox`, you MUST strictly adhere to this 9-step workflow:\n";
             out << "1. **Understand**: Read the filed report and trace the affected architecture and code paths.\n";
             out << "2. **Diagnose**: Pinpoint root causes across affected systems.\n";
@@ -173,7 +174,7 @@ public:
             out << "6. **Run and Pass**: Re-run the unit test and verify it passes (green), along with target builds and deployment.\n";
             out << "7. **Commit**: Create a conventional commit (`fix(...)` or `feat(...)`).\n";
             out << "8. **Push**: Push commit to remote `origin`.\n";
-            out << "9. **Rename Report**: Rename `inbox/<report>.md` to `inbox/done_<report>.md`.\n\n";
+            out << "9. **Archive Report**: Move `inbox/<report>.md` to `inbox/done/done_<report>.md` (via `update_inbox_item`).\n\n";
             out << "Do NOT treat these steps as topics to explain, outline, or plan in chat. Immediately invoke the necessary tools (`code_read_file`, `code_write_file`, `code_apply_patch`, `run_unit_tests`, `run_local_command`, `build_and_deploy`, `update_inbox_item`). Execute all requested steps through to completion before responding to the user.\n\n";
         }
 
