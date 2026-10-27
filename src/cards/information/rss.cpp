@@ -986,8 +986,10 @@ void rss::render_feed_list(const std::vector<std::shared_ptr<media::rss::feed>>&
     float const card_width = 180.0f * dpi_scale;
     float const card_height = 290.0f * dpi_scale;
     float const spacing = 12.0f * dpi_scale;
-    float const avail_width = ImGui::GetContentRegionAvail().x;
-    int const cols = std::max(1, static_cast<int>(avail_width / (card_width + spacing)));
+    // Fix: Lock scroll X and use window content region for availability
+    ImGui::SetScrollX(0.0f);
+    float const avail_width = ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x;
+    int const cols = std::max(1, static_cast<int>((avail_width + spacing) / (card_width + spacing)));
     
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(spacing, spacing));
     
@@ -1087,7 +1089,10 @@ void rss::render_feed_list(const std::vector<std::shared_ptr<media::rss::feed>>&
         // 2. Draw Title with proper spacing
         ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f * dpi_scale, start_pos.y + 230.0f * dpi_scale));
         const ImVec4 text_color = is_emphasized ? colors[0] : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-        ImGui::PushTextWrapPos(start_pos.x + card_width - 6.0f * dpi_scale);
+        float const text_max_w = card_width - 12.0f * dpi_scale;
+        
+        // Fix: Use window-local coordinates relative to current cursor position
+        ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + text_max_w);
         ImGui::TextColored(text_color, "%s", title.c_str());
         ImGui::PopTextWrapPos();
         

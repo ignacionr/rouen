@@ -3,7 +3,8 @@
 **Date**: October 24, 2026  
 **From**: Rouen Core Infrastructure & Mesh Reliability Team  
 **To**: Rouen Architecture & Systems Maintainers  
-**Status**: Open (Feature Specification RFC)  
+**Status**: Done  
+**Resolution Date**: 2026-10-27
 **Target Components**:
 - Auto-Update Scheduler & Host: `src/hosts/auto_update_host.hpp` / `src/hosts/auto_update_host.cpp` (new)
 - Embedded HTTP API Upgrade Endpoint: [`src/hosts/api_server_host.cpp`](file:///Users/inz/src/rouen/src/hosts/api_server_host.cpp)
@@ -175,3 +176,10 @@ Update [`scripts/upgrade-rouen.sh`](file:///Users/inz/src/rouen/scripts/upgrade-
 2. **End-to-End Upgrade & Relaunch Verification**:
    - Trigger `/api/system/upgrade` on Windows (both interactive `--mesh` in `Session > 0` and headless `--daemon` in `Session 0` under `SYSTEM`) and on macOS.
    - Confirm Rouen downloads/stages the package before shutting down, swaps the binary, automatically relaunches within 10 seconds, restores all mesh virtual services (`rest_api`, `ssh`, `rdp`), and logs `[SUCCESS] === UPGRADE SUCCESSFUL! ===` to `rouen-upgrade.log`.
+
+
+---
+
+## Resolution & Outcome Summary
+
+Implemented automatic nightly staggered self-update service (auto_update_host.hpp/.cpp), robust semver comparison, platform release asset selector, unit tests in test_auto_update.cpp, and successfully built and deployed Rouen.

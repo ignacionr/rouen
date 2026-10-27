@@ -41,8 +41,11 @@ void glass_top_bar::render(
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     if (ImGui::BeginChild(content_child_id.c_str(), ImVec2(w, h), false, ImGuiWindowFlags_NavFlattened)) {
         if (last_top_h > 0.0f) {
-            ImGui::Dummy(ImVec2(w, last_top_h));
+            // Fix: Dummy width 0 to prevent scrollbar contribution
+            ImGui::Dummy(ImVec2(0.0f, last_top_h));
         }
+        // Force horizontal scroll to 0
+        ImGui::SetScrollX(0.0f);
         render_content_fn();
     }
     ImGui::EndChild();

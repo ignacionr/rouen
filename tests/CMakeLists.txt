@@ -532,6 +532,18 @@ target_link_libraries(test_objectives
 add_gtest_executable(test_deck_scrolling test_deck_scrolling.cpp)
 target_link_libraries(test_deck_scrolling PRIVATE rouen_test_app_common)
 
+# RSS Gallery Layout & Text Overflow Test
+add_gtest_executable(test_rss_gallery_layout test_rss_gallery_layout.cpp)
+target_link_libraries(test_rss_gallery_layout PRIVATE rouen_test_app_common)
+if(NOT MSVC)
+    target_compile_options(test_rss_gallery_layout PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
+endif()
+
+# Auto Update Test
+add_gtest_executable(test_auto_update test_auto_update.cpp)
+target_sources(test_auto_update PRIVATE ../src/hosts/auto_update_host.cpp)
+target_link_libraries(test_auto_update PRIVATE CURL::libcurl)
+
 # Camera Device List Test
 add_gtest_executable(test_camera_device_list test_camera_device_list.cpp)
 target_link_libraries(test_camera_device_list PRIVATE ${SDL3_LIBRARIES})
