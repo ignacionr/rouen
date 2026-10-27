@@ -127,6 +127,14 @@ namespace ProcessHelper {
             dup2(pipefd[1], STDERR_FILENO);
             close(pipefd[1]);
 
+            int devnull = open("/dev/null", O_RDONLY);
+            if (devnull >= 0) {
+                dup2(devnull, STDIN_FILENO);
+                if (devnull != STDIN_FILENO) {
+                    close(devnull);
+                }
+            }
+
             if (!expanded_dir.empty()) {
                 if (chdir(expanded_dir.c_str()) != 0) {
                     // Ignore or continue

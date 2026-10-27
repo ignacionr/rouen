@@ -717,6 +717,7 @@ static glz::json_t mcp_serialize_ui_node(const rouen::helpers::ui_element_node& 
 struct local_command_request {
     std::string command;
     std::string working_directory;
+    int timeout_seconds{30};
 };
 
 struct mcp_wikipedia_search_params {
@@ -1297,8 +1298,8 @@ mcp_host::mcp_host() {
     // Register default run_local_command function associated with terminal
     function_definition const run_cmd_def(
         "run_local_command",
-        "Execute a local shell command and return combined stdout/stderr output. Supports any local command, including curl. Host system info: " + cached_system_info_,
-        R"mcp({"type":"object","properties":{"command":{"type":"string","description":"Shell command to execute locally (for example: curl -sS http://127.0.0.1:8099/health)"},"working_directory":{"type":"string","description":"Optional directory where the command should run"}},"required":["command"]})mcp",
+        "Execute a local shell command and return combined stdout/stderr output (with automatic timeout and process-group termination if hung). Supports any local command, including curl. Host system info: " + cached_system_info_,
+        R"mcp({"type":"object","properties":{"command":{"type":"string","description":"Shell command to execute locally (for example: curl -sS http://127.0.0.1:8099/health)"},"working_directory":{"type":"string","description":"Optional directory where the command should run"},"timeout_seconds":{"type":"integer","description":"Optional timeout in seconds (default: 30, max: 300)"}},"required":["command"]})mcp",
         [](const std::string& params) -> std::string {
             if (params.empty()) {
                 return "Error: Missing params. Expected JSON with a non-empty 'command' field.";
@@ -1307,7 +1308,7 @@ mcp_host::mcp_host() {
             local_command_request request{};
             auto parse_result = glz::read_json(request, params);
             if (parse_result || request.command.empty()) {
-                return R"(Error: Invalid params. Expected JSON: {"command":"...","working_directory":"optional"}.)";
+                return R"(Error: Invalid params. Expected JSON: {"command":"...","working_directory":"optional","timeout_seconds":30}.)";
             }
 
             std::string work_dir = request.working_directory;
@@ -1320,17 +1321,22 @@ mcp_host::mcp_host() {
                 } catch (...) {}
             }
 
-            const std::string command_with_stderr = request.command + " 2>&1";
-            std::string output;
-            if (!work_dir.empty()) {
-                output = ProcessHelper::executeCommandInDirectory(work_dir, command_with_stderr);
-            } else {
-                output = ProcessHelper::executeCommand(command_with_stderr);
+            int const timeout_sec = std::clamp(request.timeout_seconds, 1, 300);
+            auto cmd_res = ProcessHelper::executeCommandWithTimeout(
+                request.command,
+                work_dir,
+                std::chrono::seconds(timeout_sec)
+            );
+            if (cmd_res.timed_out) {
+                if (cmd_res.output.empty()) {
+                    return std::format("[Command timed out after {} seconds and was terminated]", timeout_sec);
+                }
+                return std::format("{}\n[Command timed out after {} seconds and was terminated]", cmd_res.output, timeout_sec);
             }
-            if (output.empty()) {
+            if (cmd_res.output.empty()) {
                 return "[Command returned no output]";
             }
-            return output;
+            return cmd_res.output;
         },
         "terminal"
     );

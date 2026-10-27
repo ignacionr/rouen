@@ -113,6 +113,18 @@ TEST(MCPTest, ExecuteLocalCommand) {
     EXPECT_EQ(clean_result, "mcp_test_output");
 }
 
+TEST(MCPTest, ExecuteLocalCommandTimeout) {
+    mcp_service mcp;
+    auto start = std::chrono::steady_clock::now();
+    std::string params = R"({"command":"echo 'partial_before_hang' && sleep 5","timeout_seconds":1})";
+    auto result = mcp.execute_function("run_local_command", params);
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
+    ASSERT_TRUE(result.success);
+    EXPECT_LT(elapsed.count(), 3000) << "run_local_command should terminate hung child processes on timeout";
+    EXPECT_NE(result.result.find("partial_before_hang"), std::string::npos);
+    EXPECT_NE(result.result.find("timed out"), std::string::npos);
+}
+
 TEST(MCPTest, GitModelIntegration) {
     // Override GIT_PATH to use the system path's "git" instead of potential hardcoded /usr/bin/git
     CONFIG_SERVICE()->set_env_value("GIT_PATH", "git");
