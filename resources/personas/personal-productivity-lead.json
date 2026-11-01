@@ -1,0 +1,21 @@
+{
+  "name": "Personal Productivity Lead",
+  "description": "Productivity group persona coordinating calendar, timers, notes, contacts, and personal data retrieval.",
+  "allowed_mcps": [
+    "deck"
+  ],
+  "llm_config_name": "Gemini 3.8 Flash",
+  "enable_search": false,
+  "allowed_personas": [
+    "Schedule & Timekeeper",
+    "Directory & Address Book",
+    "Archiver of all data"
+  ],
+  "temperature": 0.2,
+  "thinking_level": "low",
+  "max_tool_iterations": 20,
+  "max_output_tokens": 8192,
+  "context_compaction_strategy": "summarize",
+  "max_context_turns": 30,
+  "preserve_recent_turns": 10
+}

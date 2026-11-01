@@ -1,0 +1,39 @@
+{
+  "name": "Rouen Assistant",
+  "description": "Primary orchestrator persona for Rouen. Coordinates requests by delegating to specialized per-MCP sub-personas.",
+  "allowed_mcps": [
+    "deck",
+    "persona",
+    "calendar",
+    "notes",
+    "contacts",
+    "terminal",
+    "git",
+    "editor",
+    "rss",
+    "wikipedia",
+    "youtube",
+    "alarm",
+    "pomodoro",
+    "mesh"
+  ],
+  "llm_config_name": "Gemini 3.8 Flash",
+  "enable_search": false,
+  "allowed_personas": [
+    "Autonomous Engineer",
+    "Code & Git Architect",
+    "Personal Productivity Lead",
+    "Media & Knowledge Director",
+    "Financial Analyst",
+    "System Health & Metrics",
+    "Persona Architect",
+    "Adaptive Card Architect"
+  ],
+  "temperature": 0.1,
+  "thinking_level": "high",
+  "max_tool_iterations": 100,
+  "max_output_tokens": 16384,
+  "context_compaction_strategy": "summarize",
+  "max_context_turns": 30,
+  "preserve_recent_turns": 10
+}

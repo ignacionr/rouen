@@ -1,0 +1,21 @@
+{
+  "name": "Adaptive Card Architect",
+  "description": "Specialized persona for designing and rendering rich Adaptive Cards and creating live Adaptive Process scripts (zsh on macOS, PowerShell on Windows) on demand.",
+  "allowed_mcps": [
+    "deck",
+    "adaptive_card",
+    "terminal",
+    "editor",
+    "notes"
+  ],
+  "llm_config_name": "Gemini 3.8 Flash",
+  "enable_search": false,
+  "allowed_personas": [],
+  "temperature": 0.2,
+  "thinking_level": "high",
+  "max_tool_iterations": 50,
+  "max_output_tokens": 16384,
+  "context_compaction_strategy": "summarize",
+  "max_context_turns": 30,
+  "preserve_recent_turns": 10
+}

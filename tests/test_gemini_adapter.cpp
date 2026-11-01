@@ -1032,6 +1032,77 @@ TEST(PersonaManagerTest, PersonaArchitectRegistrationAndCapabilities) {
     EXPECT_NE(arch_p->system_prompt.find("delete_persona"), std::string::npos);
 }
 
+TEST(PersonaManagerTest, LoadsDefaultPersonasFromExternalJsonAndMarkdownResources) {
+    auto manifest_path = rouen::platform::get_resource_path("manifest.json", "personas");
+    EXPECT_TRUE(std::filesystem::exists(manifest_path))
+        << "Expected resources/personas/manifest.json to exist at: " << manifest_path.string();
+
+    auto resource_personas = PersonaManager::load_default_personas_from_resources();
+    ASSERT_GE(resource_personas.size(), 15u)
+        << "Expected at least 15 built-in personas loaded from resources/personas/";
+
+    // First default persona must be Rouen Assistant
+    EXPECT_EQ(resource_personas.front().name, "Rouen Assistant");
+
+    for (const auto& p : resource_personas) {
+        std::string slug = PersonaManager::slugify(p.name);
+        auto json_path = rouen::platform::get_resource_path(slug + ".json", "personas");
+        auto md_path = rouen::platform::get_resource_path(slug + ".md", "personas");
+        EXPECT_TRUE(std::filesystem::exists(json_path)) << "Missing JSON resource for " << p.name << " (" << slug << ".json)";
+        EXPECT_TRUE(std::filesystem::exists(md_path)) << "Missing Markdown prompt resource for " << p.name << " (" << slug << ".md)";
+        EXPECT_FALSE(p.description.empty()) << "Empty description for " << p.name;
+        EXPECT_FALSE(p.system_prompt.empty()) << "Empty system_prompt for " << p.name;
+    }
+}
+
+TEST(PersonaManagerTest, LoadsCustomPersonaFromJsonAndCompanionMarkdownFile) {
+    auto temp_dir = std::filesystem::temp_directory_path() / "test_rouen_persona_json_md_pair";
+    std::filesystem::create_directories(temp_dir);
+
+    auto json_path = temp_dir / "custom-specialist.json";
+    auto md_path = temp_dir / "custom-specialist.md";
+
+    {
+        std::ofstream jf(json_path);
+        jf << R"({
+  "name": "Custom Specialist",
+  "description": "Resource-backed test persona",
+  "allowed_mcps": ["terminal", "notes"],
+  "llm_config_name": "Gemini 3.8 Flash",
+  "enable_search": false,
+  "allowed_personas": [],
+  "temperature": 0.15,
+  "thinking_level": "low",
+  "max_tool_iterations": 25,
+  "max_output_tokens": 8192
+})";
+    }
+    {
+        std::ofstream mf(md_path);
+        mf << "You are Custom Specialist.\n\nFollow the Markdown prompt rules strictly.\n";
+    }
+
+    auto loaded = PersonaManager::load_persona_from_resource_files(json_path, md_path);
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_EQ(loaded->name, "Custom Specialist");
+    EXPECT_EQ(loaded->description, "Resource-backed test persona");
+    EXPECT_EQ(loaded->max_tool_iterations, 25);
+    EXPECT_EQ(loaded->system_prompt, "You are Custom Specialist.\n\nFollow the Markdown prompt rules strictly.");
+
+    // Also verify import_from_directory picks up companion .md when system_prompt is omitted in .json
+    auto& pm = PersonaManager::instance();
+    bool imported = pm.import_from_directory(temp_dir);
+    EXPECT_TRUE(imported);
+    const Persona* p = pm.get_persona_by_name("Custom Specialist");
+    ASSERT_NE(p, nullptr);
+    EXPECT_EQ(p->system_prompt, "You are Custom Specialist.\n\nFollow the Markdown prompt rules strictly.");
+
+    if (auto idx = pm.find_persona_index("Custom Specialist"); idx.has_value()) {
+        pm.delete_persona(*idx);
+    }
+    std::filesystem::remove_all(temp_dir);
+}
+
 TEST(GeminiAdapterTest, ConfiguresGemini38AndExcludes35) {
     GeminiAdapter::clear_model_exhaustion_cache();
     GeminiAdapter adapter("dummy_key");

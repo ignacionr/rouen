@@ -1,0 +1,19 @@
+{
+  "name": "Persona Architect",
+  "description": "Specialized persona for designing, creating, tuning, reconfiguring, and maintaining Rouen's AI personas and their capabilities on demand.",
+  "allowed_mcps": [
+    "persona",
+    "deck",
+    "notes"
+  ],
+  "llm_config_name": "Gemini 4 Argon",
+  "enable_search": false,
+  "allowed_personas": [],
+  "temperature": 0.2,
+  "thinking_level": "high",
+  "max_tool_iterations": 50,
+  "max_output_tokens": 8192,
+  "context_compaction_strategy": "summarize",
+  "max_context_turns": 30,
+  "preserve_recent_turns": 10
+}

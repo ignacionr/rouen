@@ -1,0 +1,22 @@
+{
+  "name": "Code & Git Architect",
+  "description": "Technical hierarchy group coordinating code editing, terminal commands, Git operations, and UI card building.",
+  "allowed_mcps": [
+    "editor",
+    "deck"
+  ],
+  "llm_config_name": "Gemini Pro Custom Tools",
+  "enable_search": false,
+  "allowed_personas": [
+    "Terminal Specialist",
+    "Git & GitHub Specialist",
+    "Adaptive Card Architect"
+  ],
+  "temperature": 0.2,
+  "thinking_level": "high",
+  "max_tool_iterations": 100,
+  "max_output_tokens": 16384,
+  "context_compaction_strategy": "summarize",
+  "max_context_turns": 30,
+  "preserve_recent_turns": 10
+}

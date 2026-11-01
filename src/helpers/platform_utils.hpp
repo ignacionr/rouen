@@ -530,13 +530,16 @@ namespace rouen::platform
         search_paths.push_back(current_path / filename);
         search_paths.push_back(current_path / "resources" / filename);
          
-        // 4. parent directory (for running from build dir)
-        if (!resource_subdir.empty()) {
-            search_paths.push_back(exec_path.parent_path() / resource_subdir / filename);
-            search_paths.push_back(exec_path.parent_path() / "resources" / resource_subdir / filename);
+        // 4. parent and grandparent directories (for running from build/ or build/tests/)
+        for (const auto& ancestor : {exec_path.parent_path(), exec_path.parent_path().parent_path(), current_path.parent_path()}) {
+            if (ancestor.empty()) continue;
+            if (!resource_subdir.empty()) {
+                search_paths.push_back(ancestor / resource_subdir / filename);
+                search_paths.push_back(ancestor / "resources" / resource_subdir / filename);
+            }
+            search_paths.push_back(ancestor / filename);
+            search_paths.push_back(ancestor / "resources" / filename);
         }
-        search_paths.push_back(exec_path.parent_path() / filename);
-        search_paths.push_back(exec_path.parent_path() / "resources" / filename);
         
         // Check all paths and return the first one that exists
         for (const auto& path : search_paths) {

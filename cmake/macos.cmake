@@ -194,6 +194,25 @@ foreach(RES_FILE ${ADAPTIVE_CARD_RESOURCE_FILES})
   )
 endforeach()
 
+# Copy built-in Persona JSON and Markdown resources
+file(GLOB PERSONA_RESOURCE_FILES "${CMAKE_SOURCE_DIR}/resources/personas/*.json" "${CMAKE_SOURCE_DIR}/resources/personas/*.md")
+add_custom_command(
+  TARGET ${PROJECT_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory
+          "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Resources/personas"
+  COMMENT "Creating Resources/personas directory in app bundle"
+)
+foreach(RES_FILE ${PERSONA_RESOURCE_FILES})
+  get_filename_component(RES_FILENAME ${RES_FILE} NAME)
+  add_custom_command(
+    TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${RES_FILE}"
+            "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Resources/personas/${RES_FILENAME}"
+    COMMENT "Copying ${RES_FILENAME} to app bundle Resources/personas"
+  )
+endforeach()
+
 # Create Resources/img directory and copy images and audio files
 file(GLOB IMG_FILES "${CMAKE_SOURCE_DIR}/img/*.png" "${CMAKE_SOURCE_DIR}/img/*.jpg" "${CMAKE_SOURCE_DIR}/img/*.jpeg" "${CMAKE_SOURCE_DIR}/img/*.mp3" "${CMAKE_SOURCE_DIR}/img/*.wav")
 # Create the destination directory first (just once)

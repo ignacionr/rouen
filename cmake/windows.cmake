@@ -121,4 +121,18 @@ if(WIN32)
             COMMENT "Copying ${RES_FILENAME} to adaptive_cards folder"
         )
     endforeach()
+
+    # Copy built-in Persona JSON and Markdown resources
+    file(GLOB PERSONA_RESOURCE_FILES "${CMAKE_SOURCE_DIR}/resources/personas/*.json" "${CMAKE_SOURCE_DIR}/resources/personas/*.md")
+    foreach(RES_FILE ${PERSONA_RESOURCE_FILES})
+        get_filename_component(RES_FILENAME ${RES_FILE} NAME)
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>/personas
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${RES_FILE}
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>/personas/${RES_FILENAME}
+            COMMENT "Copying ${RES_FILENAME} to personas folder"
+        )
+    endforeach()
 endif()

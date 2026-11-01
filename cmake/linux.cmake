@@ -74,6 +74,21 @@ foreach(RES_FILE ${ADAPTIVE_CARD_RESOURCE_FILES})
   )
 endforeach()
 
+# Copy built-in Persona JSON and Markdown resources
+file(GLOB PERSONA_RESOURCE_FILES "${CMAKE_SOURCE_DIR}/resources/personas/*.json" "${CMAKE_SOURCE_DIR}/resources/personas/*.md")
+foreach(RES_FILE ${PERSONA_RESOURCE_FILES})
+  get_filename_component(RES_FILENAME ${RES_FILE} NAME)
+  add_custom_command(
+    TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${CMAKE_CURRENT_BINARY_DIR}/personas"
+    COMMAND ${CMAKE_COMMAND} -E copy
+            "${RES_FILE}"
+            "${CMAKE_CURRENT_BINARY_DIR}/personas/${RES_FILENAME}"
+    COMMENT "Copying ${RES_FILENAME} to build directory personas"
+  )
+endforeach()
+
 # Create img directory and copy images and audio files
 file(GLOB IMAGE_FILES "${CMAKE_SOURCE_DIR}/img/*.png" "${CMAKE_SOURCE_DIR}/img/*.jpg" "${CMAKE_SOURCE_DIR}/img/*.jpeg")
 file(GLOB AUDIO_FILES "${CMAKE_SOURCE_DIR}/img/*.mp3" "${CMAKE_SOURCE_DIR}/img/*.wav")

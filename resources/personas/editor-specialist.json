@@ -1,0 +1,17 @@
+{
+  "name": "Editor Specialist",
+  "description": "Gated per-MCP persona dedicated strictly to inspecting, reading, and editing code files safely.",
+  "allowed_mcps": [
+    "editor"
+  ],
+  "llm_config_name": "Gemini Flash Lite",
+  "enable_search": false,
+  "allowed_personas": [],
+  "temperature": 0.1,
+  "thinking_level": "low",
+  "max_tool_iterations": 20,
+  "max_output_tokens": 8192,
+  "context_compaction_strategy": "summarize",
+  "max_context_turns": 30,
+  "preserve_recent_turns": 10
+}

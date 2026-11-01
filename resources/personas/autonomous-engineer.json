@@ -1,0 +1,21 @@
+{
+  "name": "Autonomous Engineer",
+  "description": "Full-lifecycle autonomous software engineer capable of researching code, writing tests, applying surgical patches, compiling targets (-j2), and processing inbox issues.",
+  "allowed_mcps": [
+    "editor",
+    "terminal",
+    "git",
+    "deck",
+    "adaptive_card"
+  ],
+  "llm_config_name": "Gemini 4 Argon",
+  "enable_search": false,
+  "allowed_personas": [],
+  "temperature": 0.1,
+  "thinking_level": "high",
+  "max_tool_iterations": 100,
+  "max_output_tokens": 16384,
+  "context_compaction_strategy": "summarize",
+  "max_context_turns": 30,
+  "preserve_recent_turns": 10
+}
