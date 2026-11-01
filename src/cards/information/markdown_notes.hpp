@@ -300,10 +300,175 @@ public:
             body.push_back(std::move(fact_set));
         }
 
-        // 3. Form Inputs Container
+        // 3. Search & Browse Container
+        {
+            glz::json_t search_container;
+            search_container["type"] = "Container";
+            search_container["separator"] = true;
+
+            std::vector<glz::json_t> items;
+
+            glz::json_t tb_header;
+            tb_header["type"] = "TextBlock";
+            tb_header["text"] = "Search & Browse Notes";
+            tb_header["weight"] = "Bolder";
+            tb_header["size"] = "Medium";
+            items.push_back(std::move(tb_header));
+
+            // ColumnSet for search inputs
+            glz::json_t col_set;
+            col_set["type"] = "ColumnSet";
+            std::vector<glz::json_t> columns;
+
+            // Column 1: search_query
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                std::vector<glz::json_t> col_items;
+
+                glz::json_t input_search;
+                input_search["type"] = "Input.Text";
+                input_search["id"] = "search_query";
+                input_search["label"] = "Search Notes";
+                input_search["placeholder"] = "Search notes by title or content...";
+                input_search["value"] = std::string(search_buffer_.data());
+                col_items.push_back(std::move(input_search));
+
+                col["items"] = std::move(col_items);
+                columns.push_back(std::move(col));
+            }
+
+            // Column 2: tag_filter
+            {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "auto";
+                std::vector<glz::json_t> col_items;
+
+                glz::json_t input_tag;
+                input_tag["type"] = "Input.Text";
+                input_tag["id"] = "tag_filter";
+                input_tag["label"] = "Tag Filter";
+                input_tag["placeholder"] = "Filter by tag...";
+                input_tag["value"] = std::string(tag_filter_buffer_.data());
+                col_items.push_back(std::move(input_tag));
+
+                col["items"] = std::move(col_items);
+                columns.push_back(std::move(col));
+            }
+
+            col_set["columns"] = std::move(columns);
+            items.push_back(std::move(col_set));
+
+            // Search Actions
+            glz::json_t act_set;
+            act_set["type"] = "ActionSet";
+            std::vector<glz::json_t> search_actions;
+
+            glz::json_t act_search;
+            act_search["type"] = "Action.Execute";
+            act_search["title"] = "Search";
+            act_search["verb"] = "search_notes";
+            search_actions.push_back(std::move(act_search));
+
+            glz::json_t act_clear;
+            act_clear["type"] = "Action.Execute";
+            act_clear["title"] = "Clear Search";
+            act_clear["verb"] = "clear_search";
+            search_actions.push_back(std::move(act_clear));
+
+            act_set["actions"] = std::move(search_actions);
+            items.push_back(std::move(act_set));
+
+            // Note Browser list
+            if (notes_cache_.empty()) {
+                glz::json_t empty_tb;
+                empty_tb["type"] = "TextBlock";
+                empty_tb["text"] = "No notes matching search query.";
+                empty_tb["isSubtle"] = true;
+                items.push_back(std::move(empty_tb));
+            } else {
+                for (const auto& note : notes_cache_) {
+                    glz::json_t note_col_set;
+                    note_col_set["type"] = "ColumnSet";
+                    std::vector<glz::json_t> note_cols;
+
+                    // Note info column
+                    {
+                        glz::json_t col;
+                        col["type"] = "Column";
+                        col["width"] = "stretch";
+                        std::vector<glz::json_t> info_items;
+
+                        glz::json_t tb_title;
+                        tb_title["type"] = "TextBlock";
+                        tb_title["text"] = note.title.empty() ? "(untitled)" : note.title;
+                        tb_title["weight"] = "Bolder";
+                        info_items.push_back(std::move(tb_title));
+
+                        glz::json_t tb_meta;
+                        tb_meta["type"] = "TextBlock";
+                        std::string meta_text;
+                        if (!note.tags.empty()) {
+                            meta_text = "#" + note.tags;
+                        }
+                        std::string const timestamp = note.updated_at.empty() ? note.created_at : note.updated_at;
+                        if (!timestamp.empty()) {
+                            if (!meta_text.empty()) meta_text += " • ";
+                            meta_text += timestamp;
+                        }
+                        tb_meta["text"] = meta_text.empty() ? "Note #" + std::to_string(note.id) : meta_text;
+                        tb_meta["isSubtle"] = true;
+                        tb_meta["size"] = "Small";
+                        info_items.push_back(std::move(tb_meta));
+
+                        col["items"] = std::move(info_items);
+                        note_cols.push_back(std::move(col));
+                    }
+
+                    // Open action column
+                    {
+                        glz::json_t col;
+                        col["type"] = "Column";
+                        col["width"] = "auto";
+                        std::vector<glz::json_t> btn_items;
+
+                        glz::json_t btn_act_set;
+                        btn_act_set["type"] = "ActionSet";
+                        std::vector<glz::json_t> btn_actions;
+
+                        glz::json_t act_select;
+                        act_select["type"] = "Action.Execute";
+                        act_select["title"] = "Open";
+                        act_select["verb"] = "select_note";
+                        act_select["data"] = glz::json_t::object_t{
+                            {"note_id", static_cast<double>(note.id)},
+                            {"title", note.title}
+                        };
+                        btn_actions.push_back(std::move(act_select));
+
+                        btn_act_set["actions"] = std::move(btn_actions);
+                        btn_items.push_back(std::move(btn_act_set));
+
+                        col["items"] = std::move(btn_items);
+                        note_cols.push_back(std::move(col));
+                    }
+
+                    note_col_set["columns"] = std::move(note_cols);
+                    items.push_back(std::move(note_col_set));
+                }
+            }
+
+            search_container["items"] = std::move(items);
+            body.push_back(std::move(search_container));
+        }
+
+        // 4. Form Inputs Container
         {
             glz::json_t input_container;
             input_container["type"] = "Container";
+            input_container["separator"] = true;
 
             std::vector<glz::json_t> items;
 
@@ -464,10 +629,52 @@ public:
                 }
                 last_action_ = "delete_note";
                 last_adaptive_parse_time_ = {};
+            } else if (verb == "select_note" || verb == "load_note") {
+                int note_id = 0;
+                std::string title;
+                if (data.is_object()) {
+                    if (data.contains("note_id")) {
+                        if (data["note_id"].holds<std::string>()) {
+                            try { note_id = std::stoi(data["note_id"].get<std::string>()); } catch (...) {}
+                        } else if (data["note_id"].holds<double>()) {
+                            note_id = static_cast<int>(data["note_id"].get<double>());
+                        }
+                    } else if (data.contains("id")) {
+                        if (data["id"].holds<std::string>()) {
+                            try { note_id = std::stoi(data["id"].get<std::string>()); } catch (...) {}
+                        } else if (data["id"].holds<double>()) {
+                            note_id = static_cast<int>(data["id"].get<double>());
+                        }
+                    }
+                    if (data.contains("title") && data["title"].holds<std::string>()) {
+                        title = data["title"].get<std::string>();
+                    }
+                }
+                std::optional<models::notes::note_record> note;
+                if (note_id > 0) {
+                    note = repository_.get_note_by_id(note_id);
+                }
+                if (!note.has_value() && !title.empty()) {
+                    note = repository_.get_note_by_title(title);
+                }
+                if (note.has_value()) {
+                    load_note(*note);
+                    status_message_ = "Note loaded: " + selected_note_title_;
+                }
+                last_action_ = "select_note";
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "clear_search" || verb == "refresh_notes") {
+                set_buffer(search_buffer_, "");
+                set_buffer(tag_filter_buffer_, "");
+                refresh_notes();
+                last_action_ = "clear_search";
+                last_adaptive_parse_time_ = {};
             } else if (verb == "search_notes") {
                 std::string query;
                 if (data.is_object()) {
-                    if (data.contains("query") && data["query"].holds<std::string>()) {
+                    if (data.contains("search_query") && data["search_query"].holds<std::string>()) {
+                        query = data["search_query"].get<std::string>();
+                    } else if (data.contains("query") && data["query"].holds<std::string>()) {
                         query = data["query"].get<std::string>();
                     } else if (data.contains("search_term") && data["search_term"].holds<std::string>()) {
                         query = data["search_term"].get<std::string>();

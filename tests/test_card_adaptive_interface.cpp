@@ -2872,6 +2872,65 @@ TEST(markdown_notesAdaptiveTest, ActionDispatch) {
     std::filesystem::remove(temp_db, ec);
 }
 
+TEST(markdown_notesAdaptiveTest, SearchAndBrowseSupport) {
+    const auto temp_db = (std::filesystem::temp_directory_path() / "rouen_test_notes_search_browse.db").string();
+    std::error_code ec;
+    std::filesystem::remove(temp_db, ec);
+
+    rouen::cards::markdown_notes notes{"", temp_db};
+
+    // Save Note Alpha
+    notes.handle_action(R"({"type":"Action.Execute","verb":"save_note","data":{"title":"Alpha Note","tags":"alpha, work","content":"Content for Alpha"}})");
+    const int alpha_id = notes.get_current_note_id();
+    EXPECT_GT(alpha_id, 0);
+
+    // Save Note Beta
+    notes.handle_action(R"({"type":"Action.Execute","verb":"new_note"})");
+    notes.handle_action(R"({"type":"Action.Execute","verb":"save_note","data":{"title":"Beta Note","tags":"beta, personal","content":"Content for Beta"}})");
+    const int beta_id = notes.get_current_note_id();
+    EXPECT_GT(beta_id, 0);
+    EXPECT_NE(alpha_id, beta_id);
+    EXPECT_EQ(notes.get_notes_count(), 2u);
+
+    // Verify Adaptive Card JSON contains search input and note selection actions
+    std::string card_json = notes.get_adaptive_card_json();
+    EXPECT_NE(card_json.find("search_query"), std::string::npos);
+    EXPECT_NE(card_json.find("search_notes"), std::string::npos);
+    EXPECT_NE(card_json.find("select_note"), std::string::npos);
+    EXPECT_NE(card_json.find("Alpha Note"), std::string::npos);
+    EXPECT_NE(card_json.find("Beta Note"), std::string::npos);
+
+    // Perform search for "Beta"
+    notes.handle_action(R"({"type":"Action.Execute","verb":"search_notes","data":{"search_query":"Beta"}})");
+    EXPECT_EQ(notes.get_last_action(), "search_notes");
+    EXPECT_EQ(notes.get_notes_count(), 1u);
+    std::string filtered_json = notes.get_adaptive_card_json();
+    EXPECT_NE(filtered_json.find("Beta Note"), std::string::npos);
+    EXPECT_EQ(filtered_json.find("Alpha Note"), std::string::npos);
+
+    // Select Alpha note by note_id
+    notes.handle_action(std::format(R"({{"type":"Action.Execute","verb":"select_note","data":{{"note_id":{}}}}})", alpha_id));
+    EXPECT_EQ(notes.get_last_action(), "select_note");
+    EXPECT_EQ(notes.get_current_note_id(), alpha_id);
+    EXPECT_EQ(notes.get_current_note_title(), "Alpha Note");
+    EXPECT_EQ(notes.get_current_note_content(), "Content for Alpha");
+
+    // Clear search
+    notes.handle_action(R"({"type":"Action.Execute","verb":"clear_search"})");
+    EXPECT_EQ(notes.get_last_action(), "clear_search");
+    EXPECT_EQ(notes.get_search_query(), "");
+    EXPECT_EQ(notes.get_notes_count(), 2u);
+
+    // Select Beta note by title
+    notes.handle_action(R"({"type":"Action.Execute","verb":"select_note","data":{"title":"Beta Note"}})");
+    EXPECT_EQ(notes.get_last_action(), "select_note");
+    EXPECT_EQ(notes.get_current_note_id(), beta_id);
+    EXPECT_EQ(notes.get_current_note_title(), "Beta Note");
+    EXPECT_EQ(notes.get_current_note_content(), "Content for Beta");
+
+    std::filesystem::remove(temp_db, ec);
+}
+
 TEST(markdown_notesAdaptiveTest, MalformedActionHandling) {
     rouen::cards::markdown_notes notes{};
     EXPECT_NO_THROW(notes.handle_action(""));
