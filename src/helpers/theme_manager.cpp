@@ -315,6 +315,8 @@ namespace rouen::theme {
         theme_save_model model;
         auto ec = glz::read_json(model, json_content);
         if (!ec) {
+            const auto default_themes = themes_;
+
             // Keep default themes and append loaded custom themes (or update existing)
             for (const auto& custom : model.custom_themes) {
                 bool found = false;
@@ -334,13 +336,20 @@ namespace rouen::theme {
                 active_theme_index_ = model.active_index;
             }
 
-            // Sanitize loaded card colors to prevent NaN/Inf/out-of-range artifacts
-            for (auto& theme : themes_) {
+            // Sanitize loaded card colors to prevent NaN/Inf/subnormal/transparent artifacts
+            for (size_t t_idx = 0; t_idx < themes_.size(); ++t_idx) {
+                auto& theme = themes_[t_idx];
                 for (auto& col : theme.card_colors) {
                     for (float& val : col) {
-                        if (std::isnan(val) || std::isinf(val) || val < 0.0f || val > 1.0f) {
+                        if (std::isnan(val) || std::isinf(val) || val < 1e-4f || val > 1.0f) {
                             val = 0.0f;
                         }
+                    }
+                }
+                const auto& fallback_theme = (t_idx < default_themes.size()) ? default_themes[t_idx] : default_themes[0];
+                for (size_t c_idx = 0; c_idx < 10; ++c_idx) {
+                    if (theme.card_colors[c_idx][3] < 0.05f) {
+                        theme.card_colors[c_idx] = fallback_theme.card_colors[c_idx];
                     }
                 }
             }

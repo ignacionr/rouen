@@ -97,10 +97,12 @@ TEST(CardAdaptiveInterface, Rank2ProductivityAndInfoCards) {
     contact.handle_action(R"({"verb":"toggle_edit"})");
 
     // 3. Theme Card
+    size_t const orig_theme_idx = rouen::theme::theme_manager::get().get_active_theme_index();
     rouen::cards::theme_card theme{};
     std::string theme_json = theme.get_adaptive_card_json();
     EXPECT_NE(theme_json.find("Theme Settings"), std::string::npos);
     theme.handle_action(R"({"verb":"next_theme"})");
+    rouen::theme::theme_manager::get().select_theme(orig_theme_idx);
 
     // 4. Objectives Card
     rouen::cards::objectives_card obj{};
@@ -4422,6 +4424,7 @@ TEST(settings_cardAdaptiveTest, JsonSerialization) {
 }
 
 TEST(settings_cardAdaptiveTest, ActionDispatch) {
+    size_t const orig_theme_idx = rouen::theme::theme_manager::get().get_active_theme_index();
     rouen::cards::settings_card card{};
     card.set_allow_network_io(false);
 
@@ -4448,6 +4451,8 @@ TEST(settings_cardAdaptiveTest, ActionDispatch) {
     EXPECT_TRUE(card.is_adaptive_view_mode());
     card.handle_action(R"({"type":"Action.Execute","verb":"toggle_adaptive_view"})");
     EXPECT_FALSE(card.is_adaptive_view_mode());
+
+    rouen::theme::theme_manager::get().select_theme(orig_theme_idx);
 }
 
 TEST(settings_cardAdaptiveTest, MalformedActionHandling) {

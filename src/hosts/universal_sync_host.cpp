@@ -867,7 +867,12 @@ namespace rouen::hosts {
                 if (!to_dir.empty()) {
                     std::filesystem::create_directories(to_dir);
                 }
+                std::error_code ec;
+                auto const src_mtime = std::filesystem::last_write_time(from, ec);
                 std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing);
+                if (!ec) {
+                    std::filesystem::last_write_time(to, src_mtime, ec);
+                }
             }
         } catch (const std::exception& e) {
             UNIV_SYNC_WARN_FMT("Failed to copy file from '{}' to '{}': {}", from.string(), to.string(), e.what());
