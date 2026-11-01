@@ -3,7 +3,8 @@
 **Date**: October 24, 2026  
 **From**: Rouen Desktop Client UX & Mesh Engineering Team  
 **To**: Rouen Architecture & Core Card Maintainers  
-**Status**: Open (Feature Specification RFC)  
+**Status**: Done  
+**Resolution Date**: 2026-11-01
 **Target Components**:
 - Notes Card Implementation: [`src/cards/information/markdown_notes.hpp`](file:///Users/ignaciorodriguez/src/rouen/src/cards/information/markdown_notes.hpp)
 - Notes Repository Model: [`src/models/notes/notes_repository.hpp`](file:///Users/ignaciorodriguez/src/rouen/src/models/notes/notes_repository.hpp)
@@ -97,3 +98,10 @@ Update `markdown_notes::handle_action(std::string_view action_json)` to support:
    - Toggle "Adaptive Card View" in Rouen on the `notes` card.
    - Verify typing a query into the search input filters the displayed notes.
    - Verify clicking "Open" on a note in the browser list switches the active note in the editor form.
+
+
+---
+
+## Resolution & Outcome Summary
+
+Implemented Search & Browse controls and dynamic results container in `markdown_notes::get_adaptive_card_json()`. Added support for `select_note`/`load_note`, `clear_search`/`refresh_notes`, and `search_query` in `markdown_notes::handle_action()`. Verified with comprehensive unit tests in `tests/test_card_adaptive_interface.cpp` (including `markdown_notesAdaptiveTest.SearchAndBrowseSupport`). Built and deployed application binary to ~/Applications/Rouen.app.

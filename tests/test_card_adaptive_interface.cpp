@@ -2908,17 +2908,25 @@ TEST(markdown_notesAdaptiveTest, SearchAndBrowseSupport) {
     EXPECT_NE(filtered_json.find("Beta Note"), std::string::npos);
     EXPECT_EQ(filtered_json.find("Alpha Note"), std::string::npos);
 
-    // Select Alpha note by note_id
-    notes.handle_action(std::format(R"({{"type":"Action.Execute","verb":"select_note","data":{{"note_id":{}}}}})", alpha_id));
+    // Select Alpha note by note_id (simulating Action.Execute payload that also carries stale input_state fields)
+    notes.handle_action(std::format(
+        R"({{"type":"Action.Execute","verb":"select_note","data":{{"note_id":{},"title":"Alpha Note","note_title":"Beta Note","note_tags":"beta, personal","note_content":"Content for Beta"}}}})",
+        alpha_id));
     EXPECT_EQ(notes.get_last_action(), "select_note");
     EXPECT_EQ(notes.get_current_note_id(), alpha_id);
     EXPECT_EQ(notes.get_current_note_title(), "Alpha Note");
     EXPECT_EQ(notes.get_current_note_content(), "Content for Alpha");
+    EXPECT_EQ(notes.get_adaptive_input_value("note_title"), "Alpha Note");
+    EXPECT_EQ(notes.get_adaptive_input_value("note_tags"), "alpha, work");
+    EXPECT_EQ(notes.get_adaptive_input_value("note_content"), "Content for Alpha");
+    EXPECT_FALSE(notes.is_dirty());
 
     // Clear search
     notes.handle_action(R"({"type":"Action.Execute","verb":"clear_search"})");
     EXPECT_EQ(notes.get_last_action(), "clear_search");
     EXPECT_EQ(notes.get_search_query(), "");
+    EXPECT_EQ(notes.get_adaptive_input_value("search_query"), "");
+    EXPECT_EQ(notes.get_adaptive_input_value("tag_filter"), "");
     EXPECT_EQ(notes.get_notes_count(), 2u);
 
     // Select Beta note by title
@@ -2927,6 +2935,34 @@ TEST(markdown_notesAdaptiveTest, SearchAndBrowseSupport) {
     EXPECT_EQ(notes.get_current_note_id(), beta_id);
     EXPECT_EQ(notes.get_current_note_title(), "Beta Note");
     EXPECT_EQ(notes.get_current_note_content(), "Content for Beta");
+    EXPECT_EQ(notes.get_adaptive_input_value("note_title"), "Beta Note");
+    EXPECT_EQ(notes.get_adaptive_input_value("note_tags"), "beta, personal");
+    EXPECT_EQ(notes.get_adaptive_input_value("note_content"), "Content for Beta");
+
+    // Verify parsed Adaptive Card structure: Open button column is to the left (Column 0, width="auto")
+    // and note info is in Column 1 (width="stretch"), and note_content has isMultiline=true
+    rouen::helpers::adaptive_cards::parser parser{};
+    auto doc = parser.parse(notes.get_adaptive_card_json());
+    bool found_multiline_content = false;
+    bool found_left_open_button = false;
+    for (const auto& container : doc.body) {
+        for (const auto& item : container.items) {
+            if (item.type == "Input.Text" && item.id == "note_content") {
+                found_multiline_content = item.isMultiline;
+            }
+            if (item.type == "ColumnSet" && item.columns.size() >= 2) {
+                const auto& col0 = item.columns[0];
+                const auto& col1 = item.columns[1];
+                if (col0.width == "auto" && !col0.items.empty() && col0.items[0].type == "ActionSet" &&
+                    !col0.items[0].actions.empty() && col0.items[0].actions[0].verb == "select_note" &&
+                    col1.width == "stretch") {
+                    found_left_open_button = true;
+                }
+            }
+        }
+    }
+    EXPECT_TRUE(found_multiline_content);
+    EXPECT_TRUE(found_left_open_button);
 
     std::filesystem::remove(temp_db, ec);
 }

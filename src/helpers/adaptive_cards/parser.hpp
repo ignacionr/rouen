@@ -90,6 +90,7 @@ struct element {
     std::string width;
     bool separator{false};
     bool isMultiSelect{false};
+    bool isMultiline{false};
     double min{0.0};
     double max{0.0};
     std::vector<element> items;
@@ -365,6 +366,7 @@ struct glz::meta<rouen::helpers::adaptive_cards::element> {
         "spacing", &T::spacing,
         "separator", &T::separator,
         "isMultiSelect", &T::isMultiSelect,
+        "isMultiline", &T::isMultiline,
         "min", &T::min,
         "max", &T::max,
         "items", &T::items,

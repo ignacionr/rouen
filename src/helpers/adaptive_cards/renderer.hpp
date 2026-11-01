@@ -41,7 +41,9 @@ public:
 
     struct input_state {
         std::unordered_map<std::string, std::string> text_values{};
+        std::unordered_map<std::string, std::string> last_default_text_values{};
         std::unordered_map<std::string, bool> toggle_values{};
+        std::unordered_map<std::string, bool> last_default_toggle_values{};
         std::unordered_map<std::string, bool> show_card_expanded{};
         // ids of text_values entries that came from an Input.Number, so
         // collect_input_values() can emit them as JSON numbers - Input.Text
@@ -144,12 +146,22 @@ private:
         return values;
     }
 
+    static std::string& sync_text_input_value(input_state& state, const std::string& key, const std::string& default_value) {
+        auto [def_it, def_inserted] = state.last_default_text_values.try_emplace(key, default_value);
+        auto [it, inserted] = state.text_values.try_emplace(key, default_value);
+        if (inserted) {
+            it->second = default_value;
+        } else if (def_it->second != default_value) {
+            def_it->second = default_value;
+            it->second = default_value;
+        }
+        return it->second;
+    }
+
     static void render_input_choice_set(const element& node, const std::string& scope, input_state& state) {
         const std::string key = node.id.empty() ? scope : node.id;
-        auto [it, inserted] = state.text_values.try_emplace(key, node.value);
-        if (inserted && it->second.empty() && !node.choices.empty()) {
-            it->second = node.choices[0].value;
-        }
+        std::string const default_val = (node.value.empty() && !node.choices.empty()) ? node.choices[0].value : node.value;
+        std::string& current_val = sync_text_input_value(state, key, default_val);
 
         const std::string label = node.title.empty() ? (node.label.empty() ? key : node.label) : node.title;
         ImGui::TextUnformatted(label.c_str());
@@ -163,24 +175,24 @@ private:
             }
         } else if (node.style == "expanded") {
             for (const auto& choice_item : node.choices) {
-                bool selected = (it->second == choice_item.value);
+                bool selected = (current_val == choice_item.value);
                 if (ImGui::RadioButton(choice_item.title.c_str(), selected)) {
-                    it->second = choice_item.value;
+                    current_val = choice_item.value;
                 }
             }
         } else {
-            std::string current_title = it->second;
+            std::string current_title = current_val;
             for (const auto& choice_item : node.choices) {
-                if (choice_item.value == it->second) {
+                if (choice_item.value == current_val) {
                     current_title = choice_item.title;
                     break;
                 }
             }
             if (ImGui::BeginCombo(std::format("##{}", key).c_str(), current_title.c_str())) {
                 for (const auto& choice_item : node.choices) {
-                    bool is_selected = (it->second == choice_item.value);
+                    bool is_selected = (current_val == choice_item.value);
                     if (ImGui::Selectable(choice_item.title.c_str(), is_selected)) {
-                        it->second = choice_item.value;
+                        current_val = choice_item.value;
                     }
                 }
                 ImGui::EndCombo();
@@ -190,27 +202,27 @@ private:
 
     static void render_input_number(const element& node, const std::string& scope, input_state& state) {
         const std::string key = node.id.empty() ? scope : node.id;
-        auto [it, inserted] = state.text_values.try_emplace(key, node.value);
+        std::string& current_val = sync_text_input_value(state, key, node.value);
         state.numeric_ids.insert(key);
         const std::string label = node.title.empty() ? (node.label.empty() ? key : node.label) : node.title;
         std::array<char, 256> buffer{};
-        std::snprintf(buffer.data(), buffer.size(), "%s", it->second.c_str());
+        std::snprintf(buffer.data(), buffer.size(), "%s", current_val.c_str());
         if (ImGui::InputText(label.c_str(), buffer.data(), buffer.size())) {
-            it->second = buffer.data();
+            current_val = buffer.data();
         }
     }
 
     static void render_input_date_or_time(const element& node, const std::string& scope, input_state& state) {
         const std::string key = node.id.empty() ? scope : node.id;
-        auto [it, inserted] = state.text_values.try_emplace(key, node.value);
+        std::string& current_val = sync_text_input_value(state, key, node.value);
         std::string label = node.title.empty() ? key : node.title;
         if (!node.placeholder.empty()) {
             label = std::format("{} ({})", label, node.placeholder);
         }
         std::array<char, 256> buffer{};
-        std::snprintf(buffer.data(), buffer.size(), "%s", it->second.c_str());
+        std::snprintf(buffer.data(), buffer.size(), "%s", current_val.c_str());
         if (ImGui::InputText(label.c_str(), buffer.data(), buffer.size())) {
-            it->second = buffer.data();
+            current_val = buffer.data();
         }
     }
 
@@ -322,7 +334,7 @@ private:
             return {ImGuiTableColumnFlags_WidthStretch, 1.0f};
         }
         if (lower == "auto") {
-            return {ImGuiTableColumnFlags_None, 0.0f};
+            return {ImGuiTableColumnFlags_WidthFixed, 0.0f};
         }
         if (lower.ends_with("px")) {
             try {
@@ -642,19 +654,29 @@ private:
 
     static void render_input_text(const element& node, const std::string& scope, input_state& state) {
         const std::string key = node.id.empty() ? scope : node.id;
-        auto [it, inserted] = state.text_values.try_emplace(key, node.value);
-        if (inserted && it->second.empty()) {
-            it->second = node.value;
-        }
+        std::string& current_val = sync_text_input_value(state, key, node.value);
 
-        std::string label = node.title.empty() ? (node.label.empty() ? key : node.label) : node.title;
-        if (!node.placeholder.empty()) {
-            label = std::format("{} ({})", label, node.placeholder);
-        }
-        std::array<char, 1024> buffer{};
-        std::snprintf(buffer.data(), buffer.size(), "%s", it->second.c_str());
-        if (ImGui::InputText(label.c_str(), buffer.data(), buffer.size())) {
-            it->second = buffer.data();
+        const std::string label = node.title.empty() ? (node.label.empty() ? key : node.label) : node.title;
+        const std::size_t buf_cap = std::max<std::size_t>(node.isMultiline ? 16384 : 1024, current_val.size() + 1024);
+        std::vector<char> buffer(buf_cap, '\0');
+        std::snprintf(buffer.data(), buffer.size(), "%s", current_val.c_str());
+
+        if (node.isMultiline) {
+            if (ImGui::InputTextMultiline(
+                    label.c_str(),
+                    buffer.data(),
+                    buffer.size(),
+                    ImVec2(0.0f, ImGui::GetTextLineHeight() * 8.0f))) {
+                current_val = buffer.data();
+            }
+        } else if (!node.placeholder.empty()) {
+            if (ImGui::InputTextWithHint(label.c_str(), node.placeholder.c_str(), buffer.data(), buffer.size())) {
+                current_val = buffer.data();
+            }
+        } else {
+            if (ImGui::InputText(label.c_str(), buffer.data(), buffer.size())) {
+                current_val = buffer.data();
+            }
         }
     }
 
@@ -664,9 +686,14 @@ private:
 
     static void render_input_toggle(const element& node, const std::string& scope, input_state& state) {
         const std::string key = node.id.empty() ? scope : node.id;
-        auto [it, inserted] = state.toggle_values.try_emplace(key, parse_toggle_value(node.value));
+        const bool default_val = parse_toggle_value(node.value);
+        auto [def_it, def_inserted] = state.last_default_toggle_values.try_emplace(key, default_val);
+        auto [it, inserted] = state.toggle_values.try_emplace(key, default_val);
         if (inserted) {
-            it->second = parse_toggle_value(node.value);
+            it->second = default_val;
+        } else if (def_it->second != default_val) {
+            def_it->second = default_val;
+            it->second = default_val;
         }
         const std::string label = node.title.empty() ? key : node.title;
         ImGui::Checkbox(label.c_str(), &it->second);

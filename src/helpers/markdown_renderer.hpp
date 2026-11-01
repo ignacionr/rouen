@@ -168,7 +168,13 @@ inline void render_flowing_markdown(
 
     if (spans.size() == 1 && spans[0].kind == adaptive_cards::span_kind::normal && indent_x < 0.0f) {
         ImGui::PushStyleColor(ImGuiCol_Text, base_color);
-        ImGui::TextWrapped("%s", spans[0].text.c_str());
+        const float avail_x = ImGui::GetContentRegionAvail().x;
+        const float text_w = ImGui::CalcTextSize(spans[0].text.c_str()).x;
+        if (avail_x < 60.0f || text_w <= avail_x + 4.0f) {
+            ImGui::TextUnformatted(spans[0].text.c_str());
+        } else {
+            ImGui::TextWrapped("%s", spans[0].text.c_str());
+        }
         ImGui::PopStyleColor();
         return;
     }

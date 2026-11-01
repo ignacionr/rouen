@@ -91,6 +91,7 @@ public:
 
         clear_editor_for_new_note();
         set_title_buffer(target);
+        sync_adaptive_inputs_from_editor();
     }
 
     bool render() override {
@@ -101,7 +102,14 @@ public:
     bool render(rouen::ui::ui_context& ui) override {
         return render_window([this, &ui]() {
             // Presentation mode selector
-            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            if (ui.checkbox("Adaptive Card View", &adaptive_view_mode)) {
+                if (adaptive_view_mode) {
+                    sync_adaptive_inputs_from_editor();
+                    sync_adaptive_search_inputs();
+                } else {
+                    sync_editor_from_adaptive_inputs();
+                }
+            }
             ui.separator();
 
             if (adaptive_view_mode) {
@@ -219,7 +227,9 @@ public:
 
                 glz::json_t tb_sub;
                 tb_sub["type"] = "TextBlock";
-                tb_sub["text"] = "Organized personal knowledge base";
+                tb_sub["text"] = selected_note_title_.empty()
+                    ? "Organized personal knowledge base • Active: (new note)"
+                    : std::format("Organized personal knowledge base • Active: {}", selected_note_title_);
                 tb_sub["isSubtle"] = true;
                 tb_sub["size"] = "Small";
                 items.push_back(std::move(tb_sub));
@@ -283,7 +293,7 @@ public:
 
             facts.push_back(glz::json_t::object_t{
                 {"title", "Status:"},
-                {"value", editor_.IsTextChanged() ? "Unsaved" : "Saved"}
+                {"value", is_dirty() ? "Unsaved" : "Saved"}
             });
 
             facts.push_back(glz::json_t::object_t{
@@ -343,7 +353,7 @@ public:
             {
                 glz::json_t col;
                 col["type"] = "Column";
-                col["width"] = "auto";
+                col["width"] = "stretch";
                 std::vector<glz::json_t> col_items;
 
                 glz::json_t input_tag;
@@ -394,40 +404,7 @@ public:
                     note_col_set["type"] = "ColumnSet";
                     std::vector<glz::json_t> note_cols;
 
-                    // Note info column
-                    {
-                        glz::json_t col;
-                        col["type"] = "Column";
-                        col["width"] = "stretch";
-                        std::vector<glz::json_t> info_items;
-
-                        glz::json_t tb_title;
-                        tb_title["type"] = "TextBlock";
-                        tb_title["text"] = note.title.empty() ? "(untitled)" : note.title;
-                        tb_title["weight"] = "Bolder";
-                        info_items.push_back(std::move(tb_title));
-
-                        glz::json_t tb_meta;
-                        tb_meta["type"] = "TextBlock";
-                        std::string meta_text;
-                        if (!note.tags.empty()) {
-                            meta_text = "#" + note.tags;
-                        }
-                        std::string const timestamp = note.updated_at.empty() ? note.created_at : note.updated_at;
-                        if (!timestamp.empty()) {
-                            if (!meta_text.empty()) meta_text += " • ";
-                            meta_text += timestamp;
-                        }
-                        tb_meta["text"] = meta_text.empty() ? "Note #" + std::to_string(note.id) : meta_text;
-                        tb_meta["isSubtle"] = true;
-                        tb_meta["size"] = "Small";
-                        info_items.push_back(std::move(tb_meta));
-
-                        col["items"] = std::move(info_items);
-                        note_cols.push_back(std::move(col));
-                    }
-
-                    // Open action column
+                    // Open action column (left side, fixed auto width for consistent alignment)
                     {
                         glz::json_t col;
                         col["type"] = "Column";
@@ -452,6 +429,45 @@ public:
                         btn_items.push_back(std::move(btn_act_set));
 
                         col["items"] = std::move(btn_items);
+                        note_cols.push_back(std::move(col));
+                    }
+
+                    // Note info column
+                    {
+                        glz::json_t col;
+                        col["type"] = "Column";
+                        col["width"] = "stretch";
+                        std::vector<glz::json_t> info_items;
+
+                        glz::json_t tb_title;
+                        tb_title["type"] = "TextBlock";
+                        const std::string display_title = note.title.empty() ? "(untitled)" : note.title;
+                        tb_title["text"] = (note.id == selected_note_id_)
+                            ? std::format("● {} (Editing)", display_title)
+                            : display_title;
+                        tb_title["weight"] = "Bolder";
+                        if (note.id == selected_note_id_) {
+                            tb_title["color"] = "Accent";
+                        }
+                        info_items.push_back(std::move(tb_title));
+
+                        glz::json_t tb_meta;
+                        tb_meta["type"] = "TextBlock";
+                        std::string meta_text;
+                        if (!note.tags.empty()) {
+                            meta_text = "#" + note.tags;
+                        }
+                        std::string const timestamp = note.updated_at.empty() ? note.created_at : note.updated_at;
+                        if (!timestamp.empty()) {
+                            if (!meta_text.empty()) meta_text += " • ";
+                            meta_text += timestamp;
+                        }
+                        tb_meta["text"] = meta_text.empty() ? "Note #" + std::to_string(note.id) : meta_text;
+                        tb_meta["isSubtle"] = true;
+                        tb_meta["size"] = "Small";
+                        info_items.push_back(std::move(tb_meta));
+
+                        col["items"] = std::move(info_items);
                         note_cols.push_back(std::move(col));
                     }
 
@@ -666,6 +682,7 @@ public:
             } else if (verb == "clear_search" || verb == "refresh_notes") {
                 set_buffer(search_buffer_, "");
                 set_buffer(tag_filter_buffer_, "");
+                sync_adaptive_search_inputs();
                 refresh_notes();
                 last_action_ = "clear_search";
                 last_adaptive_parse_time_ = {};
@@ -687,6 +704,7 @@ public:
                     }
                 }
                 set_buffer(search_buffer_, query);
+                sync_adaptive_search_inputs();
                 notes_cache_ = repository_.list_notes(
                     models::notes::notes_repository::trim(search_buffer_.data()),
                     models::notes::notes_repository::trim(tag_filter_buffer_.data())
@@ -695,6 +713,8 @@ public:
                 last_adaptive_parse_time_ = {};
             } else if (verb == "toggle_adaptive_view") {
                 adaptive_view_mode = !adaptive_view_mode;
+                sync_adaptive_inputs_from_editor();
+                sync_adaptive_search_inputs();
                 last_adaptive_parse_time_ = {};
                 last_action_ = "toggle_adaptive_view";
             }
@@ -705,6 +725,11 @@ public:
 
     [[nodiscard]] bool is_adaptive_view_mode() const noexcept { return adaptive_view_mode; }
     void set_adaptive_view_mode(bool enabled) noexcept { adaptive_view_mode = enabled; }
+
+    [[nodiscard]] std::string get_adaptive_input_value(const std::string& key) const {
+        auto it = adaptive_input_state_.text_values.find(key);
+        return it != adaptive_input_state_.text_values.end() ? it->second : std::string{};
+    }
 
     [[nodiscard]] const std::string& get_last_action() const noexcept { return last_action_; }
     [[nodiscard]] int get_current_note_id() const noexcept { return selected_note_id_; }
@@ -722,11 +747,24 @@ public:
     [[nodiscard]] std::string get_current_tags() const { return std::string(tags_buffer_.data()); }
     [[nodiscard]] std::string get_search_query() const { return std::string(search_buffer_.data()); }
     [[nodiscard]] size_t get_notes_count() const noexcept { return notes_cache_.size(); }
-    [[nodiscard]] bool is_dirty() const { return editor_.IsTextChanged(); }
+    [[nodiscard]] bool is_dirty() const {
+        if (adaptive_view_mode) {
+            auto title_it = adaptive_input_state_.text_values.find("note_title");
+            auto tags_it = adaptive_input_state_.text_values.find("note_tags");
+            auto content_it = adaptive_input_state_.text_values.find("note_content");
+            const std::string cur_title = (title_it != adaptive_input_state_.text_values.end()) ? title_it->second : get_current_note_title();
+            const std::string cur_tags = (tags_it != adaptive_input_state_.text_values.end()) ? tags_it->second : get_current_tags();
+            const std::string cur_content = (content_it != adaptive_input_state_.text_values.end()) ? content_it->second : get_current_note_content();
+            return cur_title != saved_title_ || cur_tags != saved_tags_ || cur_content != saved_content_;
+        }
+        return get_current_note_content() != saved_content_ ||
+               get_current_note_title() != saved_title_ ||
+               get_current_tags() != saved_tags_;
+    }
 
 private:
     void render_status_bar() {
-        const bool unsaved = editor_.IsTextChanged();
+        const bool unsaved = is_dirty();
 
         ImGui::TextColored(colors[2], "%s", "Markdown knowledge base");
         ImGui::SameLine();
@@ -966,6 +1004,10 @@ private:
             if (note.has_value()) {
                 editor_.SetText(note->content);
             }
+            saved_title_ = selected_note_title_;
+            saved_tags_ = std::string(tags_buffer_.data());
+            saved_content_ = get_current_note_content();
+            sync_adaptive_inputs_from_editor();
         } catch (const std::exception& e) {
             status_message_ = std::format("Save failed: {}", e.what());
         }
@@ -977,6 +1019,10 @@ private:
         set_title_buffer(note.title);
         set_tags_buffer(note.tags);
         editor_.SetText(note.content);
+        saved_title_ = note.title;
+        saved_tags_ = note.tags;
+        saved_content_ = get_current_note_content();
+        sync_adaptive_inputs_from_editor();
     }
 
     void clear_editor_for_new_note() {
@@ -985,10 +1031,62 @@ private:
         set_title_buffer("");
         set_tags_buffer("");
         editor_.SetText("");
+        saved_title_.clear();
+        saved_tags_.clear();
+        saved_content_.clear();
+        sync_adaptive_inputs_from_editor();
+    }
+
+    void sync_adaptive_inputs_from_editor() {
+        const std::string cur_title = title_buffer_.data();
+        const std::string title_val = cur_title.empty() ? selected_note_title_ : cur_title;
+        const std::string tags_val = std::string(tags_buffer_.data());
+        const std::string content_val = get_current_note_content();
+
+        adaptive_input_state_.text_values["note_title"] = title_val;
+        adaptive_input_state_.last_default_text_values["note_title"] = title_val;
+        adaptive_input_state_.text_values["note_tags"] = tags_val;
+        adaptive_input_state_.last_default_text_values["note_tags"] = tags_val;
+        adaptive_input_state_.text_values["note_content"] = content_val;
+        adaptive_input_state_.last_default_text_values["note_content"] = content_val;
+        last_adaptive_parse_time_ = {};
+    }
+
+    void sync_editor_from_adaptive_inputs() {
+        if (auto it = adaptive_input_state_.text_values.find("note_title"); it != adaptive_input_state_.text_values.end()) {
+            set_title_buffer(it->second);
+        }
+        if (auto it = adaptive_input_state_.text_values.find("note_tags"); it != adaptive_input_state_.text_values.end()) {
+            set_tags_buffer(it->second);
+        }
+        if (auto it = adaptive_input_state_.text_values.find("note_content"); it != adaptive_input_state_.text_values.end()) {
+            if (it->second != get_current_note_content()) {
+                editor_.SetText(it->second);
+            }
+        }
+        if (auto it = adaptive_input_state_.text_values.find("search_query"); it != adaptive_input_state_.text_values.end()) {
+            set_buffer(search_buffer_, it->second);
+        }
+        if (auto it = adaptive_input_state_.text_values.find("tag_filter"); it != adaptive_input_state_.text_values.end()) {
+            set_buffer(tag_filter_buffer_, it->second);
+        }
+    }
+
+    void sync_adaptive_search_inputs() {
+        const std::string search_val = std::string(search_buffer_.data());
+        const std::string tag_val = std::string(tag_filter_buffer_.data());
+        adaptive_input_state_.text_values["search_query"] = search_val;
+        adaptive_input_state_.last_default_text_values["search_query"] = search_val;
+        adaptive_input_state_.text_values["tag_filter"] = tag_val;
+        adaptive_input_state_.last_default_text_values["tag_filter"] = tag_val;
+        last_adaptive_parse_time_ = {};
     }
 
     void refresh_notes() {
-        notes_cache_ = repository_.list_notes();
+        notes_cache_ = repository_.list_notes(
+            models::notes::notes_repository::trim(search_buffer_.data()),
+            models::notes::notes_repository::trim(tag_filter_buffer_.data())
+        );
 
         if (sync_repo_url_buffer_[0] == '\0') {
             set_buffer(sync_repo_url_buffer_, sync_repo_url_);
@@ -1236,6 +1334,9 @@ private:
 
     int selected_note_id_{0};
     std::string selected_note_title_;
+    std::string saved_title_;
+    std::string saved_tags_;
+    std::string saved_content_;
 
     std::string sync_repo_url_;
     std::string sync_cache_path_;
