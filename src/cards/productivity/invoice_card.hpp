@@ -6,6 +6,7 @@
 #include <vector>
 #include "../interface/card.hpp"
 #include "../../models/contacts/contacts_repository.hpp"
+#include "../../helpers/glaze_include.hpp"
 
 namespace rouen::cards {
 
@@ -18,6 +19,48 @@ struct invoice_line_item {
         return quantity * unit_price;
     }
 };
+
+struct invoice_card_params {
+    std::string seller_name;
+    std::string seller_email;
+    std::string seller_address;
+    std::string seller_phone;
+    std::string client_name;
+    std::string client_contact;
+    std::string client_address;
+    std::string invoice_number;
+    std::string invoice_date;
+    std::string payment_terms;
+    std::string currency;
+    std::string bank_name;
+    std::string account_holder;
+    int swift_bic_type{0};
+    std::string swift_code;
+    std::string iban_account;
+    std::string foreign_statement;
+    uint64_t updated_at_ms{0};
+};
+
+} // namespace rouen::cards
+
+namespace glz {
+    template<> struct meta<rouen::cards::invoice_line_item> {
+        using T = rouen::cards::invoice_line_item;
+        static constexpr auto value = object(&T::description, &T::quantity, &T::unit_price);
+    };
+    template<> struct meta<rouen::cards::invoice_card_params> {
+        using T = rouen::cards::invoice_card_params;
+        static constexpr auto value = object(
+            &T::seller_name, &T::seller_email, &T::seller_address, &T::seller_phone,
+            &T::client_name, &T::client_contact, &T::client_address,
+            &T::invoice_number, &T::invoice_date, &T::payment_terms, &T::currency,
+            &T::bank_name, &T::account_holder, &T::swift_bic_type, &T::swift_code,
+            &T::iban_account, &T::foreign_statement, &T::updated_at_ms
+        );
+    };
+}
+
+namespace rouen::cards {
 
 enum class contact_picker_target {
     provider,
@@ -45,6 +88,8 @@ struct invoice_card : public card {
     void refresh_contacts();
     void apply_contact_as_provider(const rouen::models::contacts::contact& c);
     void apply_contact_as_customer(const rouen::models::contacts::contact& c);
+    void load_last_parameters();
+    void save_last_parameters(bool publish_to_mesh = true);
 
 private:
     // Seller / Provider Information
@@ -109,4 +154,3 @@ private:
 };
 
 } // namespace rouen::cards
-

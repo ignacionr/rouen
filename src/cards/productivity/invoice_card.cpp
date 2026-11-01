@@ -34,6 +34,9 @@
 #pragma clang diagnostic pop
 #endif
 
+#include "../../helpers/config_service.hpp"
+#include "../../hosts/rouen_mesh_host.hpp"
+#include "../../helpers/glaze_include.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/ui_context.hpp"
 #include "../../registrar.hpp"
@@ -64,6 +67,75 @@ invoice_card::invoice_card() {
     std::string const db_path = rouen::platform::get_user_data_path("contacts.db").string();
     contacts_repo_ = std::make_unique<rouen::models::contacts::contacts_repository>(db_path);
     refresh_contacts();
+    load_last_parameters();
+}
+
+void invoice_card::load_last_parameters() {
+    auto config = rouen::helpers::ConfigService::instance();
+    auto last_params_json = config->get_env("INVOICE_LAST_PARAMS_JSON");
+    
+    rouen::cards::invoice_card_params params;
+    bool loaded = false;
+    if (!last_params_json.empty() && glz::read_json(params, last_params_json) == glz::error_code::none) {
+        loaded = true;
+    }
+
+    // Mesh Registry Fallback
+    auto& mesh = rouen::hosts::rouen_mesh_host::instance();
+    if (mesh.is_connected()) {
+        if (auto registry_val = mesh.get_registry_value("invoice/settings/last_params")) {
+            rouen::cards::invoice_card_params mesh_params;
+            if (glz::read_json(mesh_params, *registry_val) == glz::error_code::none) {
+                if (!loaded || mesh_params.updated_at_ms > params.updated_at_ms) {
+                    params = mesh_params;
+                    loaded = true;
+                }
+            }
+        }
+    }
+
+    if (loaded) {
+        seller_name = params.seller_name;
+        seller_email = params.seller_email;
+        seller_address = params.seller_address;
+        seller_phone = params.seller_phone;
+        client_name = params.client_name;
+        client_contact = params.client_contact;
+        client_address = params.client_address;
+        invoice_number = params.invoice_number;
+        invoice_date = params.invoice_date;
+        payment_terms = params.payment_terms;
+        currency = params.currency;
+        bank_name = params.bank_name;
+        account_holder = params.account_holder;
+        swift_bic_type = params.swift_bic_type;
+        swift_code = params.swift_code;
+        iban_account = params.iban_account;
+        foreign_statement = params.foreign_statement;
+        save_last_parameters(false); // Sync mesh back to local settings
+    }
+}
+
+void invoice_card::save_last_parameters(bool publish_to_mesh) {
+    rouen::cards::invoice_card_params params{
+        seller_name, seller_email, seller_address, seller_phone,
+        client_name, client_contact, client_address,
+        invoice_number, invoice_date, payment_terms, currency,
+        bank_name, account_holder, swift_bic_type, swift_code,
+        iban_account, foreign_statement,
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
+    };
+    
+    std::string json;
+    if (glz::write_json(params, json) == glz::error_code::none) {
+        rouen::helpers::ConfigService::instance()->set_env_value("INVOICE_LAST_PARAMS_JSON", json, true);
+        if (publish_to_mesh) {
+            auto& mesh = rouen::hosts::rouen_mesh_host::instance();
+            if (mesh.is_connected()) {
+                mesh.set_registry_value("invoice/settings/last_params", json, false);
+            }
+        }
+    }
 }
 
 std::string invoice_card::get_adaptive_card_json() const {
@@ -87,10 +159,87 @@ std::string invoice_card::get_adaptive_card_json() const {
 }
 
 void invoice_card::handle_action(std::string_view action_json) {
-    std::string act(action_json);
+    std::string const act(action_json);
     if (act.find("\"apply_retainer\"") != std::string::npos) {
         apply_monthly_retainer();
     }
+
+    glz::json_t doc;
+    if (glz::read_json(doc, act) != glz::error_code::none || !doc.holds<glz::json_t::object_t>()) {
+        return;
+    }
+    const auto& obj = doc.get<glz::json_t::object_t>();
+
+    auto read_str = [&](const char* key, std::string& target) {
+        if (auto it = obj.find(key); it != obj.end() && it->second.holds<std::string>()) {
+            target = it->second.get<std::string>();
+        }
+    };
+
+    read_str("seller_name", seller_name);
+    read_str("seller_email", seller_email);
+    read_str("seller_phone", seller_phone);
+    read_str("seller_address", seller_address);
+    read_str("client_name", client_name);
+    read_str("client_contact", client_contact);
+    read_str("client_address", client_address);
+    read_str("invoice_number", invoice_number);
+    read_str("invoice_date", invoice_date);
+    read_str("payment_terms", payment_terms);
+    read_str("currency", currency);
+    read_str("bank_name", bank_name);
+    read_str("account_holder", account_holder);
+    read_str("swift_code", swift_code);
+    read_str("iban_account", iban_account);
+    read_str("foreign_statement", foreign_statement);
+    read_str("pdf_output_path", pdf_output_path);
+    read_str("output_path", pdf_output_path);
+
+    if (auto it = obj.find("swift_bic_type"); it != obj.end() && it->second.holds<double>()) {
+        swift_bic_type = static_cast<int>(it->second.get<double>());
+    }
+
+    if (auto it = obj.find("items"); it != obj.end() && it->second.holds<glz::json_t::array_t>()) {
+        const auto& arr = it->second.get<glz::json_t::array_t>();
+        items.clear();
+        for (const auto& elem : arr) {
+            if (!elem.holds<glz::json_t::object_t>()) continue;
+            const auto& item_obj = elem.get<glz::json_t::object_t>();
+            invoice_line_item line_item{};
+            if (auto d_it = item_obj.find("description"); d_it != item_obj.end() && d_it->second.holds<std::string>()) {
+                line_item.description = d_it->second.get<std::string>();
+            }
+            if (auto q_it = item_obj.find("quantity"); q_it != item_obj.end() && q_it->second.holds<double>()) {
+                line_item.quantity = q_it->second.get<double>();
+            }
+            if (auto p_it = item_obj.find("unit_price"); p_it != item_obj.end() && p_it->second.holds<double>()) {
+                line_item.unit_price = p_it->second.get<double>();
+            }
+            items.push_back(std::move(line_item));
+        }
+    }
+
+    bool should_generate = false;
+    if (auto it = obj.find("verb"); it != obj.end() && it->second.holds<std::string>()) {
+        if (it->second.get<std::string>() == "generate_pdf") {
+            should_generate = true;
+        }
+    }
+    if (auto it = obj.find("generate_pdf"); it != obj.end() && it->second.holds<bool>()) {
+        should_generate = should_generate || it->second.get<bool>();
+    }
+
+    if (should_generate && !pdf_output_path.empty()) {
+        std::string err;
+        if (generate_pdf(pdf_output_path, err)) {
+            status_message = "PDF Invoice successfully generated at: " + pdf_output_path;
+            status_is_error = false;
+        } else {
+            status_message = err;
+            status_is_error = true;
+        }
+    }
+    save_last_parameters();
 }
 
 void invoice_card::refresh_contacts() {
@@ -110,6 +259,7 @@ void invoice_card::apply_contact_as_provider(const rouen::models::contacts::cont
     }
     status_message = "Provider updated from contact: " + seller_name;
     status_is_error = false;
+    save_last_parameters();
 }
 
 void invoice_card::apply_contact_as_customer(const rouen::models::contacts::contact& c) {
@@ -131,6 +281,7 @@ void invoice_card::apply_contact_as_customer(const rouen::models::contacts::cont
     client_address = c.address;
     status_message = "Customer updated from contact: " + client_name;
     status_is_error = false;
+    save_last_parameters();
 }
 
 std::string invoice_card::get_swift_bic_label() const {
@@ -705,23 +856,10 @@ std::vector<card::mcp_function> invoice_card::get_mcp_functions() const {
         mcp_function(
             "generate_invoice_pdf",
             "Generate a PDF invoice file with specified output path and invoice details.",
-            R"mcp({"type":"object","properties":{"output_path":{"type":"string","description":"Destination PDF file path"}},"required":["output_path"]})mcp",
+            R"mcp({"type":"object","properties":{"output_path":{"type":"string","description":"Destination PDF file path"},"invoice_number":{"type":"string"},"invoice_date":{"type":"string"},"payment_terms":{"type":"string"},"currency":{"type":"string"},"seller_name":{"type":"string"},"seller_email":{"type":"string"},"seller_phone":{"type":"string"},"seller_address":{"type":"string"},"client_name":{"type":"string"},"client_contact":{"type":"string"},"client_address":{"type":"string"},"bank_name":{"type":"string"},"account_holder":{"type":"string"},"swift_code":{"type":"string"},"iban_account":{"type":"string"},"foreign_statement":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"description":{"type":"string"},"quantity":{"type":"number"},"unit_price":{"type":"number"}}}}},"required":["output_path"]})mcp",
             [this](const std::string& params) -> std::string {
-                std::string path = pdf_output_path;
-                auto start = params.find("\"output_path\"");
-                if (start != std::string::npos) {
-                    start = params.find(':', start);
-                    if (start != std::string::npos) {
-                        start = params.find('"', start);
-                        if (start != std::string::npos) {
-                            start++;
-                            auto end = params.find('"', start);
-                            if (end != std::string::npos) {
-                                path = params.substr(start, end - start);
-                            }
-                        }
-                    }
-                }
+                const_cast<invoice_card*>(this)->handle_action(params);
+                std::string const path = pdf_output_path;
 
                 std::string err;
                 if (generate_pdf(path, err)) {
