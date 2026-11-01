@@ -167,7 +167,14 @@ namespace rouen::hosts {
         };
         
         static LLMSettings get_current_config(const std::string& config_name = "");
+        static LLMSettings get_progress_monitor_config(const std::string& preferred_config_name = "");
         static std::optional<LLMInstance> create_llm_instance(const std::string& config_name = "");
+        static std::optional<LLMInstance> create_progress_monitor_llm_instance(const std::string& preferred_config_name = "");
+        static std::string evaluate_progress_monitor(
+            const std::string& system_prompt,
+            const std::string& user_prompt,
+            const std::string& monitor_persona_name = ""
+        );
         
         template<typename T, typename Func>
         static auto with_llm_instance(const LLMInstance& instance, Func&& func) -> decltype(func(std::declval<T&>())) {

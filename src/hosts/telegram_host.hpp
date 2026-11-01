@@ -16,6 +16,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../helpers/ai_progress_monitor.hpp"
 #include "../helpers/fetch.hpp"
 #include "../helpers/glaze_include.hpp"
 #include "../helpers/llm_config.hpp"
@@ -168,6 +169,8 @@ public:
 
     // Force refresh / reconnect
     void test_connection();
+    bool cancel_active_request(int64_t chat_id);
+    bool has_active_request(int64_t chat_id) const;
 
 private:
     void load_state();
@@ -198,6 +201,10 @@ private:
     std::thread poll_thread_;
     int64_t operator_chat_id_{0};
     std::chrono::steady_clock::time_point last_presence_publish_{};
+
+    mutable std::mutex active_monitors_mutex_;
+    std::unordered_map<int64_t, std::shared_ptr<rouen::helpers::AIProgressMonitor>> active_monitors_;
+    std::unordered_map<int64_t, std::shared_ptr<std::atomic<bool>>> active_cancel_flags_;
 };
 
 } // namespace rouen::hosts

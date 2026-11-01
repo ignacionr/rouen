@@ -278,6 +278,14 @@ namespace rouen::cards {
 
     ai_chat::~ai_chat() {
         try {
+            std::shared_ptr<helpers::AIProgressMonitor> monitor;
+            {
+                std::lock_guard<std::mutex> const lock(progress_monitor_mutex_);
+                monitor = std::move(active_progress_monitor_);
+            }
+            if (monitor) {
+                monitor->stop();
+            }
             registrar::remove<std::function<void(const std::string&)>>("ai_chat_send_message");
         } catch (...) {}
     }
@@ -380,6 +388,24 @@ namespace rouen::cards {
                 }
                 if (ImGui::IsItemHovered()) {
                     ImGui::SetTooltip("Quick-switch to Autonomous Software Engineer persona");
+                }
+
+                // Progress Monitor Persona selector
+                std::string const current_monitor_persona = pm.get_progress_monitor_persona();
+                if (ImGui::BeginCombo("Progress Monitor Persona", current_monitor_persona.c_str())) {
+                    for (size_t i = 0; i < personas.size(); ++i) {
+                        bool const is_selected = (personas[i].name == current_monitor_persona);
+                        if (ImGui::Selectable(personas[i].name.c_str(), is_selected)) {
+                            pm.set_progress_monitor_persona(personas[i].name);
+                        }
+                        if (is_selected) {
+                            ImGui::SetItemDefaultFocus();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Fast, lightweight observer persona invoked at 30s, 1m, 2m, 5m, and every 5m to summarize progress and estimate remaining duration.");
                 }
             }
             
@@ -910,6 +936,14 @@ namespace rouen::cards {
                     ImGui::SameLine();
                     if (ImGui::SmallButton(ICON_MD_STOP " Stop")) {
                         cancel_execution_.store(true);
+                        std::shared_ptr<helpers::AIProgressMonitor> monitor;
+                        {
+                            std::lock_guard<std::mutex> const lock(progress_monitor_mutex_);
+                            monitor = active_progress_monitor_;
+                        }
+                        if (monitor) {
+                            monitor->stop();
+                        }
                     }
 
                     ImGui::PopStyleColor(); // assistant_text_color
@@ -917,6 +951,34 @@ namespace rouen::cards {
                     
                     ImGui::PopStyleVar(3); // Pop ChildRounding, ChildBorderSize, WindowPadding
                     ImGui::PopStyleColor(2); // Pop ChildBg and Border
+
+                    // Display periodic Progress Monitor assessment if request has run >= 30s
+                    {
+                        std::optional<helpers::ProgressAssessment> progress_snap;
+                        {
+                            std::lock_guard<std::mutex> const lock(progress_monitor_mutex_);
+                            progress_snap = latest_progress_assessment_;
+                        }
+                        if (progress_snap.has_value()) {
+                            ImGui::Spacing();
+                            std::string const elapsed_str = helpers::format_duration_compact(
+                                progress_snap->checkpoint_seconds > 0 ? progress_snap->checkpoint_seconds : progress_snap->elapsed_seconds
+                            );
+                            std::string const remaining_str = helpers::format_remaining_duration(progress_snap->estimated_remaining_seconds);
+                            ImGui::TextColored(
+                                ImVec4(0.95f, 0.78f, 0.25f, 1.0f),
+                                " " ICON_MD_SCHEDULE " [%s elapsed | %s | confidence: %s]",
+                                elapsed_str.c_str(),
+                                remaining_str.c_str(),
+                                progress_snap->confidence.c_str()
+                            );
+                            if (!progress_snap->summary.empty()) {
+                                ImGui::PushStyleColor(ImGuiCol_Text, assistant_text_color);
+                                ImGui::TextWrapped("   %s", progress_snap->summary.c_str());
+                                ImGui::PopStyleColor();
+                            }
+                        }
+                    }
 
                     // Stream active and recent tool activities
                     {
@@ -1344,6 +1406,24 @@ namespace rouen::cards {
                 thinking_items.push_back(std::move(act_block));
             }
 
+            {
+                std::optional<helpers::ProgressAssessment> progress_snap;
+                {
+                    std::lock_guard<std::mutex> const pm_lock(progress_monitor_mutex_);
+                    progress_snap = latest_progress_assessment_;
+                }
+                if (progress_snap.has_value()) {
+                    glz::json_t prog_block;
+                    prog_block["type"] = "TextBlock";
+                    prog_block["text"] = helpers::format_progress_message_for_channel(*progress_snap, "ai_chat");
+                    prog_block["size"] = "Small";
+                    prog_block["color"] = "Warning";
+                    prog_block["wrap"] = true;
+                    prog_block["spacing"] = "Small";
+                    thinking_items.push_back(std::move(prog_block));
+                }
+            }
+
             thinking["items"] = std::move(thinking_items);
             body.push_back(std::move(thinking));
         }
@@ -1450,16 +1530,27 @@ namespace rouen::cards {
         }
 
         size_t activity_idx = 0;
+        std::string const tool_summary = summarize_tool_args(function_name, args_json);
         {
             std::lock_guard<std::mutex> const lock(active_tools_mutex_);
             LiveToolActivity act;
             act.tool_name = function_name;
-            act.summary = summarize_tool_args(function_name, args_json);
+            act.summary = tool_summary;
             act.start_time = std::chrono::steady_clock::now();
             act.is_running = true;
             active_tool_activities_.push_back(std::move(act));
             activity_idx = active_tool_activities_.size() - 1;
             layout_dirty_ = true;
+        }
+        {
+            std::shared_ptr<helpers::AIProgressMonitor> monitor;
+            {
+                std::lock_guard<std::mutex> const lock(progress_monitor_mutex_);
+                monitor = active_progress_monitor_;
+            }
+            if (monitor) {
+                monitor->record_tool_start(function_name, tool_summary);
+            }
         }
 
         if (debug_mode_) {
@@ -1486,14 +1577,26 @@ namespace rouen::cards {
             result = "Error: MCP service not available";
         }
 
+        int duration_ms = 0;
         {
             std::lock_guard<std::mutex> const lock(active_tools_mutex_);
             if (activity_idx < active_tool_activities_.size()) {
                 auto& act = active_tool_activities_[activity_idx];
                 act.is_running = false;
                 act.duration_ms = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - act.start_time).count());
+                duration_ms = act.duration_ms;
             }
             layout_dirty_ = true;
+        }
+        {
+            std::shared_ptr<helpers::AIProgressMonitor> monitor;
+            {
+                std::lock_guard<std::mutex> const lock(progress_monitor_mutex_);
+                monitor = active_progress_monitor_;
+            }
+            if (monitor) {
+                monitor->record_tool_end(function_name, duration_ms);
+            }
         }
 
         if (debug_mode_) {
@@ -1855,6 +1958,15 @@ namespace rouen::cards {
                 std::lock_guard<std::mutex> const lock(active_tools_mutex_);
                 active_tool_activities_.clear();
             }
+            {
+                std::lock_guard<std::mutex> const lock(progress_monitor_mutex_);
+                if (active_progress_monitor_) {
+                    active_progress_monitor_->stop();
+                    active_progress_monitor_.reset();
+                }
+                latest_progress_assessment_.reset();
+                progress_assessment_history_.clear();
+            }
             
             // Determine model and search mode before launching the thread (thread-safe capture)
             std::string model_name = current_llm_settings_.model_name;
@@ -1867,10 +1979,61 @@ namespace rouen::cards {
             
             // Launch response generation asynchronously to prevent UI blocking
             std::thread([this, function_schemas, message, model_name, search_mode_str]() {
+                std::shared_ptr<helpers::AIProgressMonitor> monitor;
+                struct MonitorCleanupGuard {
+                    ai_chat* self;
+                    std::shared_ptr<helpers::AIProgressMonitor>& mon;
+                    ~MonitorCleanupGuard() {
+                        if (mon) {
+                            mon->stop();
+                        }
+                        std::lock_guard<std::mutex> const lock(self->progress_monitor_mutex_);
+                        if (self->active_progress_monitor_ == mon) {
+                            self->active_progress_monitor_.reset();
+                        }
+                    }
+                } cleanup_guard{this, monitor};
+
                 try {
-                    auto local_llm_opt = helpers::LLMConfig::create_llm_instance();
+                    auto& active_persona = helpers::PersonaManager::instance().get_active_persona();
                     auto target_config = helpers::LLMConfig::get_current_config();
                     std::string const active_model_name = target_config.model_name;
+
+                    helpers::AIProgressMonitor::Options mon_opts;
+                    mon_opts.channel_name = "ai_chat";
+                    mon_opts.active_persona_name = active_persona.name;
+                    mon_opts.active_model_name = active_model_name;
+                    mon_opts.user_request = message;
+                    mon_opts.on_progress = [this](const helpers::ProgressAssessment& assessment) {
+                        {
+                            std::lock_guard<std::mutex> const lock(progress_monitor_mutex_);
+                            latest_progress_assessment_ = assessment;
+                            progress_assessment_history_.push_back(assessment);
+                        }
+                        if (debug_mode_) {
+                            std::lock_guard<std::mutex> const lock(chat_history_mutex_);
+                            chat_history_.emplace_back("debug", helpers::format_progress_message_for_channel(assessment, "ai_chat"));
+                            message_cache_.emplace_back();
+                        }
+                        layout_dirty_ = true;
+                        scroll_to_bottom_.store(true);
+                    };
+                    mon_opts.on_error_or_timeout = [this](const helpers::ErrorTransmissionReport& report) {
+                        std::lock_guard<std::mutex> const lock(chat_history_mutex_);
+                        chat_history_.emplace_back("assistant", report.formatted_channel_message);
+                        message_cache_.emplace_back();
+                        layout_dirty_ = true;
+                        scroll_to_bottom_.store(true);
+                    };
+
+                    monitor = std::make_shared<helpers::AIProgressMonitor>(std::move(mon_opts));
+                    {
+                        std::lock_guard<std::mutex> const lock(progress_monitor_mutex_);
+                        active_progress_monitor_ = monitor;
+                    }
+                    monitor->start();
+
+                    auto local_llm_opt = helpers::LLMConfig::create_llm_instance();
                     fallback_active_.store(false);
                     serving_model_name_ = active_model_name;
                     if (!local_llm_opt) {
@@ -1888,7 +2051,6 @@ namespace rouen::cards {
                     local_llm.add_instructions(time_instr);
 
                     // Set system instructions based on persona and its allowed MCPs
-                    auto& active_persona = helpers::PersonaManager::instance().get_active_persona();
                     local_llm.set_thinking_level(active_persona.get_effective_thinking_level());
                     local_llm.add_instructions(active_persona.system_prompt);
                     
@@ -1974,9 +2136,12 @@ namespace rouen::cards {
                                     }
                                     return response;
                                 },
-                                [this](const std::string& func_name, const std::string& func_args_json) -> std::string {
+                                [this, monitor](const std::string& func_name, const std::string& func_args_json) -> std::string {
                                     std::string res = execute_function_with_debug(func_name, func_args_json, 1);
-                                    internal_turn_count_.fetch_add(1, std::memory_order_relaxed);
+                                    uint32_t const turns = internal_turn_count_.fetch_add(1, std::memory_order_relaxed) + 1;
+                                    if (monitor) {
+                                        monitor->record_turn_completed(turns);
+                                    }
                                     return res;
                                 },
                                 "user", active_model_name, search_mode_str, active_persona.temperature, &conversation_for_llm, &function_schemas,
@@ -2009,6 +2174,9 @@ namespace rouen::cards {
                                     fallback_llm.add_instructions(active_persona.system_prompt);
                                     if (!modular_instr.empty()) fallback_llm.add_instructions(modular_instr);
                                     if (!ws_rules.empty()) fallback_llm.add_instructions(ws_rules);
+                                    if (monitor) {
+                                        monitor->set_active_model(fb_settings.model_name);
+                                    }
 
                                     chat_completion = std::visit([&](auto& adapter_ptr) -> ignacionr::ChatCompletion {
                                         return adapter_ptr->sendMessageWithFunctionCalling(
@@ -2019,9 +2187,12 @@ namespace rouen::cards {
                                                 }
                                                 return fetcher->post(url, body, header_setter);
                                             },
-                                            [this](const std::string& func_name, const std::string& func_args_json) -> std::string {
+                                            [this, monitor](const std::string& func_name, const std::string& func_args_json) -> std::string {
                                                 std::string res = execute_function_with_debug(func_name, func_args_json, 1);
-                                                internal_turn_count_.fetch_add(1, std::memory_order_relaxed);
+                                                uint32_t const turns = internal_turn_count_.fetch_add(1, std::memory_order_relaxed) + 1;
+                                                if (monitor) {
+                                                    monitor->record_turn_completed(turns);
+                                                }
                                                 return res;
                                             },
                                             "user", fb_settings.model_name, search_mode_str, active_persona.temperature, &conversation_for_llm, &function_schemas,
@@ -2048,8 +2219,15 @@ namespace rouen::cards {
                         }
                     }
                     
-                    // Process the response
-                    if (!chat_completion.choices.empty()) {
+                    // Process the response (with guaranteed retransmission of cancellation or empty replies)
+                    if (cancel_execution_.load()) {
+                        if (monitor) {
+                            monitor->notify_cancelled("Execution cancelled by user.");
+                        }
+                    } else if (!chat_completion.choices.empty() && !chat_completion.choices[0].message.content.empty()) {
+                        if (monitor) {
+                            monitor->mark_completed();
+                        }
                         const auto& response = chat_completion.choices[0].message.content;
                         
                         // Add AI response to history with mutex protection
@@ -2060,16 +2238,30 @@ namespace rouen::cards {
                             layout_dirty_ = true;
                         }
                         maybe_speak_reply(response);
+                    } else {
+                        if (monitor) {
+                            monitor->notify_error_or_timeout("Empty response returned by LLM provider", helpers::ExecutionFailureKind::EmptyResponse);
+                        } else {
+                            std::lock_guard<std::mutex> const lock(chat_history_mutex_);
+                            chat_history_.emplace_back("assistant", "⚠️ [Empty Response] LLM provider returned no content.");
+                            message_cache_.emplace_back();
+                            layout_dirty_ = true;
+                        }
                     }
                     
                 } catch (const std::exception& e) {
-                    // Add error message to chat history with mutex protection
-                    std::string const error_msg = "Error: " + std::string(e.what());
-                    {
+                    if (monitor) {
+                        monitor->notify_error_or_timeout(e.what());
+                    } else {
+                        std::string const error_msg = "Error: " + std::string(e.what());
                         std::lock_guard<std::mutex> const lock(chat_history_mutex_);
                         chat_history_.emplace_back("assistant", error_msg);
                         message_cache_.emplace_back();
                         layout_dirty_ = true;
+                    }
+                } catch (...) {
+                    if (monitor) {
+                        monitor->notify_error_or_timeout("Unknown exception occurred", helpers::ExecutionFailureKind::UnhandledException);
                     }
                 }
                 
@@ -2169,10 +2361,55 @@ namespace rouen::cards {
             
             // Start async request with proper memory management
             pending_response_ = std::make_optional(std::async(std::launch::async, [this, context = std::move(async_context)]() {
+                std::shared_ptr<helpers::AIProgressMonitor> monitor;
+                struct MonitorCleanupGuard {
+                    ai_chat* self;
+                    std::shared_ptr<helpers::AIProgressMonitor>& mon;
+                    ~MonitorCleanupGuard() {
+                        if (mon) {
+                            mon->stop();
+                        }
+                        std::lock_guard<std::mutex> const lock(self->progress_monitor_mutex_);
+                        if (self->active_progress_monitor_ == mon) {
+                            self->active_progress_monitor_.reset();
+                        }
+                    }
+                } cleanup_guard{this, monitor};
+
                 try {
                     if (!context || !context->fetcher) {
                         throw std::runtime_error("Invalid async context");
                     }
+
+                    helpers::AIProgressMonitor::Options mon_opts;
+                    mon_opts.channel_name = "ai_chat";
+                    mon_opts.active_persona_name = helpers::PersonaManager::instance().get_active_persona().name;
+                    mon_opts.active_model_name = context->llm_settings.model_name;
+                    mon_opts.user_request = context->user_message;
+                    mon_opts.recent_conversation = context->conversation_snapshot;
+                    mon_opts.on_progress = [this](const helpers::ProgressAssessment& assessment) {
+                        {
+                            std::lock_guard<std::mutex> const lock(progress_monitor_mutex_);
+                            latest_progress_assessment_ = assessment;
+                            progress_assessment_history_.push_back(assessment);
+                        }
+                        layout_dirty_ = true;
+                        scroll_to_bottom_.store(true);
+                    };
+                    mon_opts.on_error_or_timeout = [this](const helpers::ErrorTransmissionReport& report) {
+                        std::lock_guard<std::mutex> const lock(chat_history_mutex_);
+                        chat_history_.emplace_back("assistant", report.formatted_channel_message);
+                        message_cache_.emplace_back();
+                        layout_dirty_ = true;
+                        scroll_to_bottom_.store(true);
+                    };
+
+                    monitor = std::make_shared<helpers::AIProgressMonitor>(std::move(mon_opts));
+                    {
+                        std::lock_guard<std::mutex> const lock(progress_monitor_mutex_);
+                        active_progress_monitor_ = monitor;
+                    }
+                    monitor->start();
                     
                     // Determine search mode (only for Grok) using copied settings
                     std::string search_mode_str;
@@ -2205,46 +2442,39 @@ namespace rouen::cards {
                     total_queries_++;
                     
                     // Extract message content safely with bounds checking
-                    std::string reply;
                     if (!response.choices.empty() && !response.choices[0].message.content.empty()) {
-                        reply = response.choices[0].message.content; // Copy construct
-                    } else {
-                        reply = "Error: Empty response received";
+                        if (monitor) {
+                            monitor->mark_completed();
+                        }
+                        std::string reply = response.choices[0].message.content;
+                        const std::string reply_for_tts = reply;
+                        {
+                            std::lock_guard<std::mutex> const lock(chat_history_mutex_);
+                            chat_history_.emplace_back("assistant", std::move(reply));
+                            message_cache_.emplace_back();
+                            layout_dirty_ = true;
+                        }
+                        maybe_speak_reply(reply_for_tts);
+                    } else if (monitor) {
+                        monitor->notify_error_or_timeout("Empty response received", helpers::ExecutionFailureKind::EmptyResponse);
                     }
-                    const std::string reply_for_tts = reply;
-                    
-                    // Safely add to chat history using thread-safe operations
-                    // Note: We need to be careful about concurrent access to chat_history_
-                    // For now, we rely on the fact that only one async operation runs at a time
-                    // due to waiting_for_response_ gate, but we should add proper synchronization
-                    {
-                        std::lock_guard<std::mutex> const lock(chat_history_mutex_);
-                        chat_history_.emplace_back("assistant", std::move(reply));
-                        message_cache_.emplace_back();
-                        layout_dirty_ = true;
-                    }
-                    maybe_speak_reply(reply_for_tts);
                     
                 } catch (const std::bad_alloc&) {
-                    std::lock_guard<std::mutex> const lock(chat_history_mutex_);
-                    chat_history_.emplace_back("assistant", "Memory allocation error");
-                    message_cache_.emplace_back();
-                    layout_dirty_ = true;
+                    if (monitor) {
+                        monitor->notify_error_or_timeout("Memory allocation error");
+                    }
                 } catch (const std::runtime_error& e) {
-                    std::lock_guard<std::mutex> const lock(chat_history_mutex_);
-                    chat_history_.emplace_back("assistant", std::string("Runtime error: ") + e.what());
-                    message_cache_.emplace_back();
-                    layout_dirty_ = true;
+                    if (monitor) {
+                        monitor->notify_error_or_timeout(e.what());
+                    }
                 } catch (const std::exception& e) {
-                    std::lock_guard<std::mutex> const lock(chat_history_mutex_);
-                    chat_history_.emplace_back("assistant", std::string("Error [") + typeid(e).name() + "]: " + e.what());
-                    message_cache_.emplace_back();
-                    layout_dirty_ = true;
+                    if (monitor) {
+                        monitor->notify_error_or_timeout(std::string("Error [") + typeid(e).name() + "]: " + e.what());
+                    }
                 } catch (...) {
-                    std::lock_guard<std::mutex> const lock(chat_history_mutex_);
-                    chat_history_.emplace_back("assistant", "Unknown error occurred");
-                    message_cache_.emplace_back();
-                    layout_dirty_ = true;
+                    if (monitor) {
+                        monitor->notify_error_or_timeout("Unknown error occurred", helpers::ExecutionFailureKind::UnhandledException);
+                    }
                 }
                 
                 waiting_for_response_.store(false);

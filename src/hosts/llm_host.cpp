@@ -118,6 +118,105 @@ LLMHost::LLMSettings LLMHost::get_current_config(const std::string& config_name)
     return settings;
 }
 
+LLMHost::LLMSettings LLMHost::get_progress_monitor_config(const std::string& preferred_config_name) {
+    std::string target_name = preferred_config_name;
+    if (target_name.empty()) {
+        const auto& monitor_persona = rouen::helpers::PersonaManager::instance().get_progress_monitor_persona_config();
+        target_name = monitor_persona.llm_config_name;
+    }
+
+    // Fast, low-cost tier priority order
+    const std::vector<std::string> fast_candidates = {
+        target_name,
+        "Gemini Flash Lite",
+        "Gemini 3.8 Flash",
+        "Gemini Flash",
+        "Grok Default",
+        "Local MLX",
+        "OpenAI GPT-4"
+    };
+
+    for (const auto& candidate : fast_candidates) {
+        if (candidate.empty()) continue;
+        auto cfg = get_current_config(candidate);
+        if (cfg.is_configured && (!cfg.api_key.empty() || cfg.provider == Provider::CUSTOM)) {
+            if (cfg.thinking_level.empty() || cfg.thinking_level == "high") {
+                cfg.thinking_level = "minimal";
+            }
+            return cfg;
+        }
+    }
+
+    // Fallback to default config even if unconfigured so model_name is always populated
+    auto fallback = get_current_config(target_name.empty() ? "Gemini Flash Lite" : target_name);
+    if (fallback.thinking_level.empty()) {
+        fallback.thinking_level = "minimal";
+    }
+    return fallback;
+}
+
+std::optional<LLMHost::LLMInstance> LLMHost::create_progress_monitor_llm_instance(const std::string& preferred_config_name) {
+    auto settings = get_progress_monitor_config(preferred_config_name);
+    if (settings.api_key.empty() && settings.provider != Provider::CUSTOM) {
+        return std::nullopt;
+    }
+    auto inst = create_llm_instance(settings.config_name);
+    if (inst) {
+        inst->set_thinking_level("minimal");
+    }
+    return inst;
+}
+
+std::string LLMHost::evaluate_progress_monitor(
+    const std::string& system_prompt,
+    const std::string& user_prompt,
+    const std::string& monitor_persona_name
+) {
+    try {
+        const auto& pm = rouen::helpers::PersonaManager::instance();
+        const rouen::helpers::Persona* monitor_persona = nullptr;
+        if (!monitor_persona_name.empty()) {
+            monitor_persona = pm.get_persona_by_name(monitor_persona_name);
+        }
+        if (!monitor_persona) {
+            monitor_persona = &pm.get_progress_monitor_persona_config();
+        }
+
+        auto settings = get_progress_monitor_config(monitor_persona->llm_config_name);
+        auto llm_opt = create_progress_monitor_llm_instance(monitor_persona->llm_config_name);
+        if (!llm_opt) {
+            return "";
+        }
+
+        const std::string effective_sys_prompt = !system_prompt.empty() ? system_prompt : monitor_persona->system_prompt;
+        llm_opt->set_thinking_level(monitor_persona->get_effective_thinking_level());
+        llm_opt->add_instructions(effective_sys_prompt, "system");
+
+        http::fetch fast_fetcher(12);
+        fast_fetcher.set_max_retries(0);
+
+        auto completion = llm_opt->sendMessage(
+            user_prompt,
+            [&fast_fetcher](const std::string& url, const std::string& body, auto hdr) {
+                return fast_fetcher.post(url, body, hdr);
+            },
+            "user",
+            settings.model_name,
+            "",
+            monitor_persona->temperature,
+            nullptr,
+            monitor_persona->get_effective_thinking_level()
+        );
+
+        if (!completion.choices.empty() && !completion.choices[0].message.content.empty()) {
+            return completion.choices[0].message.content;
+        }
+    } catch (const std::exception& e) {
+        LOG_COMPONENT("LLMHost", LOG_LEVEL_WARN, std::string("Progress monitor LLM evaluation failed: ") + e.what());
+    }
+    return "";
+}
+
 std::optional<LLMHost::LLMInstance> LLMHost::create_llm_instance(const std::string& config_name) {
     auto settings = get_current_config(config_name);
     
@@ -240,6 +339,16 @@ LLMConfigManager::LLMConfigManager() {
     registrar::add<std::function<bool(std::string_view)>>("llm_config_merge", std::make_shared<std::function<bool(std::string_view)>>([this](std::string_view json_content) {
         return this->merge_from_json(json_content);
     }));
+    try {
+        registrar::add<std::function<std::string(const std::string&, const std::string&, const std::string&)>>(
+            "ai_progress_monitor_eval",
+            std::make_shared<std::function<std::string(const std::string&, const std::string&, const std::string&)>>(
+                [](const std::string& sys_prompt, const std::string& usr_prompt, const std::string& persona_name) {
+                    return LLMHost::evaluate_progress_monitor(sys_prompt, usr_prompt, persona_name);
+                }
+            )
+        );
+    } catch (...) {}
 
     auto config_dir = rouen::platform::get_user_config_directory();
     config_dir /= "llm_configs.json";

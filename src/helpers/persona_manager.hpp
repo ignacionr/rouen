@@ -65,12 +65,14 @@ namespace rouen::helpers {
 
     struct PersonaSaveModel {
         size_t active_index{0};
+        std::string progress_monitor_persona{"Progress Monitor"};
         std::vector<Persona> personas;
 
         struct glaze {
             using T = PersonaSaveModel;
             static constexpr auto value = glz::object(
                 "active_index", &T::active_index,
+                "progress_monitor_persona", &T::progress_monitor_persona,
                 "personas", &T::personas
             );
         };
@@ -79,12 +81,14 @@ namespace rouen::helpers {
     struct PersonaActiveMeta {
         std::string active_persona;
         size_t active_index{0};
+        std::string progress_monitor_persona{"Progress Monitor"};
 
         struct glaze {
             using T = PersonaActiveMeta;
             static constexpr auto value = glz::object(
                 "active_persona", &T::active_persona,
-                "active_index", &T::active_index
+                "active_index", &T::active_index,
+                "progress_monitor_persona", &T::progress_monitor_persona
             );
         };
     };
@@ -213,6 +217,35 @@ namespace rouen::helpers {
             return slug.empty() ? "persona" : slug;
         }
 
+        static Persona create_default_progress_monitor_persona() {
+            Persona p{};
+            p.name = "Progress Monitor";
+            p.description = "Fast, lightweight observer persona that summarizes in-flight task progress and estimates remaining completion time.";
+            p.allowed_mcps = {};
+            p.system_prompt =
+                "You are the Rouen AI Progress Monitor. Your sole responsibility is to inspect an in-flight user request, "
+                "recent conversation context, and live execution telemetry (elapsed seconds, completed internal turns, "
+                "active and finished tool or persona calls) and produce a concise progress update with an approximate remaining duration.\n\n"
+                "Respond ONLY with a valid JSON object matching this exact schema:\n"
+                "{\n"
+                "  \"summary\": \"<1-2 sentence user-friendly summary of current progress and what is happening right now>\",\n"
+                "  \"current_activity\": \"<short label for current step or tool>\",\n"
+                "  \"estimated_remaining_seconds\": <integer approximate seconds remaining until completion, or -1 if unknown>,\n"
+                "  \"confidence\": \"<low|medium|high>\"\n"
+                "}";
+            p.llm_config_name = "Gemini Flash Lite";
+            p.enable_search = false;
+            p.allowed_personas = {};
+            p.temperature = 0.1f;
+            p.thinking_level = "minimal";
+            p.max_tool_iterations = 0;
+            p.max_output_tokens = 512;
+            p.context_compaction_strategy = "none";
+            p.max_context_turns = 10;
+            p.preserve_recent_turns = 6;
+            return p;
+        }
+
         void set_sync_hook(sync_hook_t hook) {
             sync_hook_ = std::move(hook);
         }
@@ -231,6 +264,39 @@ namespace rouen::helpers {
             }
             static Persona fallback{"Default Assistant", "Fallback persona", {"terminal", "editor", "deck", "adaptive_card", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro", "notes", "contacts"}, "You are a helpful assistant.", "Default", false, {}, 0.7f, "high", 10, 8192, "summarize", 30, 10};
             return fallback;
+        }
+
+        [[nodiscard]] const std::string& get_progress_monitor_persona() const noexcept {
+            return progress_monitor_persona_;
+        }
+
+        [[nodiscard]] const std::string& get_progress_monitor_persona_name() const noexcept {
+            return progress_monitor_persona_;
+        }
+
+        void set_progress_monitor_persona(std::string_view name) {
+            if (name.empty()) {
+                progress_monitor_persona_ = "Progress Monitor";
+            } else if (const auto* existing = get_persona_by_name(name)) {
+                progress_monitor_persona_ = existing->name;
+            } else {
+                progress_monitor_persona_.assign(name);
+            }
+            save_personas();
+            sync_active_persona();
+        }
+
+        [[nodiscard]] const Persona& get_progress_monitor_persona_config() const {
+            if (!progress_monitor_persona_.empty()) {
+                if (const auto* p = get_persona_by_name(progress_monitor_persona_)) {
+                    return *p;
+                }
+            }
+            if (const auto* default_pm = get_persona_by_name("Progress Monitor")) {
+                return *default_pm;
+            }
+            static const Persona builtin_pm = create_default_progress_monitor_persona();
+            return builtin_pm;
         }
 
         void select_persona(size_t index) {
@@ -297,6 +363,10 @@ namespace rouen::helpers {
                     old_p.name = old_name;
                     sync_persona_item(old_p, true /* is_deleted */);
 
+                    if (progress_monitor_persona_ == old_name) {
+                        progress_monitor_persona_ = new_name;
+                    }
+
                     for (auto& p : personas_) {
                         for (auto& ref : p.allowed_personas) {
                             if (ref == old_name) {
@@ -326,6 +396,10 @@ namespace rouen::helpers {
                         std::remove(p.allowed_personas.begin(), p.allowed_personas.end(), name_to_remove),
                         p.allowed_personas.end()
                     );
+                }
+
+                if (progress_monitor_persona_ == name_to_remove) {
+                    progress_monitor_persona_ = "Progress Monitor";
                 }
 
                 if (active_persona_index_ >= personas_.size()) {
@@ -361,6 +435,7 @@ namespace rouen::helpers {
                     meta.active_persona = personas_[active_persona_index_].name;
                     meta.active_index = active_persona_index_;
                 }
+                meta.progress_monitor_persona = progress_monitor_persona_.empty() ? "Progress Monitor" : progress_monitor_persona_;
                 std::string meta_json = glz::write<glz::opts{.prettify = true}>(meta).value_or("");
                 if (!meta_json.empty()) {
                     std::ofstream meta_file(dir / "active.json");
@@ -403,6 +478,7 @@ namespace rouen::helpers {
             try {
                 std::vector<Persona> imported_personas;
                 std::string active_persona_name;
+                std::string imported_monitor_persona;
 
                 for (const auto& entry : std::filesystem::directory_iterator(dir)) {
                     if (!entry.is_regular_file() || entry.path().extension() != ".json") {
@@ -416,6 +492,7 @@ namespace rouen::helpers {
                             PersonaActiveMeta meta{};
                             if (!glz::read<glz::opts{.error_on_unknown_keys = false}>(meta, meta_content)) {
                                 active_persona_name = meta.active_persona;
+                                imported_monitor_persona = meta.progress_monitor_persona;
                             }
                         }
                         continue;
@@ -453,6 +530,7 @@ namespace rouen::helpers {
                            name == "Code & Git Architect" || 
                            name == "Adaptive Card Architect" || 
                            name == "Persona Architect" || 
+                           name == "Progress Monitor" || 
                            name == "Terminal Specialist" || 
                            name == "Editor Specialist" || 
                            name == "Git & GitHub Specialist";
@@ -495,6 +573,9 @@ namespace rouen::helpers {
                 if (active_persona_index_ >= personas_.size()) {
                     active_persona_index_ = 0;
                 }
+                if (!imported_monitor_persona.empty()) {
+                    progress_monitor_persona_ = imported_monitor_persona;
+                }
 
                 sanitize_and_migrate_personas();
                 export_to_directory(dir);
@@ -533,6 +614,9 @@ namespace rouen::helpers {
                 fallback.max_output_tokens = 16384;
                 personas_.push_back(std::move(fallback));
             }
+            if (!get_persona_by_name("Progress Monitor")) {
+                personas_.push_back(create_default_progress_monitor_persona());
+            }
         }
 
         void load_personas() {
@@ -545,6 +629,7 @@ namespace rouen::helpers {
             try {
                 auto path = rouen::platform::get_user_config_directory() / "personas.json";
                 if (!std::filesystem::exists(path)) {
+                    sanitize_and_migrate_personas();
                     save_personas(); // Save the defaults
                     return;
                 }
@@ -572,6 +657,12 @@ namespace rouen::helpers {
                     active_persona_index_ = 0;
                 }
 
+                if (!model.progress_monitor_persona.empty()) {
+                    progress_monitor_persona_ = model.progress_monitor_persona;
+                } else {
+                    progress_monitor_persona_ = "Progress Monitor";
+                }
+
                 sanitize_and_migrate_personas();
             } 
             catch (const std::exception& e) {
@@ -584,6 +675,16 @@ namespace rouen::helpers {
 
             // 1. Load authoritative built-in personas from resources/personas/
             std::vector<Persona> default_personas = load_default_personas_from_resources();
+            bool has_default_pm = false;
+            for (const auto& dp : default_personas) {
+                if (dp.name == "Progress Monitor") {
+                    has_default_pm = true;
+                    break;
+                }
+            }
+            if (!has_default_pm) {
+                default_personas.push_back(create_default_progress_monitor_persona());
+            }
 
             // 2. Ensure all built-in personas exist and upgrade their specialization/prompts from resources
             for (const auto& dp : default_personas) {
@@ -648,12 +749,18 @@ namespace rouen::helpers {
 
             // 3. Sanitize bounds and legacy model names on all personas (including custom ones)
             for (auto& p : personas_) {
-                if (p.max_tool_iterations <= 0) {
+                bool const is_progress_monitor = (p.name == "Progress Monitor");
+                if (is_progress_monitor) {
+                    if (p.max_tool_iterations < 0) {
+                        p.max_tool_iterations = 0;
+                        modified = true;
+                    }
+                } else if (p.max_tool_iterations <= 0) {
                     p.max_tool_iterations = 10;
                     modified = true;
                 }
                 if (p.max_output_tokens <= 0) {
-                    p.max_output_tokens = 8192;
+                    p.max_output_tokens = is_progress_monitor ? 512 : 8192;
                     modified = true;
                 }
                 if (p.max_context_turns <= 0) {
@@ -669,9 +776,14 @@ namespace rouen::helpers {
                     modified = true;
                 }
                 if (p.llm_config_name == "Local MLX" || p.llm_config_name == "Default" || p.llm_config_name.empty()) {
-                    p.llm_config_name = "Gemini 3.8 Flash";
+                    p.llm_config_name = is_progress_monitor ? "Gemini Flash Lite" : "Gemini 3.8 Flash";
                     modified = true;
                 }
+            }
+
+            if (progress_monitor_persona_.empty() || !get_persona_by_name(progress_monitor_persona_)) {
+                progress_monitor_persona_ = "Progress Monitor";
+                modified = true;
             }
 
             if (modified) {
@@ -708,6 +820,7 @@ namespace rouen::helpers {
                 meta.active_persona = personas_[active_persona_index_].name;
                 meta.active_index = active_persona_index_;
             }
+            meta.progress_monitor_persona = progress_monitor_persona_.empty() ? "Progress Monitor" : progress_monitor_persona_;
             std::string meta_json = glz::write<glz::opts{.prettify = true}>(meta).value_or("");
             if (!meta_json.empty()) {
                 notify_sync("personas", "active.json", meta_json, false);
@@ -720,6 +833,7 @@ namespace rouen::helpers {
                 
                 PersonaSaveModel model;
                 model.active_index = active_persona_index_;
+                model.progress_monitor_persona = progress_monitor_persona_.empty() ? "Progress Monitor" : progress_monitor_persona_;
                 model.personas = personas_;
 
                 std::string buffer = glz::write<glz::opts{.prettify = true}>(model).value_or("");
@@ -738,6 +852,7 @@ namespace rouen::helpers {
 
         std::vector<Persona> personas_;
         size_t active_persona_index_{0};
+        std::string progress_monitor_persona_{"Progress Monitor"};
         mutable sync_hook_t sync_hook_;
         mutable bool is_sync_suppressed_{false};
     };

@@ -4,6 +4,7 @@
 #include "../../helpers/llm_config.hpp"
 #include "../../helpers/fetch.hpp"
 #include "../../helpers/mcp_service.hpp"
+#include "../../helpers/ai_progress_monitor.hpp"
 #include <string>
 #include <deque>
 #include <future>
@@ -41,6 +42,11 @@ namespace rouen::cards {
         }
         [[nodiscard]] size_t get_compacted_turns_count() const noexcept {
             return compacted_turns_count_;
+        }
+
+        [[nodiscard]] std::optional<helpers::ProgressAssessment> get_latest_progress_assessment() const {
+            std::lock_guard<std::mutex> const lock(progress_monitor_mutex_);
+            return latest_progress_assessment_;
         }
 
         struct LiveToolActivity {
@@ -104,6 +110,10 @@ namespace rouen::cards {
         std::atomic<bool> cancel_execution_{false};
         mutable std::mutex active_tools_mutex_;
         std::deque<LiveToolActivity> active_tool_activities_;
+        mutable std::mutex progress_monitor_mutex_;
+        std::shared_ptr<helpers::AIProgressMonitor> active_progress_monitor_{nullptr};
+        std::optional<helpers::ProgressAssessment> latest_progress_assessment_{std::nullopt};
+        std::vector<helpers::ProgressAssessment> progress_assessment_history_{};
         mutable std::mutex chat_history_mutex_;
         std::string context_summary_{};
         size_t compacted_turns_count_{0};

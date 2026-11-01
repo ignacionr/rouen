@@ -576,6 +576,7 @@ target_sources(rouen_modules
     src/helpers/tag_manager.cppm
     src/helpers/theme_manager.cppm
     src/helpers/dynamic_library.cppm
+    src/helpers/ai_progress_monitor.cppm
 )
 
 target_sources(rouen_modules
@@ -588,6 +589,7 @@ target_sources(rouen_modules
     src/helpers/tag_manager.cpp
     src/helpers/theme_manager.cpp
     src/helpers/dynamic_library.cpp
+    src/helpers/ai_progress_monitor.cpp
 )
 
 target_include_directories(rouen_modules PUBLIC

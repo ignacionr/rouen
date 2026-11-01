@@ -142,6 +142,7 @@ target_sources(rouen_test_modules
     ../src/helpers/theme_manager.cppm
     ../src/helpers/dynamic_library.cppm
     ../src/helpers/filetype_handler.cppm
+    ../src/helpers/ai_progress_monitor.cppm
 )
 
 target_sources(rouen_test_modules
@@ -155,6 +156,7 @@ target_sources(rouen_test_modules
     ../src/helpers/theme_manager.cpp
     ../src/helpers/dynamic_library.cpp
     ../src/helpers/filetype_handler.cpp
+    ../src/helpers/ai_progress_monitor.cpp
 )
 
 target_include_directories(rouen_test_modules PUBLIC
@@ -588,6 +590,11 @@ endif()
 # Gemini Adapter Test
 add_gtest_http_executable(test_gemini_adapter test_gemini_adapter.cpp)
 target_sources(test_gemini_adapter PRIVATE ../src/hosts/llm_host.cpp)
+
+# AI Progress Monitor Test
+add_gtest_http_executable(test_ai_progress_monitor test_ai_progress_monitor.cpp)
+target_sources(test_ai_progress_monitor PRIVATE ../src/hosts/llm_host.cpp)
+
 
 # MCP Test
 add_executable(test_mcp test_mcp.cpp)

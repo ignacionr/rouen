@@ -58,8 +58,51 @@ telegram_host::telegram_host() {
 }
 
 telegram_host::~telegram_host() {
+    {
+        std::lock_guard<std::mutex> lock(active_monitors_mutex_);
+        for (auto& [cid, flag] : active_cancel_flags_) {
+            if (flag) flag->store(true);
+        }
+        for (auto& [cid, mon] : active_monitors_) {
+            if (mon) mon->stop();
+        }
+        active_monitors_.clear();
+        active_cancel_flags_.clear();
+    }
     stop_polling();
     unpublish_telegram_presence();
+}
+
+bool telegram_host::cancel_active_request(int64_t chat_id) {
+    std::shared_ptr<rouen::helpers::AIProgressMonitor> mon;
+    std::shared_ptr<std::atomic<bool>> flag;
+    {
+        std::lock_guard<std::mutex> lock(active_monitors_mutex_);
+        auto flag_it = active_cancel_flags_.find(chat_id);
+        if (flag_it != active_cancel_flags_.end()) {
+            flag = flag_it->second;
+            active_cancel_flags_.erase(flag_it);
+        }
+        auto mon_it = active_monitors_.find(chat_id);
+        if (mon_it != active_monitors_.end()) {
+            mon = mon_it->second;
+            active_monitors_.erase(mon_it);
+        }
+    }
+    if (flag) {
+        flag->store(true);
+    }
+    if (mon) {
+        mon->stop();
+        return true;
+    }
+    return flag != nullptr;
+}
+
+bool telegram_host::has_active_request(int64_t chat_id) const {
+    std::lock_guard<std::mutex> lock(active_monitors_mutex_);
+    auto it = active_monitors_.find(chat_id);
+    return it != active_monitors_.end() && it->second != nullptr;
 }
 
 void telegram_host::load_state() {
@@ -588,19 +631,38 @@ std::string run_ai_persona_completion(
     const rouen::helpers::Persona* target_persona,
     const std::string& incoming_text,
     const std::vector<std::pair<std::string, std::string>>& conversation_history,
-    int depth
+    int depth,
+    rouen::helpers::AIProgressMonitor* monitor = nullptr,
+    const std::shared_ptr<std::atomic<bool>>& cancel_flag = nullptr
 );
 
-std::string execute_function_with_mcp_and_persona(const std::string& function_name, const std::string& args_json, int depth) {
+std::string execute_function_with_mcp_and_persona(
+    const std::string& function_name,
+    const std::string& args_json,
+    int depth,
+    rouen::helpers::AIProgressMonitor* monitor = nullptr,
+    const std::shared_ptr<std::atomic<bool>>& cancel_flag = nullptr
+) {
     std::cout << "[TelegramHost] Executing tool/persona function: " << function_name << " args: " << args_json << " (depth " << depth << ")" << std::endl;
+    if (cancel_flag && cancel_flag->load()) {
+        return "Error: Request cancelled by user.";
+    }
     if (depth > 5) {
         return "Error: Maximum inter-persona communication depth exceeded.";
+    }
+
+    const auto tool_start_time = std::chrono::steady_clock::now();
+    if (monitor) {
+        monitor->record_tool_start(function_name, args_json);
     }
 
     if (function_name.starts_with("call_persona_")) {
         const auto* target_persona = find_persona_by_sanitized_name(function_name);
         if (!target_persona) {
             std::cerr << "[TelegramHost] Persona not found for function name: " << function_name << std::endl;
+            if (monitor) {
+                monitor->record_tool_end(function_name, 0);
+            }
             return "Error: Target persona not found.";
         }
 
@@ -625,19 +687,43 @@ std::string execute_function_with_mcp_and_persona(const std::string& function_na
             sub_msg = args_json;
         }
 
-        return run_ai_persona_completion(target_persona, sub_msg, {}, depth + 1);
+        std::string sub_res = run_ai_persona_completion(target_persona, sub_msg, {}, depth + 1, monitor, cancel_flag);
+        if (monitor) {
+            auto dur_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - tool_start_time
+            ).count();
+            monitor->record_tool_end(function_name, dur_ms);
+        }
+        return sub_res;
     }
 
     auto mcp = registrar::try_get<rouen::helpers::mcp_service>("mcp_service");
     if (mcp) {
         try {
             auto res = mcp->execute_function(function_name, args_json);
-            std::cout << "[TelegramHost] Tool result for " << function_name << ": " << (res.success ? res.result : ("Error: " + res.error_message)) << std::endl;
-            return res.success ? res.result : "Error: " + res.error_message;
+            std::string out_str = res.success ? res.result : ("Error: " + res.error_message);
+            std::cout << "[TelegramHost] Tool result for " << function_name << ": " << out_str << std::endl;
+            if (monitor) {
+                auto dur_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - tool_start_time
+                ).count();
+                monitor->record_tool_end(function_name, dur_ms);
+            }
+            return out_str;
         } catch (const std::exception& e) {
             std::cerr << "[TelegramHost] Tool exception for " << function_name << ": " << e.what() << std::endl;
-            return "Error executing function: " + std::string(e.what());
+            std::string err_str = "Error executing function: " + std::string(e.what());
+            if (monitor) {
+                auto dur_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - tool_start_time
+                ).count();
+                monitor->record_tool_end(function_name, dur_ms);
+            }
+            return err_str;
         }
+    }
+    if (monitor) {
+        monitor->record_tool_end(function_name, 0);
     }
     return "Error: MCP service not available";
 }
@@ -646,9 +732,14 @@ std::string run_ai_persona_completion(
     const rouen::helpers::Persona* target_persona,
     const std::string& incoming_text,
     const std::vector<std::pair<std::string, std::string>>& conversation_history,
-    int depth
+    int depth,
+    rouen::helpers::AIProgressMonitor* monitor,
+    const std::shared_ptr<std::atomic<bool>>& cancel_flag
 ) {
     if (!target_persona) return "";
+    if (cancel_flag && cancel_flag->load()) {
+        return "Error: Request cancelled by user.";
+    }
 
     std::cout << "[TelegramHost] Running AI persona completion for '" << target_persona->name << "' with LLM config '" << target_persona->llm_config_name << "' (depth " << depth << ")" << std::endl;
 
@@ -793,12 +884,18 @@ std::string run_ai_persona_completion(
     if (!is_local) primary_fetcher.set_max_retries(2);
     else primary_fetcher.set_max_retries(0);
 
-    auto do_primary_post = [&primary_fetcher](const std::string& url, const std::string& data, auto hdr) {
+    auto do_primary_post = [&primary_fetcher, monitor, cancel_flag](const std::string& url, const std::string& data, auto hdr) {
+        if (cancel_flag && cancel_flag->load()) {
+            throw std::runtime_error("Request cancelled by user");
+        }
+        if (monitor) {
+            monitor->record_turn_completed();
+        }
         return primary_fetcher.post(url, data, hdr);
     };
 
-    auto func_executor = [depth](const std::string& func_name, const std::string& func_args) -> std::string {
-        return execute_function_with_mcp_and_persona(func_name, func_args, depth);
+    auto func_executor = [depth, monitor, cancel_flag](const std::string& func_name, const std::string& func_args) -> std::string {
+        return execute_function_with_mcp_and_persona(func_name, func_args, depth, monitor, cancel_flag);
     };
 
     std::string search_mode;
@@ -896,8 +993,18 @@ void telegram_host::route_incoming_message(const telegram_message& msg) {
         });
 
         if (lower_cmd == "/clear" || lower_cmd == "-clear") {
+            cancel_active_request(msg.chat_id);
             clear_session_messages(msg.chat_id);
             send_telegram_message(msg.chat_id, "🧹 Chat context and conversation history have been cleared.");
+            return;
+        }
+
+        if (lower_cmd == "/cancel" || lower_cmd == "-cancel" || lower_cmd == "/stop" || lower_cmd == "-stop") {
+            if (cancel_active_request(msg.chat_id)) {
+                send_telegram_message(msg.chat_id, "🛑 Stopped the active AI request.");
+            } else {
+                send_telegram_message(msg.chat_id, "ℹ️ No active AI request is currently running in this chat.");
+            }
             return;
         }
 
@@ -905,6 +1012,7 @@ void telegram_host::route_incoming_message(const telegram_message& msg) {
             std::string help_msg =
                 "🤖 Available commands:\n"
                 "• /clear - Clear chat context and conversation history\n"
+                "• /stop or /cancel - Stop an active in-flight AI request\n"
                 "• /voice [on/off] - Toggle or control voice messages for AI responses (macOS only)\n"
                 "• /help - Show this help message";
             send_telegram_message(msg.chat_id, help_msg);
@@ -993,7 +1101,29 @@ void telegram_host::route_incoming_message(const telegram_message& msg) {
         int64_t chat_id = msg.chat_id;
         std::string incoming_text = msg.text;
 
-        std::thread([this, chat_id, incoming_text, persona_name]() {
+        // Cancel any previous in-flight request for this chat_id before starting a new one
+        cancel_active_request(chat_id);
+
+        auto cancel_flag = std::make_shared<std::atomic<bool>>(false);
+        {
+            std::lock_guard<std::mutex> lock(active_monitors_mutex_);
+            active_cancel_flags_[chat_id] = cancel_flag;
+        }
+
+        std::thread([this, chat_id, incoming_text, persona_name, cancel_flag]() {
+            std::shared_ptr<rouen::helpers::AIProgressMonitor> monitor;
+            auto cleanup_monitor = [this, chat_id, &monitor, cancel_flag]() {
+                if (monitor) {
+                    monitor->stop();
+                }
+                std::lock_guard<std::mutex> lock(active_monitors_mutex_);
+                auto flag_it = active_cancel_flags_.find(chat_id);
+                if (flag_it != active_cancel_flags_.end() && flag_it->second == cancel_flag) {
+                    active_cancel_flags_.erase(flag_it);
+                    active_monitors_.erase(chat_id);
+                }
+            };
+
             try {
                 const auto& personas = rouen::helpers::PersonaManager::instance().get_personas();
                 const rouen::helpers::Persona* target_persona = nullptr;
@@ -1007,7 +1137,11 @@ void telegram_host::route_incoming_message(const telegram_message& msg) {
                     target_persona = &personas[0];
                 }
 
-                if (!target_persona) return;
+                if (!target_persona) {
+                    cleanup_monitor();
+                    send_telegram_message(chat_id, "⚠️ Error: No AI persona is configured to handle this route.");
+                    return;
+                }
 
                 std::vector<std::pair<std::string, std::string>> raw_history;
                 std::string session_summary;
@@ -1025,6 +1159,38 @@ void telegram_host::route_incoming_message(const telegram_message& msg) {
                         session_summary = it->second.context_summary;
                     }
                 }
+
+                auto llm_cfg = rouen::hosts::LLMHost::get_current_config(target_persona->llm_config_name);
+                rouen::helpers::AIProgressMonitor::Options mon_opts;
+                mon_opts.channel_name = "telegram";
+                mon_opts.active_persona_name = target_persona->name;
+                mon_opts.active_model_name = llm_cfg.model_name.empty() ? target_persona->llm_config_name : llm_cfg.model_name;
+                mon_opts.user_request = incoming_text;
+                mon_opts.monitor_persona_name = rouen::helpers::PersonaManager::instance().get_progress_monitor_persona();
+                mon_opts.recent_conversation = raw_history;
+                mon_opts.on_progress = [this, chat_id, cancel_flag](const rouen::helpers::ProgressAssessment& assessment) {
+                    if (cancel_flag && cancel_flag->load()) return;
+                    std::string progress_text = rouen::helpers::format_progress_message_for_channel(assessment, "telegram");
+                    if (!progress_text.empty()) {
+                        send_telegram_message(chat_id, progress_text);
+                    }
+                };
+                mon_opts.on_error_or_timeout = [this, chat_id, cancel_flag](const rouen::helpers::ErrorTransmissionReport& report) {
+                    if (cancel_flag && cancel_flag->load() && report.is_cancelled) return;
+                    if (!report.formatted_channel_message.empty()) {
+                        send_telegram_message(chat_id, report.formatted_channel_message);
+                    }
+                };
+
+                monitor = std::make_shared<rouen::helpers::AIProgressMonitor>(std::move(mon_opts));
+                {
+                    std::lock_guard<std::mutex> lock(active_monitors_mutex_);
+                    if (cancel_flag->load()) {
+                        return;
+                    }
+                    active_monitors_[chat_id] = monitor;
+                }
+                monitor->start();
 
                 // Apply context compaction using persona configuration (or max 20 default)
                 helpers::Persona effective_persona = *target_persona;
@@ -1073,10 +1239,40 @@ void telegram_host::route_incoming_message(const telegram_message& msg) {
 
                 std::vector<std::pair<std::string, std::string>> conversation_history = std::move(compaction_result.compacted_conversation);
 
-                std::string reply = run_ai_persona_completion(target_persona, incoming_text, conversation_history, 0);
-                if (reply.empty()) {
-                    reply = "I processed your request, but no text response was returned. Please try again.";
+                std::string reply = run_ai_persona_completion(target_persona, incoming_text, conversation_history, 0, monitor.get(), cancel_flag);
+
+                if (cancel_flag && cancel_flag->load()) {
+                    if (monitor) {
+                        monitor->notify_cancelled();
+                    }
+                    cleanup_monitor();
+                    return;
                 }
+
+                if (reply.empty()) {
+                    if (monitor) {
+                        monitor->notify_error_or_timeout(
+                            "Empty response returned by LLM backend",
+                            rouen::helpers::ExecutionFailureKind::EmptyResponse
+                        );
+                    }
+                    cleanup_monitor();
+                    return;
+                }
+
+                if (reply.starts_with("Error executing request:") || reply.starts_with("Error: LLM instance could not be created")) {
+                    if (monitor) {
+                        monitor->notify_error_or_timeout(reply);
+                    }
+                    cleanup_monitor();
+                    return;
+                }
+
+                if (monitor) {
+                    monitor->mark_completed();
+                }
+                cleanup_monitor();
+
                 send_telegram_message(chat_id, reply);
 #if defined(__APPLE__)
                 if (is_voice_enabled(chat_id)) {
@@ -1085,7 +1281,20 @@ void telegram_host::route_incoming_message(const telegram_message& msg) {
 #endif
             } catch (const std::exception& ex) {
                 std::cerr << "[TelegramHost] Thread exception: " << ex.what() << std::endl;
-                send_telegram_message(chat_id, "Error executing request: " + std::string(ex.what()));
+                if (monitor) {
+                    monitor->notify_error_or_timeout(ex.what());
+                } else if (!cancel_flag || !cancel_flag->load()) {
+                    send_telegram_message(chat_id, "⚠️ Error executing request: " + std::string(ex.what()));
+                }
+                cleanup_monitor();
+            } catch (...) {
+                std::cerr << "[TelegramHost] Unknown thread exception" << std::endl;
+                if (monitor) {
+                    monitor->notify_error_or_timeout("Unknown internal error during Telegram AI persona execution");
+                } else if (!cancel_flag || !cancel_flag->load()) {
+                    send_telegram_message(chat_id, "⚠️ Unknown internal error during Telegram AI persona execution");
+                }
+                cleanup_monitor();
             }
         }).detach();
     }

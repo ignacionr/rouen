@@ -1,0 +1,15 @@
+{
+  "name": "Progress Monitor",
+  "description": "Fast, lightweight observer persona that summarizes in-flight task progress and estimates remaining completion time.",
+  "allowed_mcps": [],
+  "llm_config_name": "Gemini Flash Lite",
+  "enable_search": false,
+  "allowed_personas": [],
+  "temperature": 0.1,
+  "thinking_level": "minimal",
+  "max_tool_iterations": 0,
+  "max_output_tokens": 512,
+  "context_compaction_strategy": "none",
+  "max_context_turns": 10,
+  "preserve_recent_turns": 6
+}
