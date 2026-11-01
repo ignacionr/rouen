@@ -30,7 +30,9 @@
     <!-- Directory structure -->
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="APPLICATIONFOLDER" Name="Rouen">
-        <Directory Id="INSTALLFOLDER" Name="Rouen" />
+        <Directory Id="INSTALLFOLDER" Name="Rouen">
+          <Directory Id="PersonasFolder" Name="personas" />
+        </Directory>
       </Directory>
     </StandardDirectory>
     
@@ -48,6 +50,7 @@
       <ComponentRef Id="DesktopShortcut" />
       <ComponentRef Id="Dependencies" />
       <ComponentRef Id="Assets" />
+      <ComponentRef Id="PersonasAssets" />
     </Feature>
     
     <!-- Main executable component -->
@@ -70,6 +73,16 @@
         <File Id="DependenciesManifest" Source="$(var.SourceDir)\DEPENDENCIES.txt" />
         <File Id="License" Source="$(var.SourceDir)\LICENSE" />
         <File Id="ReadMe" Source="$(var.SourceDir)\README.md" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- Built-in Persona JSON and Markdown resources component -->
+    <DirectoryRef Id="PersonasFolder">
+      <Component Id="PersonasAssets" Guid="12345678-1234-1234-1234-123456789021">
+        <RegistryValue Root="HKCU" Key="Software\Rouen\PersonasAssets" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+        <RemoveFolder Id="RemovePersonasFolder" Directory="PersonasFolder" On="uninstall" />
+        <Files Include="$(var.SourceDir)\personas\*.json" />
+        <Files Include="$(var.SourceDir)\personas\*.md" />
       </Component>
     </DirectoryRef>
     

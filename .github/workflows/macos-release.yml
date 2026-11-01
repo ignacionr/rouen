@@ -456,6 +456,8 @@ jobs:
         declare -A asset_paths=(
           ["$workspace/img"]="img directory"
           ["$workspace/external/fonts"]="fonts directory"
+          ["$workspace/resources/personas"]="personas directory"
+          ["$workspace/resources/adaptive_cards"]="adaptive_cards directory"
         )
         
         for path in "${!asset_paths[@]}"; do

@@ -31,7 +31,9 @@
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="LocalAppDataFolder">
         <Directory Id="APPLICATIONFOLDER" Name="Rouen">
-          <Directory Id="INSTALLFOLDER" Name="Rouen" />
+          <Directory Id="INSTALLFOLDER" Name="Rouen">
+            <Directory Id="PersonasFolder" Name="personas" />
+          </Directory>
         </Directory>
       </Directory>
       <Directory Id="ProgramMenuFolder">
@@ -48,6 +50,7 @@
       <ComponentRef Id="Dependencies" />
       <ComponentRef Id="OptionalDependencies" />
       <ComponentRef Id="Assets" />
+      <ComponentRef Id="PersonasAssets" />
       <ComponentRef Id="RegistryCleanup" />
     </Feature>
     
@@ -108,6 +111,49 @@
         <File Id="DependenciesManifest" Source="$(var.SourceDir)\DEPENDENCIES.txt" />
         <File Id="License" Source="$(var.SourceDir)\LICENSE" />
         <File Id="ReadMe" Source="$(var.SourceDir)\README.md" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- Built-in Persona JSON and Markdown resources component -->
+    <DirectoryRef Id="PersonasFolder">
+      <Component Id="PersonasAssets" Guid="12345678-1234-1234-1234-123456789021">
+        <RegistryValue Root="HKCU" Key="Software\Rouen\PersonasAssets" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+        <RemoveFolder Id="RemovePersonasFolder" Directory="PersonasFolder" On="uninstall" />
+        <File Id="PersonaManifestJson" Source="$(var.SourceDir)\personas\manifest.json" />
+        <File Id="PersonaRouenAssistantJson" Source="$(var.SourceDir)\personas\rouen-assistant.json" />
+        <File Id="PersonaRouenAssistantMd" Source="$(var.SourceDir)\personas\rouen-assistant.md" />
+        <File Id="PersonaAutonomousEngineerJson" Source="$(var.SourceDir)\personas\autonomous-engineer.json" />
+        <File Id="PersonaAutonomousEngineerMd" Source="$(var.SourceDir)\personas\autonomous-engineer.md" />
+        <File Id="PersonaCodeGitArchitectJson" Source="$(var.SourceDir)\personas\code-git-architect.json" />
+        <File Id="PersonaCodeGitArchitectMd" Source="$(var.SourceDir)\personas\code-git-architect.md" />
+        <File Id="PersonaPersonalProductivityLeadJson" Source="$(var.SourceDir)\personas\personal-productivity-lead.json" />
+        <File Id="PersonaPersonalProductivityLeadMd" Source="$(var.SourceDir)\personas\personal-productivity-lead.md" />
+        <File Id="PersonaMediaKnowledgeDirectorJson" Source="$(var.SourceDir)\personas\media-knowledge-director.json" />
+        <File Id="PersonaMediaKnowledgeDirectorMd" Source="$(var.SourceDir)\personas\media-knowledge-director.md" />
+        <File Id="PersonaTerminalSpecialistJson" Source="$(var.SourceDir)\personas\terminal-specialist.json" />
+        <File Id="PersonaTerminalSpecialistMd" Source="$(var.SourceDir)\personas\terminal-specialist.md" />
+        <File Id="PersonaEditorSpecialistJson" Source="$(var.SourceDir)\personas\editor-specialist.json" />
+        <File Id="PersonaEditorSpecialistMd" Source="$(var.SourceDir)\personas\editor-specialist.md" />
+        <File Id="PersonaAdaptiveCardArchitectJson" Source="$(var.SourceDir)\personas\adaptive-card-architect.json" />
+        <File Id="PersonaAdaptiveCardArchitectMd" Source="$(var.SourceDir)\personas\adaptive-card-architect.md" />
+        <File Id="PersonaGitGithubSpecialistJson" Source="$(var.SourceDir)\personas\git-github-specialist.json" />
+        <File Id="PersonaGitGithubSpecialistMd" Source="$(var.SourceDir)\personas\git-github-specialist.md" />
+        <File Id="PersonaArchiverOfAllDataJson" Source="$(var.SourceDir)\personas\archiver-of-all-data.json" />
+        <File Id="PersonaArchiverOfAllDataMd" Source="$(var.SourceDir)\personas\archiver-of-all-data.md" />
+        <File Id="PersonaDirectoryAddressBookJson" Source="$(var.SourceDir)\personas\directory-address-book.json" />
+        <File Id="PersonaDirectoryAddressBookMd" Source="$(var.SourceDir)\personas\directory-address-book.md" />
+        <File Id="PersonaScheduleTimekeeperJson" Source="$(var.SourceDir)\personas\schedule-timekeeper.json" />
+        <File Id="PersonaScheduleTimekeeperMd" Source="$(var.SourceDir)\personas\schedule-timekeeper.md" />
+        <File Id="PersonaMediaStreamDirectorJson" Source="$(var.SourceDir)\personas\media-stream-director.json" />
+        <File Id="PersonaMediaStreamDirectorMd" Source="$(var.SourceDir)\personas\media-stream-director.md" />
+        <File Id="PersonaFinancialAnalystJson" Source="$(var.SourceDir)\personas\financial-analyst.json" />
+        <File Id="PersonaFinancialAnalystMd" Source="$(var.SourceDir)\personas\financial-analyst.md" />
+        <File Id="PersonaSystemHealthMetricsJson" Source="$(var.SourceDir)\personas\system-health-metrics.json" />
+        <File Id="PersonaSystemHealthMetricsMd" Source="$(var.SourceDir)\personas\system-health-metrics.md" />
+        <File Id="PersonaMeshSpecialistJson" Source="$(var.SourceDir)\personas\mesh-specialist.json" />
+        <File Id="PersonaMeshSpecialistMd" Source="$(var.SourceDir)\personas\mesh-specialist.md" />
+        <File Id="PersonaPersonaArchitectJson" Source="$(var.SourceDir)\personas\persona-architect.json" />
+        <File Id="PersonaPersonaArchitectMd" Source="$(var.SourceDir)\personas\persona-architect.md" />
       </Component>
     </DirectoryRef>
     

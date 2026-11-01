@@ -1103,6 +1103,31 @@ TEST(PersonaManagerTest, LoadsCustomPersonaFromJsonAndCompanionMarkdownFile) {
     std::filesystem::remove_all(temp_dir);
 }
 
+TEST(PersonaManagerTest, WindowsMsiAndInstallerManifestsIncludeAllPersonaResources) {
+    auto wxs_path = rouen::platform::get_resource_path("rouen.wxs", "installer");
+    if (!std::filesystem::exists(wxs_path)) {
+        wxs_path = std::filesystem::current_path() / "installer" / "rouen.wxs";
+    }
+    ASSERT_TRUE(std::filesystem::exists(wxs_path)) << "Could not locate installer/rouen.wxs";
+
+    std::ifstream wf(wxs_path);
+    std::string wxs_content((std::istreambuf_iterator<char>(wf)), std::istreambuf_iterator<char>());
+
+    EXPECT_NE(wxs_content.find("PersonasFolder"), std::string::npos);
+    EXPECT_NE(wxs_content.find("PersonasAssets"), std::string::npos);
+    EXPECT_NE(wxs_content.find("personas\\manifest.json"), std::string::npos);
+
+    auto resource_personas = PersonaManager::load_default_personas_from_resources();
+    ASSERT_FALSE(resource_personas.empty());
+    for (const auto& p : resource_personas) {
+        std::string slug = PersonaManager::slugify(p.name);
+        EXPECT_NE(wxs_content.find("personas\\" + slug + ".json"), std::string::npos)
+            << "installer/rouen.wxs is missing " << slug << ".json";
+        EXPECT_NE(wxs_content.find("personas\\" + slug + ".md"), std::string::npos)
+            << "installer/rouen.wxs is missing " << slug << ".md";
+    }
+}
+
 TEST(GeminiAdapterTest, ConfiguresGemini38AndExcludes35) {
     GeminiAdapter::clear_model_exhaustion_cache();
     GeminiAdapter adapter("dummy_key");

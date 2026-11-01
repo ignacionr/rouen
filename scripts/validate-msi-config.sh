@@ -41,6 +41,7 @@ echo "=== File Reference Validation ==="
 required_files=(
     "resources/rouen.ico"
     "installer/license.rtf"
+    "resources/personas/manifest.json"
 )
 
 for file in "${required_files[@]}"; do
@@ -129,6 +130,7 @@ components=(
     "Dependencies"
     "OptionalDependencies"
     "Assets"
+    "PersonasAssets"
     "ApplicationShortcuts"
     "DesktopShortcut"
     "RegistryCleanup"

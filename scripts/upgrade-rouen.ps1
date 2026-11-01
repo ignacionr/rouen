@@ -195,6 +195,9 @@ try {
     Get-ChildItem -Path $InstallDir -File | Where-Object { $_.Name -match "\.(exe|dll|env|txt|json)$" } | ForEach-Object {
         Copy-Item -Path $_.FullName -Destination $BackupDir -Force
     }
+    if (Test-Path (Join-Path $InstallDir "personas")) {
+        Copy-Item -Path (Join-Path $InstallDir "personas") -Destination (Join-Path $BackupDir "personas") -Recurse -Force
+    }
     Write-UpgradeLog "Backed up $( (Get-ChildItem $BackupDir).Count ) critical files."
 
     # 7. Preserve .env configuration and ensure ROUEN_MESH_AUTO_CONNECT=1
@@ -292,6 +295,9 @@ try {
             Start-Sleep -Seconds 1
             Get-ChildItem -Path $BackupDir -File | ForEach-Object {
                 Copy-Item -Path $_.FullName -Destination (Join-Path $InstallDir $_.Name) -Force
+            }
+            if (Test-Path (Join-Path $BackupDir "personas")) {
+                Copy-Item -Path (Join-Path $BackupDir "personas") -Destination (Join-Path $InstallDir "personas") -Recurse -Force
             }
             Write-UpgradeLog "Restored all backup files from $BackupDir." "INFO"
 

@@ -535,6 +535,8 @@ jobs:
         $assetPaths = @{
           "$workspace\img" = "img directory"
           "$workspace\external\fonts" = "fonts directory"
+          "$workspace\resources\personas" = "personas directory"
+          "$workspace\resources\adaptive_cards" = "adaptive_cards directory"
         }
         
         foreach ($path in $assetPaths.Keys) {
@@ -1038,6 +1040,33 @@ jobs:
           Write-Host "✅ Injected $injectedCount missing assets into rouen.wxs"
         }
 
+        # Dynamically inject any new persona resource files (.json, .md) from distDir\personas into rouen.wxs Component Id="PersonasAssets"
+        if (Test-Path "$distDir\personas") {
+          $personaAssets = Get-ChildItem "$distDir\personas\*" -Include "*.json","*.md" -ErrorAction SilentlyContinue
+          $personaInjectedCount = 0
+          $personaInjectedXml = ""
+          foreach ($pAsset in $personaAssets) {
+            $pName = $pAsset.Name
+            if ($wxsRaw -notlike "*personas\$pName*") {
+              $pFileId = "DynPersona_" + ($pName -replace '[^a-zA-Z0-9_]', '_')
+              $personaInjectedXml += "`r`n        <File Id=`"$pFileId`" Source=`"`$(var.SourceDir)\personas\$pName`" />"
+              $personaInjectedCount++
+              Write-Host "  ➕ Dynamically adding persona resource to MSI manifest: personas\$pName"
+            }
+          }
+          if ($personaInjectedCount -gt 0) {
+            $pCompIdx = $wxsRaw.IndexOf('Id="PersonasAssets"')
+            if ($pCompIdx -ge 0) {
+              $pEndIdx = $wxsRaw.IndexOf('</Component>', $pCompIdx)
+              if ($pEndIdx -ge 0) {
+                $wxsRaw = $wxsRaw.Substring(0, $pEndIdx) + $personaInjectedXml + "`r`n      " + $wxsRaw.Substring($pEndIdx)
+                Set-Content -Path $wxsFile -Value $wxsRaw -Encoding UTF8
+                Write-Host "✅ Injected $personaInjectedCount additional persona resources into rouen.wxs"
+              }
+            }
+          }
+        }
+
         # Compile WiX source
         Write-Host "`n=== Compiling WiX Source ==="
         $candleArgs = @(
@@ -1211,10 +1240,16 @@ jobs:
             exit 1
           }
           
-          # Check installed executable
+          # Check installed executable and bundled persona resources
           $installedExe = Join-Path $env:LOCALAPPDATA "Rouen\Rouen\rouen.exe"
+          $installedPersonasManifest = Join-Path $env:LOCALAPPDATA "Rouen\Rouen\personas\manifest.json"
           if (Test-Path $installedExe) {
             Write-Host "✅ MSI installed rouen.exe at $installedExe"
+            if (-not (Test-Path $installedPersonasManifest)) {
+              Write-Error "MSI installation missing personas\manifest.json at $installedPersonasManifest"
+              exit 1
+            }
+            Write-Host "✅ MSI installed personas resources at $installedPersonasManifest"
             $installedHelpProcess = Start-Process -FilePath $installedExe -ArgumentList "--help" -Wait -PassThru -NoNewWindow
             $installedHelpExit = $installedHelpProcess.ExitCode
             Write-Host "Installed rouen.exe --help exited with code $installedHelpExit"

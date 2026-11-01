@@ -115,6 +115,20 @@ log "Deploying new binary to $TARGET_BIN..."
 cp -f "$NEW_BIN" "$TARGET_BIN"
 chmod +x "$TARGET_BIN"
 
+# Deploy bundled persona resources if present in staged package
+NEW_PERSONAS_DIR="$(find "$STAGE_DIR" -type d -name "personas" | head -n 1)"
+if [[ -n "$NEW_PERSONAS_DIR" && -d "$NEW_PERSONAS_DIR" ]]; then
+    if [[ -d "$INSTALL_DIR/Contents/Resources" ]]; then
+        mkdir -p "$INSTALL_DIR/Contents/Resources/personas"
+        cp -Rf "$NEW_PERSONAS_DIR"/* "$INSTALL_DIR/Contents/Resources/personas/" 2>/dev/null || true
+        log "Updated bundled persona resources in $INSTALL_DIR/Contents/Resources/personas"
+    else
+        mkdir -p "$INSTALL_DIR/personas"
+        cp -Rf "$NEW_PERSONAS_DIR"/* "$INSTALL_DIR/personas/" 2>/dev/null || true
+        log "Updated bundled persona resources in $INSTALL_DIR/personas"
+    fi
+fi
+
 # If on macOS, re-sign ad-hoc
 if [[ "$(uname)" == "Darwin" ]]; then
     codesign --force --sign - "$TARGET_BIN" 2>/dev/null || true

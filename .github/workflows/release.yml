@@ -148,6 +148,8 @@ jobs:
         cp -rf external/fonts linux-release/ 2>/dev/null || true
         cp -f external/MaterialIcons-Regular.ttf linux-release/ 2>/dev/null || true
         cp -rf img linux-release/ 2>/dev/null || true
+        cp -rf resources/personas linux-release/ 2>/dev/null || true
+        cp -rf resources/adaptive_cards linux-release/ 2>/dev/null || true
         
         cat > linux-release/run-rouen.sh << 'EOF'
         #!/bin/bash
@@ -209,6 +211,8 @@ jobs:
         cp -rf external/fonts "$resources_dir/" 2>/dev/null || true
         cp -f external/MaterialIcons-Regular.ttf "$resources_dir/" 2>/dev/null || true
         cp -rf img "$resources_dir/" 2>/dev/null || true
+        cp -rf resources/personas "$resources_dir/" 2>/dev/null || true
+        cp -rf resources/adaptive_cards "$resources_dir/" 2>/dev/null || true
         
         # Create DMG
         temp_dmg_dir="dmg_temp"

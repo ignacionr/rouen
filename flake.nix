@@ -192,9 +192,19 @@
                 exit 1
               fi
             '' else ''
-              # On Linux, look for the binary
+              # On Linux, look for the binary and copy bundled resources next to it
               if [ -f "rouen" ]; then
                 cp rouen $out/bin/
+                for dir in personas adaptive_cards img; do
+                  if [ -d "$dir" ]; then
+                    cp -R "$dir" $out/bin/
+                  fi
+                done
+                for f in presets.txt podcasts.txt MaterialIcons-Regular.ttf NotoSansSymbols-Regular.ttf; do
+                  if [ -f "$f" ]; then
+                    cp "$f" $out/bin/
+                  fi
+                done
                 wrapProgram $out/bin/rouen --prefix PATH : ${unstable.lib.makeBinPath [ unstable.git ]}
               else
                 echo "Error: Could not find rouen binary"

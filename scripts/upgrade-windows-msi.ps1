@@ -182,6 +182,9 @@ try {
     Get-ChildItem -Path $InstallDir -File | Where-Object { $_.Name -match "\.(exe|dll|env|txt|json)$" } | ForEach-Object {
         Copy-Item -Path $_.FullName -Destination $BackupDir -Force
     }
+    if (Test-Path (Join-Path $InstallDir "personas")) {
+        Copy-Item -Path (Join-Path $InstallDir "personas") -Destination (Join-Path $BackupDir "personas") -Recurse -Force
+    }
     Write-UpgradeLog "Created pre-upgrade safety backup at: $BackupDir"
 
     # 5. Preserve .env configuration
@@ -281,6 +284,9 @@ try {
                 Start-Sleep -Seconds 1
                 Get-ChildItem -Path $BackupDir -File | ForEach-Object {
                     Copy-Item -Path $_.FullName -Destination (Join-Path $InstallDir $_.Name) -Force
+                }
+                if (Test-Path (Join-Path $BackupDir "personas")) {
+                    Copy-Item -Path (Join-Path $BackupDir "personas") -Destination (Join-Path $InstallDir "personas") -Recurse -Force
                 }
                 $oldExe = Join-Path $InstallDir "rouen.exe"
                 if (Test-Path $oldExe) {

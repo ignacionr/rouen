@@ -31,8 +31,10 @@
      - `setup_default_personas()` populates `personas_` directly from `load_default_personas_from_resources()`.
      - `sanitize_and_migrate_personas()` compares existing personas against the authoritative resource definitions from `load_default_personas_from_resources()`, ensuring all built-in personas exist and upgrading their `llm_config_name`, `temperature`, `thinking_level`, `max_tool_iterations`, `max_output_tokens`, `description`, `system_prompt`, `allowed_mcps`, and `allowed_personas` from the resource files without hardcoded C++ prompt strings.
 
-3. **CMake & Bundle Packaging**:
+3. **CMake, Bundle Packaging & Installer Scripts**:
    - Update `cmake/macos.cmake`, `cmake/linux.cmake`, and `cmake/windows.cmake` to copy `resources/personas/*.json` and `resources/personas/*.md` into the application bundle / build directory (`Contents/Resources/personas/` on macOS, `personas/` on Linux and Windows).
+   - Update Windows WiX MSI definitions (`installer/rouen.wxs` and `installer/rouen-v4.wxs`) with a `PersonasFolder` (`INSTALLFOLDER\personas`) and `PersonasAssets` component (with per-user registry `KeyPath`, `RemoveFolder` cleanup, and all built-in `.json`/`.md` resources), plus dynamic MSI injection and smoke-test verification in `.github/workflows/windows-release.yml` and `scripts/validate-msi-config.sh`.
+   - Update release workflows (`.github/workflows/macos-release.yml`, `.github/workflows/release.yml`), Linux Nix `installPhase` (`flake.nix`), and self-upgrade scripts (`scripts/upgrade-rouen.ps1`, `scripts/upgrade-windows-msi.ps1`, `scripts/upgrade-rouen.sh`) to bundle, back up, and deploy `personas/`.
 
 ---
 
