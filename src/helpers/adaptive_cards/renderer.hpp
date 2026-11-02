@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <functional>
@@ -54,6 +55,9 @@ public:
         // whether a FactSet value that overflows the collapsed line limit
         // has been expanded to show its full text, keyed by scope+index.
         std::unordered_map<std::string, bool> fact_expanded{};
+        // Select-Before-Operate (SBO) two-step arming timestamps & reason notes
+        std::unordered_map<std::string, std::chrono::steady_clock::time_point> armed_actions{};
+        std::unordered_map<std::string, std::string> operator_reasons{};
     };
 
     void render(const card_document& card) const override {
@@ -1027,18 +1031,35 @@ private:
         for (std::size_t idx = 0; idx < actions.size(); ++idx) {
             const auto& card_action = actions[idx];
             const std::string action_id = std::format("{}-act-{}", scope, idx);
+            const std::string popup_id = std::format("Select-Before-Operate##{}", action_id);
             const std::string label = card_action.title.empty()
                 ? std::format("{}##{}", card_action.type, action_id)
                 : std::format("{}##{}", card_action.title, action_id);
-            if (ImGui::Button(label.c_str())) {
+
+            const bool is_destructive = (card_action.style == "destructive");
+            if (is_destructive) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.65f, 0.14f, 0.14f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.18f, 0.18f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.50f, 0.10f, 0.10f, 1.0f));
+            }
+
+            auto dispatch_action = [&](const std::string& reason_note) {
                 if (card_action.type == "Action.OpenUrl" && !card_action.url.empty()) {
                     callbacks.open_url(card_action.url);
                 } else if (card_action.type == "Action.Submit") {
                     callbacks.on_submit(build_action_data_payload(state, card_action.data));
                 } else if (card_action.type == "Action.Execute") {
-                    callbacks.on_submit(std::format(
-                        "{{\"verb\":\"{}\",\"data\":{}}}", card_action.verb,
-                        build_action_data_payload(state, card_action.data)));
+                    glz::json_t payload_obj = glz::json_t::object_t{};
+                    payload_obj["verb"] = card_action.verb;
+                    glz::json_t data_obj{};
+                    (void)glz::read_json(data_obj, build_action_data_payload(state, card_action.data));
+                    payload_obj["data"] = std::move(data_obj);
+                    if (!reason_note.empty()) {
+                        payload_obj["operatorReason"] = reason_note;
+                    }
+                    std::string encoded = "{}";
+                    (void)glz::write_json(payload_obj, encoded);
+                    callbacks.on_submit(encoded);
                 } else if (card_action.type == "Action.ToggleVisibility") {
                     for (const auto& target_id : card_action.targetElements) {
                         state.toggle_values[target_id] = !state.toggle_values[target_id];
@@ -1046,7 +1067,72 @@ private:
                 } else if (card_action.type == "Action.ShowCard") {
                     state.show_card_expanded[action_id] = !state.show_card_expanded[action_id];
                 }
+            };
+
+            if (ImGui::Button(label.c_str())) {
+                if (card_action.requiresConfirmation) {
+                    state.armed_actions[action_id] = std::chrono::steady_clock::now();
+                    ImGui::OpenPopup(popup_id.c_str());
+                } else {
+                    dispatch_action("");
+                }
             }
+
+            if (is_destructive) {
+                ImGui::PopStyleColor(3);
+            }
+
+            if (card_action.requiresConfirmation &&
+                ImGui::BeginPopupModal(popup_id.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                auto const now = std::chrono::steady_clock::now();
+                auto const armed_at = state.armed_actions[action_id];
+                auto const elapsed_sec = std::chrono::duration<double>(now - armed_at).count();
+                double const remaining_sec = std::max(0.0, 10.0 - elapsed_sec);
+
+                if (remaining_sec <= 0.0) {
+                    ImGui::CloseCurrentPopup();
+                } else {
+                    ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.30f, 1.0f), "SELECT-BEFORE-OPERATE ARMED (%.1fs remaining)", remaining_sec);
+                    ImGui::Separator();
+                    const std::string prompt = card_action.confirmationPrompt.empty()
+                        ? std::format("Confirm execution of '{}' ({}):", card_action.title, card_action.verb)
+                        : card_action.confirmationPrompt;
+                    ImGui::TextWrapped("%s", prompt.c_str());
+                    if (!card_action.requiredRole.empty()) {
+                        ImGui::TextDisabled("Required Role: %s", card_action.requiredRole.c_str());
+                    }
+
+                    std::string& reason_str = state.operator_reasons[action_id];
+                    if (card_action.requireReasonNote) {
+                        char reason_buf[256]{};
+                        std::snprintf(reason_buf, sizeof(reason_buf), "%s", reason_str.c_str());
+                        if (ImGui::InputTextWithHint("##sbo_reason", "Mandatory operator reason note...", reason_buf, sizeof(reason_buf))) {
+                            reason_str = reason_buf;
+                        }
+                    }
+
+                    const bool can_execute = !card_action.requireReasonNote || !reason_str.empty();
+                    if (!can_execute) {
+                        ImGui::BeginDisabled();
+                    }
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.75f, 0.15f, 0.15f, 1.0f));
+                    if (ImGui::Button("EXECUTE (OPERATE)", ImVec2(180.0f, 0.0f))) {
+                        dispatch_action(reason_str);
+                        reason_str.clear();
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::PopStyleColor();
+                    if (!can_execute) {
+                        ImGui::EndDisabled();
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("DISARM / CANCEL", ImVec2(140.0f, 0.0f))) {
+                        ImGui::CloseCurrentPopup();
+                    }
+                }
+                ImGui::EndPopup();
+            }
+
             if (idx + 1 < actions.size()) {
                 ImGui::SameLine();
             }

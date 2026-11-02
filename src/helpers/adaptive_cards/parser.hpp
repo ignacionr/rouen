@@ -77,6 +77,11 @@ struct action {
     std::string title;
     std::string url;
     std::string verb;
+    std::string style;
+    std::string requiredRole;
+    bool requiresConfirmation{false};
+    std::string confirmationPrompt;
+    bool requireReasonNote{false};
     // The Adaptive Cards spec allows this to be any JSON value (almost
     // always an object) merged into the Action.Execute payload; glz::json_t
     // accepts whatever shape shows up instead of requiring a JSON string.
@@ -408,6 +413,11 @@ struct glz::meta<rouen::helpers::adaptive_cards::action> {
         "title", &T::title,
         "url", &T::url,
         "verb", &T::verb,
+        "style", &T::style,
+        "requiredRole", &T::requiredRole,
+        "requiresConfirmation", &T::requiresConfirmation,
+        "confirmationPrompt", &T::confirmationPrompt,
+        "requireReasonNote", &T::requireReasonNote,
         "data", &T::data,
         "targetElements", &T::targetElements,
         "card", &T::card

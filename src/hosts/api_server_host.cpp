@@ -90,6 +90,7 @@
 #include "../helpers/sync_crypto_service.hpp"
 #include "../helpers/adaptive_process_profiles.hpp"
 #include "../helpers/auth_service.hpp"
+#include "../helpers/command_audit_log.hpp"
 
 namespace {
     std::mutex s_sse_mutex;
@@ -466,6 +467,13 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
     } else if (mg_match(hm->uri, mg_str("/api/auth/callback"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("GET")) == 0 || mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_auth_callback(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/audit-log"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = std::format(R"({{"entries":{}}})", rouen::helpers::command_audit_log::instance().recent_entries_json(100));
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";

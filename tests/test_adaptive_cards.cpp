@@ -1371,4 +1371,39 @@ TEST(AdaptiveCardsIndustrialWidgets, ParsesSeriesPlotGaugeXYPlotAndStatusBadge) 
     EXPECT_EQ(parsed.body[3].severity, "normal");
 }
 
+TEST(AdaptiveCardsSboInterlock, ParsesSelectBeforeOperateAndRequiredRoleOnActions) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    { "type": "TextBlock", "text": "Permian Pad 14 — Well 3H" }
+  ],
+  "actions": [
+    {
+      "type": "Action.Execute",
+      "title": "ESD Shut-In Well 3H",
+      "verb": "esd_shutin",
+      "style": "destructive",
+      "requiredRole": "scada.operator",
+      "requiresConfirmation": true,
+      "confirmationPrompt": "Confirm Emergency Shut-In of Permian Pad 14 Well 3H (SSV will close immediately):",
+      "requireReasonNote": true
+    }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+    ASSERT_EQ(parsed.actions.size(), 1U);
+    EXPECT_EQ(parsed.actions[0].verb, "esd_shutin");
+    EXPECT_EQ(parsed.actions[0].style, "destructive");
+    EXPECT_EQ(parsed.actions[0].requiredRole, "scada.operator");
+    EXPECT_TRUE(parsed.actions[0].requiresConfirmation);
+    EXPECT_EQ(parsed.actions[0].confirmationPrompt, "Confirm Emergency Shut-In of Permian Pad 14 Well 3H (SSV will close immediately):");
+    EXPECT_TRUE(parsed.actions[0].requireReasonNote);
+}
+
+
 

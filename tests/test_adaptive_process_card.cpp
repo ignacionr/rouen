@@ -8,6 +8,7 @@
 #include "../src/cards/interface/deck.hpp"
 #include "../src/helpers/adaptive_process_profiles.hpp"
 #include "../src/helpers/auth_service.hpp"
+#include "../src/helpers/command_audit_log.hpp"
 
 TEST(AdaptiveProcessCard, RefreshesUIOnSecondStdoutLineWithoutAction) {
     // Construct a command that prints two card JSON documents separated by a delay and newline
@@ -359,4 +360,103 @@ TEST(AdaptiveProcessCard, OidcJwtVerificationRs256Es256EdDsaAndSpoofProtection) 
     EXPECT_EQ(card.bound_document().body[0].text, "Op:jdoe@permian-energy.com|Roles:scada.operator,pad-permian-14");
 
     auth.reset();
+}
+
+TEST(AdaptiveProcessCard, SboRbacEnforcementAndDualIdentityCommandAuditLog) {
+    auto& auth = rouen::services::auth_service::instance();
+    auto& audit = rouen::helpers::command_audit_log::instance();
+    auth.reset();
+    audit.clear_all();
+
+    auto const now_epoch = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    auto kp = rouen::services::auth_service::generate_test_keypair("EdDSA", "kid-rbac");
+    ASSERT_TRUE(auth.load_jwks_json(std::format(R"({{"keys":[{}]}})", kp.jwk_json)));
+
+    std::string const viewer_jwt = rouen::services::auth_service::sign_test_jwt(
+        kp, "EdDSA", "kid-rbac", std::format(R"({{
+            "sub": "viewer-01",
+            "email": "analyst@permian-energy.com",
+            "name": "Read Only Analyst",
+            "roles": ["scada.viewer"],
+            "exp": {}
+        }})", now_epoch + 3600));
+
+    std::string const operator_jwt = rouen::services::auth_service::sign_test_jwt(
+        kp, "EdDSA", "kid-rbac", std::format(R"({{
+            "sub": "op-02",
+            "email": "controller@permian-energy.com",
+            "name": "Lead Gas Controller",
+            "roles": ["scada.operator"],
+            "exp": {}
+        }})", now_epoch + 3600));
+
+    std::string const cmd =
+        "python3 -c \"\n"
+        "import json, sys\n"
+        "card = {\n"
+        "  'type': 'AdaptiveCard',\n"
+        "  'version': '1.5',\n"
+        "  'body': [{'type': 'TextBlock', 'text': 'Well 3H Ready'}],\n"
+        "  'actions': [{\n"
+        "    'type': 'Action.Execute',\n"
+        "    'title': 'ESD Shut-In',\n"
+        "    'verb': 'esd_shutin',\n"
+        "    'requiredRole': 'scada.operator',\n"
+        "    'requiresConfirmation': True,\n"
+        "    'requireReasonNote': True\n"
+        "  }]\n"
+        "}\n"
+        "print(json.dumps(card), flush=True)\n"
+        "line = sys.stdin.readline()\n"
+        "msg = json.loads(line.strip())\n"
+        "reason = msg.get('operatorReason', '')\n"
+        "email = msg.get('_operator', {}).get('email', '')\n"
+        "card['body'][0]['text'] = f'ESD Executed by {email} ({reason})'\n"
+        "print(json.dumps(card), flush=True)\n"
+        "\"";
+
+    rouen::cards::adaptive_process_card card{cmd};
+    (void)card.get_adaptive_card_json();
+    ASSERT_FALSE(card.bound_document().body.empty());
+    ASSERT_EQ(card.bound_document().actions.size(), 1u);
+    EXPECT_EQ(card.bound_document().actions[0].requiredRole, "scada.operator");
+
+    // 1. Unauthenticated attempt on action with requiredRole -> DENIED_UNAUTHENTICATED
+    card.handle_action(R"({"verb":"esd_shutin","operatorReason":"High casing pressure"})");
+    EXPECT_NE(card.last_error().find("401 Unauthorized"), std::string::npos);
+
+    // 2. Authenticated as scada.viewer -> DENIED_INSUFFICIENT_ROLE (403 Forbidden)
+    ASSERT_TRUE(auth.set_active_session_jwt(viewer_jwt));
+    card.handle_action(R"({"verb":"esd_shutin","operatorReason":"High casing pressure"})");
+    EXPECT_NE(card.last_error().find("403 Forbidden"), std::string::npos);
+
+    // 3. Authenticated as scada.operator -> EXECUTED
+    ASSERT_TRUE(auth.set_active_session_jwt(operator_jwt));
+    card.handle_action(R"({"verb":"esd_shutin","operatorReason":"High casing pressure"})");
+
+    auto start = std::chrono::steady_clock::now();
+    while (card.bound_document().body[0].text == "Well 3H Ready" &&
+           std::chrono::steady_clock::now() - start < std::chrono::seconds(3)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        (void)card.get_adaptive_card_json();
+    }
+    EXPECT_EQ(card.bound_document().body[0].text, "ESD Executed by controller@permian-energy.com (High casing pressure)");
+
+    auto const logs = audit.recent_entries(10);
+    ASSERT_GE(logs.size(), 3u);
+    // Most recent first or chronological check
+    bool saw_unauth = false, saw_forbidden = false, saw_executed = false;
+    for (auto const& entry : logs) {
+        if (entry.decision == "DENIED_UNAUTHENTICATED") saw_unauth = true;
+        if (entry.decision == "DENIED_INSUFFICIENT_ROLE" && entry.operator_email == "analyst@permian-energy.com") saw_forbidden = true;
+        if (entry.decision == "EXECUTED" && entry.operator_email == "controller@permian-energy.com" &&
+            entry.operator_reason == "High casing pressure") saw_executed = true;
+    }
+    EXPECT_TRUE(saw_unauth);
+    EXPECT_TRUE(saw_forbidden);
+    EXPECT_TRUE(saw_executed);
+
+    auth.reset();
+    audit.clear_all();
 }

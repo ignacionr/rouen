@@ -20,6 +20,7 @@
 #include "../../helpers/adaptive_cards/renderer.hpp"
 #include "../../helpers/adaptive_process_profiles.hpp"
 #include "../../helpers/auth_service.hpp"
+#include "../../helpers/command_audit_log.hpp"
 #include "../../helpers/piped_process.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../interface/card.hpp"
@@ -239,9 +240,112 @@ namespace rouen::cards {
             start_process();
         }
 
+        [[nodiscard]] std::string find_required_role_for_verb(std::string const& verb) const {
+            if (verb.empty()) {
+                return "";
+            }
+            for (auto const& act : bound_.actions) {
+                if (act.verb == verb && !act.requiredRole.empty()) {
+                    return act.requiredRole;
+                }
+            }
+            auto search_elements = [&](auto const& self, std::vector<helpers::adaptive_cards::element> const& elems) -> std::string {
+                for (auto const& el : elems) {
+                    for (auto const& act : el.actions) {
+                        if (act.verb == verb && !act.requiredRole.empty()) {
+                            return act.requiredRole;
+                        }
+                    }
+                    if (!el.items.empty()) {
+                        auto r = self(self, el.items);
+                        if (!r.empty()) return r;
+                    }
+                    if (!el.columns.empty()) {
+                        auto r = self(self, el.columns);
+                        if (!r.empty()) return r;
+                    }
+                }
+                return "";
+            };
+            return search_elements(search_elements, bound_.body);
+        }
+
         void post_to_process(std::string const& payload_json) {
+            glz::json_t parsed_obj{};
+            std::string verb;
+            std::string operator_reason;
+            if (!glz::read_json(parsed_obj, payload_json) && parsed_obj.is_object()) {
+                auto const& obj = parsed_obj.get_object();
+                if (auto it = obj.find("verb"); it != obj.end() && it->second.is_string()) {
+                    verb = it->second.get<std::string>();
+                }
+                if (auto it = obj.find("operatorReason"); it != obj.end() && it->second.is_string()) {
+                    operator_reason = it->second.get<std::string>();
+                } else if (auto dit = obj.find("data"); dit != obj.end() && dit->second.is_object()) {
+                    auto const& dobj = dit->second.get_object();
+                    if (auto rit = dobj.find("operatorReason"); rit != dobj.end() && rit->second.is_string()) {
+                        operator_reason = rit->second.get<std::string>();
+                    }
+                }
+            }
+
+            if (verb == "tick") {
+                if (process_) {
+                    std::string const sanitized = services::auth_service::sanitize_and_inject_operator(payload_json);
+                    static_cast<void>(process_->write_line(sanitized));
+                }
+                return;
+            }
+
+            std::string const required_role = find_required_role_for_verb(verb);
+            auto cfg = helpers::ConfigService::instance();
+            std::string const require_auth_env = cfg->get_env("ROUEN_REQUIRE_OPERATOR_AUTH");
+            bool const auth_required = !required_role.empty() || require_auth_env == "1" || require_auth_env == "true";
+            auto const op = services::auth_service::current_effective_operator();
+            std::string const source_node = cfg->get_env("ROUEN_MESH_CLIENT_ID").empty()
+                ? "local"
+                : cfg->get_env("ROUEN_MESH_CLIENT_ID");
+
+            if (auth_required && !op.has_value()) {
+                error_ = std::format("401 Unauthorized: Operator authentication required for action '{}'", verb.empty() ? "submit" : verb);
+                helpers::command_audit_log::instance().record(
+                    services::verified_operator_identity{},
+                    source_node,
+                    get_uri(),
+                    verb.empty() ? "submit" : verb,
+                    payload_json,
+                    operator_reason,
+                    "DENIED_UNAUTHENTICATED");
+                return;
+            }
+
+            if (!required_role.empty() && op.has_value() && !op->has_role(required_role)) {
+                error_ = std::format(
+                    "403 Forbidden: Operator '{}' lacks required role '{}' for action '{}'",
+                    op->email, required_role, verb.empty() ? "submit" : verb);
+                helpers::command_audit_log::instance().record(
+                    *op,
+                    source_node,
+                    get_uri(),
+                    verb.empty() ? "submit" : verb,
+                    payload_json,
+                    operator_reason,
+                    "DENIED_INSUFFICIENT_ROLE");
+                return;
+            }
+
+            error_.clear();
+            std::string const sanitized = services::auth_service::sanitize_and_inject_operator(payload_json);
+            helpers::command_audit_log::instance().record(
+                op.value_or(services::verified_operator_identity{}),
+                source_node,
+                get_uri(),
+                verb.empty() ? "submit" : verb,
+                sanitized,
+                operator_reason,
+                "EXECUTED");
+
             if (process_) {
-                std::string const sanitized = services::auth_service::sanitize_and_inject_operator(payload_json);
                 static_cast<void>(process_->write_line(sanitized));
             }
         }
