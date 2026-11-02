@@ -10,10 +10,27 @@
 #include <vector>
 
 #include "../glaze_include.hpp"
+#include "../../models/series/series_repository.hpp"
 
 namespace rouen::helpers::adaptive_cards {
 
 struct element;
+
+struct series_point {
+    std::string label;
+    std::string value;
+
+    [[nodiscard]] float numeric_value() const {
+        return static_cast<float>(std::strtod(value.c_str(), nullptr));
+    }
+};
+
+struct gauge_thresholds {
+    double lowLow{0.0};
+    double low{0.0};
+    double high{0.0};
+    double highHigh{0.0};
+};
 
 struct fact {
     std::string title;
@@ -103,6 +120,21 @@ struct element {
     std::vector<table_row> rows;
     action selectAction;
     std::vector<action> actions;
+    // Industrial SCADA & series widgets (Rouen.SeriesPlot, Rouen.Gauge, Rouen.XYPlot, Rouen.StatusBadge)
+    std::string seriesName;
+    std::string unit;
+    std::string xLabel;
+    std::string yLabel;
+    std::string severity;
+    bool persistToRepository{false};
+    bool isBarChart{false};
+    int height{0};
+    double lowLimit{0.0};
+    double highLimit{0.0};
+    double target{0.0};
+    gauge_thresholds thresholds{};
+    std::vector<series_point> points;
+    std::vector<std::array<double, 2>> xyPoints;
 };
 
 struct card_document {
@@ -137,11 +169,50 @@ public:
 
         validate_elements(card.body);
         validate_actions(card.actions);
+        persist_series_elements(card.body);
 
         return card;
     }
 
 private:
+    static void persist_series_elements(const std::vector<element>& elements) {
+        for (const auto& node : elements) {
+            if ((node.type == "Rouen.SeriesPlot" || node.type == "Rouen.Sparkline") &&
+                node.persistToRepository && !node.points.empty()) {
+                models::series::series_repository repo{};
+                models::series::series_record rec{};
+                rec.name = !node.seriesName.empty()
+                    ? node.seriesName
+                    : models::series::series_repository::slugify(node.title.empty() ? "series" : node.title);
+                rec.title = node.title.empty() ? rec.name : node.title;
+                rec.unit = node.unit;
+                rec.points.reserve(node.points.size());
+                for (const auto& pt : node.points) {
+                    rec.points.push_back(models::series::data_point{
+                        .label = pt.label,
+                        .value = pt.numeric_value()
+                    });
+                }
+                rec.is_bar_chart = node.isBarChart;
+                (void)repo.save_series(rec);
+            }
+            if (!node.items.empty()) {
+                persist_series_elements(node.items);
+            }
+            for (const auto& col : node.columns) {
+                if (!col.items.empty()) {
+                    persist_series_elements(col.items);
+                }
+            }
+            for (const auto& row : node.rows) {
+                for (const auto& cell : row.cells) {
+                    if (!cell.items.empty()) {
+                        persist_series_elements(cell.items);
+                    }
+                }
+            }
+        }
+    }
     [[nodiscard]] static std::string normalize_keys(std::string_view input) {
         std::string output(input);
         std::size_t pos = 0;
@@ -205,10 +276,11 @@ private:
     }
 
     [[nodiscard]] static bool is_supported_type(const std::string& type) {
-        static constexpr std::array<std::string_view, 18> supported{
+        static constexpr std::array<std::string_view, 23> supported{
             "TextBlock", "Container", "ColumnSet", "Column", "FactSet", "Input.Text", "Input.Toggle",
             "Image", "Input.ChoiceSet", "Input.Number", "Input.Date", "Input.Time",
-            "Media", "ImageSet", "RichTextBlock", "Table", "ActionSet", "TableColumnDefinition"
+            "Media", "ImageSet", "RichTextBlock", "Table", "ActionSet", "TableColumnDefinition",
+            "Rouen.SeriesPlot", "Rouen.Sparkline", "Rouen.Gauge", "Rouen.XYPlot", "Rouen.StatusBadge"
         };
         return std::ranges::find(supported, type) != supported.end();
     }
@@ -344,6 +416,28 @@ struct glz::meta<rouen::helpers::adaptive_cards::action> {
 };
 
 template <>
+struct glz::meta<rouen::helpers::adaptive_cards::series_point> {
+    using T = rouen::helpers::adaptive_cards::series_point;
+    static constexpr auto values = glz::object(
+        "label", &T::label,
+        "value", &T::value
+    );
+    static constexpr auto options = glz::opts{.error_on_unknown_keys = false};
+};
+
+template <>
+struct glz::meta<rouen::helpers::adaptive_cards::gauge_thresholds> {
+    using T = rouen::helpers::adaptive_cards::gauge_thresholds;
+    static constexpr auto values = glz::object(
+        "lowLow", &T::lowLow,
+        "low", &T::low,
+        "high", &T::high,
+        "highHigh", &T::highHigh
+    );
+    static constexpr auto options = glz::opts{.error_on_unknown_keys = false};
+};
+
+template <>
 struct glz::meta<rouen::helpers::adaptive_cards::element> {
     using T = rouen::helpers::adaptive_cards::element;
     static constexpr auto values = glz::object(
@@ -380,7 +474,21 @@ struct glz::meta<rouen::helpers::adaptive_cards::element> {
         "rows", &T::rows,
         "selectAction", &T::selectAction,
         "actions", &T::actions,
-        "width", &T::width
+        "width", &T::width,
+        "seriesName", &T::seriesName,
+        "unit", &T::unit,
+        "xLabel", &T::xLabel,
+        "yLabel", &T::yLabel,
+        "severity", &T::severity,
+        "persistToRepository", &T::persistToRepository,
+        "isBarChart", &T::isBarChart,
+        "height", &T::height,
+        "lowLimit", &T::lowLimit,
+        "highLimit", &T::highLimit,
+        "target", &T::target,
+        "thresholds", &T::thresholds,
+        "points", &T::points,
+        "xyPoints", &T::xyPoints
     );
     static constexpr auto options = glz::opts{.error_on_unknown_keys = false};
 };

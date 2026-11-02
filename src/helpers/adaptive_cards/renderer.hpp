@@ -17,6 +17,7 @@
 #include "../texture_helper.hpp"
 #include "../imgui_include.hpp"
 #include "../markdown_renderer.hpp"
+#include "../series_plot_renderer.hpp"
 #include "markdown.hpp"
 #include "parser.hpp"
 
@@ -475,8 +476,190 @@ private:
                 render_table(node, id, state, callbacks, config, texture_provider);
             } else if (node.type == "ActionSet") {
                 render_actions(node.actions, id, state, callbacks, config, texture_provider, /*show_separator=*/false);
+            } else if (node.type == "Rouen.SeriesPlot" || node.type == "Rouen.Sparkline") {
+                render_series_plot(node, id);
+            } else if (node.type == "Rouen.Gauge") {
+                render_gauge(node, id);
+            } else if (node.type == "Rouen.XYPlot") {
+                render_xy_plot(node, id);
+            } else if (node.type == "Rouen.StatusBadge") {
+                render_status_badge(node, id);
             }
         }
+    }
+
+    static void render_series_plot(const element& node, const std::string& scope) {
+        if (!node.title.empty()) {
+            ImGui::TextUnformatted(node.title.c_str());
+        }
+        std::vector<models::series::data_point> pts;
+        pts.reserve(node.points.size());
+        for (const auto& pt : node.points) {
+            pts.push_back(models::series::data_point{
+                .label = pt.label,
+                .value = pt.numeric_value()
+            });
+        }
+        std::string unit = node.unit;
+        bool is_bar = node.isBarChart;
+        if (pts.empty() && !node.seriesName.empty()) {
+            models::series::series_repository repo{};
+            if (auto rec = repo.get_series_by_name(node.seriesName)) {
+                pts = rec->points;
+                if (unit.empty()) unit = rec->unit;
+                is_bar = rec->is_bar_chart;
+            }
+        }
+        float const plot_h = (node.height > 0)
+            ? static_cast<float>(node.height)
+            : (node.type == "Rouen.Sparkline" ? 80.0f : 180.0f);
+        ImVec2 const canvas_pos = ImGui::GetCursorScreenPos();
+        ImVec2 canvas_size = ImGui::GetContentRegionAvail();
+        canvas_size.x = std::max(180.0f, canvas_size.x);
+        canvas_size.y = plot_h;
+
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        draw_list->AddRectFilled(
+            canvas_pos,
+            ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y),
+            ImGui::GetColorU32(ImGuiCol_FrameBg),
+            6.0f
+        );
+        draw_list->AddRect(
+            canvas_pos,
+            ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y),
+            ImGui::GetColorU32(ImGuiCol_Border),
+            6.0f
+        );
+
+        int hovered_idx = -1;
+        size_t const n = pts.size();
+        ImVec2 const plot_pos = ImVec2(canvas_pos.x + 55.0f, canvas_pos.y + 20.0f);
+        ImVec2 const plot_size = ImVec2(canvas_size.x - 75.0f, canvas_size.y - 50.0f);
+        if (ImGui::IsMouseHoveringRect(plot_pos, ImVec2(plot_pos.x + plot_size.x, plot_pos.y + plot_size.y)) && n > 0) {
+            float const local_x = ImGui::GetIO().MousePos.x - plot_pos.x;
+            if (is_bar) {
+                float const col_w = plot_size.x / static_cast<float>(n);
+                hovered_idx = static_cast<int>(local_x / col_w);
+            } else if (n > 1) {
+                float const step = plot_size.x / static_cast<float>(n - 1);
+                hovered_idx = static_cast<int>((local_x + step * 0.5f) / step);
+            } else {
+                hovered_idx = 0;
+            }
+            hovered_idx = std::clamp(hovered_idx, 0, static_cast<int>(n) - 1);
+        }
+
+        series_plot_renderer::draw(
+            draw_list,
+            canvas_pos,
+            canvas_size,
+            pts,
+            hovered_idx,
+            series_plot_config{
+                .series_name = node.seriesName,
+                .unit = unit,
+                .is_bar_chart = is_bar,
+                .active_color = ImVec4{0.20f, 0.65f, 0.92f, 1.0f},
+                .show_imgui_tooltip = true,
+                .low_limit = node.lowLimit,
+                .high_limit = node.highLimit
+            }
+        );
+        ImGui::Dummy(ImVec2(canvas_size.x, canvas_size.y + 4.0f));
+        (void)scope;
+    }
+
+    static void render_gauge(const element& node, const std::string& scope) {
+        double val = 0.0;
+        if (!node.value.empty()) {
+            val = std::strtod(node.value.c_str(), nullptr);
+        }
+        double const min_v = node.min;
+        double const max_v = (node.max > node.min) ? node.max : (node.min + 100.0);
+        float const ratio = static_cast<float>(std::clamp((val - min_v) / (max_v - min_v), 0.0, 1.0));
+
+        ImVec4 bar_color{0.22f, 0.72f, 0.42f, 1.0f}; // Normal green
+        if ((node.thresholds.highHigh > 0.0 && val >= node.thresholds.highHigh) ||
+            (node.thresholds.lowLow > 0.0 && val <= node.thresholds.lowLow)) {
+            bar_color = {0.90f, 0.25f, 0.20f, 1.0f}; // High-High / Low-Low alarm red
+        } else if ((node.thresholds.high > 0.0 && val >= node.thresholds.high) ||
+                   (node.thresholds.low > 0.0 && val <= node.thresholds.low)) {
+            bar_color = {0.95f, 0.68f, 0.18f, 1.0f}; // High / Low warning amber
+        }
+
+        std::string const title = !node.label.empty() ? node.label : node.title;
+        std::string val_text = std::format("{:.1f}{}", val, node.unit.empty() ? "" : (" " + node.unit));
+        if (node.target > 0.0) {
+            val_text += std::format(" (Target: {:.1f})", node.target);
+        }
+        ImGui::Text("%s: %s", title.c_str(), val_text.c_str());
+
+        ImVec2 const pos = ImGui::GetCursorScreenPos();
+        float const w = std::max(140.0f, ImGui::GetContentRegionAvail().x);
+        float const h = 16.0f;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), ImGui::GetColorU32(ImGuiCol_FrameBg), 4.0f);
+        dl->AddRectFilled(pos, ImVec2(pos.x + w * ratio, pos.y + h), ImGui::ColorConvertFloat4ToU32(bar_color), 4.0f);
+        dl->AddRect(pos, ImVec2(pos.x + w, pos.y + h), ImGui::GetColorU32(ImGuiCol_Border), 4.0f);
+        ImGui::Dummy(ImVec2(w, h + 4.0f));
+        (void)scope;
+    }
+
+    static void render_xy_plot(const element& node, const std::string& scope) {
+        if (!node.title.empty()) {
+            ImGui::TextUnformatted(node.title.c_str());
+        }
+        float const plot_h = (node.height > 0) ? static_cast<float>(node.height) : 180.0f;
+        ImVec2 const canvas_pos = ImGui::GetCursorScreenPos();
+        ImVec2 canvas_size = ImGui::GetContentRegionAvail();
+        canvas_size.x = std::max(180.0f, canvas_size.x);
+        canvas_size.y = plot_h;
+
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(canvas_pos, ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y), ImGui::GetColorU32(ImGuiCol_FrameBg), 6.0f);
+        dl->AddRect(canvas_pos, ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y), ImGui::GetColorU32(ImGuiCol_Border), 6.0f);
+
+        if (node.xyPoints.size() >= 2) {
+            double min_x = node.xyPoints[0][0], max_x = node.xyPoints[0][0];
+            double min_y = node.xyPoints[0][1], max_y = node.xyPoints[0][1];
+            for (auto const& pt : node.xyPoints) {
+                min_x = std::min(min_x, pt[0]);
+                max_x = std::max(max_x, pt[0]);
+                min_y = std::min(min_y, pt[1]);
+                max_y = std::max(max_y, pt[1]);
+            }
+            if (max_x - min_x < 1e-6) max_x = min_x + 1.0;
+            if (max_y - min_y < 1e-6) max_y = min_y + 1.0;
+
+            ImVec2 const p0 = ImVec2(canvas_pos.x + 24.0f, canvas_pos.y + 16.0f);
+            ImVec2 const ps = ImVec2(canvas_size.x - 40.0f, canvas_size.y - 36.0f);
+            ImU32 const col = ImGui::ColorConvertFloat4ToU32(ImVec4{0.25f, 0.72f, 0.95f, 1.0f});
+            for (size_t i = 0; i + 1 < node.xyPoints.size(); ++i) {
+                float const x1 = p0.x + static_cast<float>((node.xyPoints[i][0] - min_x) / (max_x - min_x)) * ps.x;
+                float const y1 = p0.y + (1.0f - static_cast<float>((node.xyPoints[i][1] - min_y) / (max_y - min_y))) * ps.y;
+                float const x2 = p0.x + static_cast<float>((node.xyPoints[i + 1][0] - min_x) / (max_x - min_x)) * ps.x;
+                float const y2 = p0.y + (1.0f - static_cast<float>((node.xyPoints[i + 1][1] - min_y) / (max_y - min_y))) * ps.y;
+                dl->AddLine(ImVec2(x1, y1), ImVec2(x2, y2), col, 2.0f);
+            }
+        }
+        ImGui::Dummy(ImVec2(canvas_size.x, canvas_size.y + 4.0f));
+        (void)scope;
+    }
+
+    static void render_status_badge(const element& node, const std::string& scope) {
+        ImVec4 pill_col{0.22f, 0.65f, 0.36f, 1.0f};
+        if (node.severity == "critical" || node.severity == "emergency" || node.severity == "alarm") {
+            pill_col = {0.88f, 0.22f, 0.20f, 1.0f};
+        } else if (node.severity == "warning" || node.severity == "caution") {
+            pill_col = {0.92f, 0.65f, 0.16f, 1.0f};
+        }
+        if (!node.label.empty()) {
+            ImGui::TextUnformatted((node.label + ": ").c_str());
+            ImGui::SameLine();
+        }
+        ImGui::TextColored(pill_col, "[%s]", node.text.c_str());
+        (void)scope;
     }
 
     static void render_column_set(

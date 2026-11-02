@@ -1296,3 +1296,79 @@ TEST(AdaptiveCardsActionSet, ExpandsRepeatingActionSetOverArray) {
     EXPECT_EQ(urls[1], "https://adaptivecards.io/designer");
 }
 
+TEST(AdaptiveCardsIndustrialWidgets, ParsesSeriesPlotGaugeXYPlotAndStatusBadge) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {
+      "type": "Rouen.SeriesPlot",
+      "title": "Tubing Pressure (Last 15m)",
+      "seriesName": "pad14-well3h-tbg-psi",
+      "persistToRepository": true,
+      "unit": "psi",
+      "isBarChart": false,
+      "height": 140,
+      "lowLimit": 250.0,
+      "highLimit": 750.0,
+      "points": [
+        { "label": "21:10", "value": 478.0 },
+        { "label": "21:12", "value": 481.5 },
+        { "label": "21:14", "value": 485.0 }
+      ]
+    },
+    {
+      "type": "Rouen.Gauge",
+      "label": "Casing Pressure",
+      "value": "620.0",
+      "target": 550.0,
+      "unit": "psi",
+      "min": 0.0,
+      "max": 1000.0,
+      "thresholds": { "lowLow": 50.0, "low": 100.0, "high": 750.0, "highHigh": 850.0 }
+    },
+    {
+      "type": "Rouen.XYPlot",
+      "title": "Rod Pump Surface vs. Downhole Dynacard",
+      "xLabel": "Position (in)",
+      "yLabel": "Load (lbs)",
+      "xyPoints": [[0.0, 12000.0], [40.0, 22000.0], [120.0, 21500.0], [80.0, 9500.0], [0.0, 12000.0]]
+    },
+    {
+      "type": "Rouen.StatusBadge",
+      "label": "Main SSV Valve",
+      "text": "FLOWING (SSV OPEN)",
+      "severity": "normal"
+    }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+    ASSERT_EQ(parsed.body.size(), 4U);
+
+    EXPECT_EQ(parsed.body[0].type, "Rouen.SeriesPlot");
+    EXPECT_EQ(parsed.body[0].seriesName, "pad14-well3h-tbg-psi");
+    EXPECT_TRUE(parsed.body[0].persistToRepository);
+    EXPECT_EQ(parsed.body[0].unit, "psi");
+    ASSERT_EQ(parsed.body[0].points.size(), 3U);
+    EXPECT_FLOAT_EQ(parsed.body[0].points[2].numeric_value(), 485.0f);
+
+    EXPECT_EQ(parsed.body[1].type, "Rouen.Gauge");
+    EXPECT_EQ(parsed.body[1].label, "Casing Pressure");
+    EXPECT_DOUBLE_EQ(parsed.body[1].target, 550.0);
+    EXPECT_DOUBLE_EQ(parsed.body[1].thresholds.high, 750.0);
+
+    EXPECT_EQ(parsed.body[2].type, "Rouen.XYPlot");
+    EXPECT_EQ(parsed.body[2].xLabel, "Position (in)");
+    EXPECT_EQ(parsed.body[2].yLabel, "Load (lbs)");
+    ASSERT_EQ(parsed.body[2].xyPoints.size(), 5U);
+
+    EXPECT_EQ(parsed.body[3].type, "Rouen.StatusBadge");
+    EXPECT_EQ(parsed.body[3].text, "FLOWING (SSV OPEN)");
+    EXPECT_EQ(parsed.body[3].severity, "normal");
+}
+
+

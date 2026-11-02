@@ -4,6 +4,7 @@
 #include <thread>
 
 #include "../src/cards/information/adaptive_process_card.hpp"
+#include "../src/cards/information/number_series.hpp"
 #include "../src/cards/interface/deck.hpp"
 #include "../src/helpers/adaptive_process_profiles.hpp"
 
@@ -211,4 +212,38 @@ TEST(AdaptiveProcessCard, Sha256IntegrityCheckVerifiesAndBlocksTamperedScripts) 
     std::error_code ec;
     std::filesystem::remove(temp_script, ec);
     registry.reset();
+}
+
+TEST(AdaptiveProcessCard, SeriesPlotPersistsToRepositoryAndNumberSeriesEmitsSeriesPlot) {
+    std::string const cmd =
+        "python3 -c \"import json; print(json.dumps({"
+        "'type':'AdaptiveCard','version':'1.5','body':[{"
+        "'type':'Rouen.SeriesPlot',"
+        "'title':'Tubing Pressure (Last 15m)',"
+        "'seriesName':'test_pad14_well3h_tbg_psi',"
+        "'persistToRepository':True,"
+        "'unit':'psi',"
+        "'isBarChart':False,"
+        "'points':[{'label':'21:10','value':478.0},{'label':'21:12','value':485.0}]"
+        "}]}), flush=True)\"";
+
+    rouen::cards::adaptive_process_card proc_card{cmd};
+    (void)proc_card.get_adaptive_card_json();
+    ASSERT_FALSE(proc_card.bound_document().body.empty());
+    EXPECT_EQ(proc_card.bound_document().body[0].type, "Rouen.SeriesPlot");
+
+    rouen::models::series::series_repository repo{};
+    auto saved = repo.get_series_by_name("test_pad14_well3h_tbg_psi");
+    ASSERT_TRUE(saved.has_value());
+    EXPECT_EQ(saved->title, "Tubing Pressure (Last 15m)");
+    EXPECT_EQ(saved->unit, "psi");
+    ASSERT_EQ(saved->points.size(), 2u);
+    EXPECT_FLOAT_EQ(saved->points[1].value, 485.0f);
+
+    rouen::cards::number_series_card ns_card{"test_pad14_well3h_tbg_psi"};
+    std::string const ns_adaptive_json = ns_card.get_adaptive_card_json();
+    EXPECT_NE(ns_adaptive_json.find("Rouen.SeriesPlot"), std::string::npos);
+    EXPECT_NE(ns_adaptive_json.find("test_pad14_well3h_tbg_psi"), std::string::npos);
+
+    (void)repo.delete_series("test_pad14_well3h_tbg_psi");
 }
