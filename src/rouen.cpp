@@ -462,6 +462,10 @@ int main(int argc, char* argv[]) {
         registrar::add<rouen::services::presence_service>("presence_service",
             std::shared_ptr<rouen::services::presence_service>(&rouen::services::presence_service::instance(), [](auto*){}));
 
+        // Load dynamic plugins and instantiate headless card deck
+        rouen::hosts::plugin_host::instance().load_all_plugins();
+        deck daemon_deck{nullptr};
+
         // Start embedded REST API server
         auto api_server = std::make_unique<rouen::hosts::api_server_host>();
         if (api_server->initialize()) {
@@ -540,7 +544,8 @@ int main(int argc, char* argv[]) {
         std::cout << "[Rouen Daemon] Running 24/7 background worker. Press Ctrl+C or send SIGTERM to stop.\n";
 
         while (s_daemon_running.load()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            daemon_deck.tick_headless();
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
         rouen::helpers::UniversalSyncService::instance().stop_periodic_sync();

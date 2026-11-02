@@ -54,6 +54,7 @@ private:
     rouen::ui::imgui_ui_context_impl ui_context_;
     std::weak_ptr<card> last_focused_card_;
     mutable std::shared_ptr<std::function<float()>> width_factor_fn_ {};
+    mutable std::recursive_mutex deck_mutex_ {};
 public:
     deck(SDL_Renderer* sdl_renderer): renderer(sdl_renderer) {
         // Initialize colors
@@ -73,7 +74,10 @@ public:
         registrar::add<std::function<size_t()>>(
             "get_card_count", 
             std::make_shared<std::function<size_t()>>(
-                [this]() { return cards_.size(); }
+                [this]() {
+                    std::lock_guard<std::recursive_mutex> const lock(deck_mutex_);
+                    return cards_.size();
+                }
             )
         );
 
@@ -81,7 +85,10 @@ public:
         registrar::add<std::function<std::vector<std::shared_ptr<card>>()>>(
             "get_active_cards",
             std::make_shared<std::function<std::vector<std::shared_ptr<card>>()>>(
-                [this]() { return cards_; }
+                [this]() {
+                    std::lock_guard<std::recursive_mutex> const lock(deck_mutex_);
+                    return cards_;
+                }
             )
         );
         
@@ -564,12 +571,14 @@ public:
         if (ImGui::GetCurrentContext() != nullptr) {
             shift_pressed = shift_pressed || ImGui::GetIO().KeyShift;
         }
-        // this needs to be deferred
-        auto deferred_ops = registrar::get<deferred_operations>("deferred_ops");
-        if (deferred_ops) {
+        // Queue onto deferred_ops when an active GUI frame loop is running; execute immediately in headless/daemon mode
+        auto deferred_ops = registrar::try_get<deferred_operations>("deferred_ops");
+        if (deferred_ops && ImGui::GetCurrentContext() != nullptr) {
             deferred_ops->queue([this, uri_str = std::string{uri}, move_first, shift_pressed] {
                 create_card_impl(uri_str, move_first, shift_pressed);
             });
+        } else {
+            create_card_impl(uri, move_first, shift_pressed);
         }
     }
 
@@ -578,20 +587,27 @@ public:
     }
 
     void focus_card_by_index(size_t index) {
-        auto deferred_ops = registrar::get<deferred_operations>("deferred_ops");
-        if (deferred_ops) {
+        auto deferred_ops = registrar::try_get<deferred_operations>("deferred_ops");
+        if (deferred_ops && ImGui::GetCurrentContext() != nullptr) {
             deferred_ops->queue([this, index] {
+                std::lock_guard<std::recursive_mutex> const lock(deck_mutex_);
                 if (index < cards_.size()) {
                     cards_[index]->grab_focus = true;
                     last_focused_card_ = cards_[index];
                 }
             });
+        } else {
+            std::lock_guard<std::recursive_mutex> const lock(deck_mutex_);
+            if (index < cards_.size()) {
+                cards_[index]->grab_focus = true;
+                last_focused_card_ = cards_[index];
+            }
         }
     }
 
     void scroll_to_section(int section_idx) {
-        auto deferred_ops = registrar::get<deferred_operations>("deferred_ops");
-        if (deferred_ops) {
+        auto deferred_ops = registrar::try_get<deferred_operations>("deferred_ops");
+        if (deferred_ops && ImGui::GetCurrentContext() != nullptr) {
             deferred_ops->queue([this, section_idx] {
                 float const section_width = std::max(ImGui::GetMainViewport()->Size.x, 1.0f);
                 target_scroll_x = static_cast<float>(section_idx) * section_width;
@@ -600,6 +616,7 @@ public:
     }
 
     void create_card_impl(std::string_view uri, bool move_first = false, bool insert_before = false) {
+        std::lock_guard<std::recursive_mutex> const lock(deck_mutex_);
         auto existing_card = std::find_if(cards_.begin(), cards_.end(),
             [&uri](const auto& card) { return card->matches_uri(uri); });
         if (existing_card != cards_.end()) {
@@ -640,7 +657,7 @@ public:
                             [](const auto& card) { return card->is_focused; });
                     }
 
-                    bool const should_insert_before = insert_before || ImGui::GetIO().KeyShift;
+                    bool const should_insert_before = insert_before || (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().KeyShift);
 
                     if (target_it != cards_.end()) {
                         if (should_insert_before) {
@@ -874,6 +891,9 @@ public:
     
     // Save current cards to ImGui configuration
     void save_card_uris() {
+        if (no_initial_cards || renderer == nullptr) {
+            return;
+        }
         // Create a string with all card URIs separated by semicolons
         std::string uris;
         for (const auto& card : cards_) {
@@ -939,7 +959,9 @@ public:
     // Load cards from ImGui configuration
     void load_card_uris() {
         if (no_initial_cards) {
-            create_card("menu", true);
+            if (renderer != nullptr && ImGui::GetCurrentContext() != nullptr) {
+                create_card("menu", true);
+            }
             return;
         }
         // Read from user config path, fallback to bundle resource path if not present
@@ -1486,6 +1508,7 @@ public:
 
     // Close card by index
     bool close_card_by_index(size_t index) {
+        std::lock_guard<std::recursive_mutex> const lock(deck_mutex_);
         if (index < cards_.size()) {
             auto c = cards_[index];
             if (c) {
@@ -1512,6 +1535,7 @@ public:
 
     // Close card by URI
     bool close_card_by_uri(std::string const& uri) {
+        std::lock_guard<std::recursive_mutex> const lock(deck_mutex_);
         for (size_t i = 0; i < cards_.size(); ++i) {
             if (cards_[i] && (cards_[i]->get_uri() == uri || cards_[i]->get_uri().starts_with(uri))) {
                 return close_card_by_index(i);
@@ -1522,12 +1546,31 @@ public:
 
     // Try to close a focused card, return true if a card was closed
     bool close_focused_card() {
+        std::lock_guard<std::recursive_mutex> const lock(deck_mutex_);
         for (size_t i = 0; i < cards_.size(); ++i) {
             if (cards_[i] && cards_[i]->is_focused) {
                 return close_card_by_index(i);
             }
         }
         return false;
+    }
+
+    void tick_headless() {
+        rouen::hosts::event_bus_host::instance().dispatch_pending_events();
+        if (auto deferred_ops = registrar::try_get<deferred_operations>("deferred_ops")) {
+            deferred_ops->process_queue(nullptr);
+        }
+        std::vector<std::shared_ptr<card>> snapshot;
+        {
+            std::lock_guard<std::recursive_mutex> const lock(deck_mutex_);
+            cards_to_cleanup_.clear();
+            snapshot = cards_;
+        }
+        for (auto const& c : snapshot) {
+            if (c) {
+                c->tick_background();
+            }
+        }
     }
 
     std::vector<std::shared_ptr<card>>& get_cards() { return cards_; }

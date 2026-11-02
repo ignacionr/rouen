@@ -1,12 +1,14 @@
 #pragma once
 
 // 1. Standard includes in alphabetic order
+#include <chrono>
 #include <deque>
 #include <format>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
@@ -79,7 +81,7 @@ namespace rouen::cards {
 
         bool render() override {
             return render_window([this]() {
-                apply_pending_update();
+                tick_background();
                 render_status_line();
                 ImGui::Separator();
 
@@ -132,6 +134,25 @@ namespace rouen::cards {
             }
         }
 
+        void tick_background() override {
+            apply_pending_update();
+            if (bound_.refreshIntervalMs > 0 && process_ && process_->spawn_succeeded()) {
+                bool is_exited = false;
+                {
+                    std::lock_guard<std::mutex> const lock(mutex_);
+                    is_exited = exited_;
+                }
+                if (!is_exited) {
+                    auto const now = std::chrono::steady_clock::now();
+                    auto const elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_tick_time_).count();
+                    if (elapsed_ms >= bound_.refreshIntervalMs) {
+                        last_tick_time_ = now;
+                        post_to_process(R"({"verb":"tick"})");
+                    }
+                }
+            }
+        }
+
         [[nodiscard]] helpers::adaptive_cards::card_document const& bound_document() const {
             return bound_;
         }
@@ -142,8 +163,23 @@ namespace rouen::cards {
         }
 
         [[nodiscard]] std::string get_adaptive_card_json() const override {
+            auto* self = const_cast<adaptive_process_card*>(this);
+            // If just launched and waiting for initial stdout line, wait briefly
+            auto const start = std::chrono::steady_clock::now();
+            while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(500)) {
+                bool ready = false;
+                {
+                    std::lock_guard<std::mutex> const lock(mutex_);
+                    ready = !pending_card_json_.empty() || !last_valid_card_json_.empty() || exited_ || !process_ || !process_->spawn_succeeded();
+                }
+                if (ready) {
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            self->tick_background();
             std::lock_guard<std::mutex> const lock(mutex_);
-            return pending_card_json_;
+            return !last_valid_card_json_.empty() ? last_valid_card_json_ : pending_card_json_;
         }
 
         void handle_action(std::string_view action_json) override {
@@ -159,8 +195,10 @@ namespace rouen::cards {
             bound_ = {};
             input_state_ = {};
             error_.clear();
+            last_tick_time_ = std::chrono::steady_clock::now();
             std::lock_guard<std::mutex> const lock(mutex_);
             pending_card_json_.clear();
+            last_valid_card_json_.clear();
             has_pending_update_ = false;
             stderr_lines_.clear();
             exited_ = false;
@@ -222,6 +260,9 @@ namespace rouen::cards {
                 bound_ = parser_.parse(card_json);
                 input_state_ = {};
                 error_.clear();
+                last_tick_time_ = std::chrono::steady_clock::now();
+                std::lock_guard<std::mutex> const lock(mutex_);
+                last_valid_card_json_ = card_json;
             } catch (std::exception const& e) {
                 error_ = std::format("Adaptive Process card error: {}", e.what());
             }
@@ -277,10 +318,12 @@ namespace rouen::cards {
 
         mutable std::mutex mutex_;
         std::string pending_card_json_;
+        std::string last_valid_card_json_;
         bool has_pending_update_{false};
         std::deque<std::string> stderr_lines_;
         bool exited_{false};
         int exit_code_{0};
+        std::chrono::steady_clock::time_point last_tick_time_{std::chrono::steady_clock::now()};
 
         helpers::adaptive_cards::parser parser_{};
         helpers::adaptive_cards::renderer renderer_{};

@@ -108,6 +108,9 @@ struct card {
     /// Handles an Adaptive Cards action payload (JSON string) for this card.
     virtual void handle_action(std::string_view /*action_json*/) {}
 
+    /// Optional background tick for headless/daemon mode (processes pending updates and cadence timers).
+    virtual void tick_background() {}
+
     bool video_overlay_visible = true;
 
     /// Optional virtual method for cards to paint themselves onto the video feed surface

@@ -111,6 +111,7 @@ struct card_document {
     std::string schema;
     std::string minHeight;
     std::string padding;
+    int refreshIntervalMs{0};
     std::vector<element> body;
     std::vector<action> actions;
 };
@@ -403,6 +404,7 @@ struct glz::meta<rouen::helpers::adaptive_cards::card_document> {
         "schema", &T::schema,
         "minHeight", &T::minHeight,
         "padding", &T::padding,
+        "refreshIntervalMs", &T::refreshIntervalMs,
         "body", &T::body,
         "actions", &T::actions
     );
