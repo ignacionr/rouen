@@ -7,6 +7,7 @@
 #include "../src/cards/information/number_series.hpp"
 #include "../src/cards/interface/deck.hpp"
 #include "../src/helpers/adaptive_process_profiles.hpp"
+#include "../src/helpers/auth_service.hpp"
 
 TEST(AdaptiveProcessCard, RefreshesUIOnSecondStdoutLineWithoutAction) {
     // Construct a command that prints two card JSON documents separated by a delay and newline
@@ -246,4 +247,116 @@ TEST(AdaptiveProcessCard, SeriesPlotPersistsToRepositoryAndNumberSeriesEmitsSeri
     EXPECT_NE(ns_adaptive_json.find("test_pad14_well3h_tbg_psi"), std::string::npos);
 
     (void)repo.delete_series("test_pad14_well3h_tbg_psi");
+}
+
+TEST(AdaptiveProcessCard, OidcJwtVerificationRs256Es256EdDsaAndSpoofProtection) {
+    auto& auth = rouen::services::auth_service::instance();
+    auth.reset();
+
+    auto const now_epoch = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+
+    // 1. Test RS256, ES256, and EdDSA key generation, JWKS export, and JWT signing/verification
+    auto rs256_kp = rouen::services::auth_service::generate_test_keypair("RS256", "kid-rs256");
+    auto es256_kp = rouen::services::auth_service::generate_test_keypair("ES256", "kid-es256");
+    auto eddsa_kp = rouen::services::auth_service::generate_test_keypair("EdDSA", "kid-eddsa");
+
+    std::string const jwks_json = std::format(R"({{"keys":[{},{},{}]}})",
+        rs256_kp.jwk_json, es256_kp.jwk_json, eddsa_kp.jwk_json);
+    ASSERT_TRUE(auth.load_jwks_json(jwks_json));
+    auth.set_expected_issuer("https://sso.permian-energy.com");
+
+    std::string const valid_claims = std::format(R"({{
+        "sub": "00u1a2b3c4",
+        "email": "jdoe@permian-energy.com",
+        "name": "Jane Doe",
+        "iss": "https://sso.permian-energy.com",
+        "roles": ["scada.operator", "pad-permian-14"],
+        "auth_time": {},
+        "exp": {}
+    }})", now_epoch - 60, now_epoch + 3600);
+
+    // Verify RS256
+    std::string const jwt_rs256 = rouen::services::auth_service::sign_test_jwt(
+        rs256_kp, "RS256", "kid-rs256", valid_claims);
+    auto v_rs = auth.verify_jwt(jwt_rs256);
+    ASSERT_TRUE(v_rs.has_value());
+    EXPECT_EQ(v_rs->email, "jdoe@permian-energy.com");
+    EXPECT_EQ(v_rs->name, "Jane Doe");
+    ASSERT_EQ(v_rs->roles.size(), 2u);
+    EXPECT_EQ(v_rs->roles[0], "scada.operator");
+
+    // Verify ES256
+    std::string const jwt_es256 = rouen::services::auth_service::sign_test_jwt(
+        es256_kp, "ES256", "kid-es256", valid_claims);
+    auto v_es = auth.verify_jwt(jwt_es256);
+    ASSERT_TRUE(v_es.has_value());
+    EXPECT_EQ(v_es->sub, "00u1a2b3c4");
+
+    // Verify EdDSA
+    std::string const jwt_eddsa = rouen::services::auth_service::sign_test_jwt(
+        eddsa_kp, "EdDSA", "kid-eddsa", valid_claims);
+    auto v_ed = auth.verify_jwt(jwt_eddsa);
+    ASSERT_TRUE(v_ed.has_value());
+    EXPECT_EQ(v_ed->email, "jdoe@permian-energy.com");
+
+    // Reject expired token
+    std::string const expired_claims = std::format(R"({{
+        "sub": "00u1a2b3c4",
+        "email": "jdoe@permian-energy.com",
+        "iss": "https://sso.permian-energy.com",
+        "exp": {}
+    }})", now_epoch - 7200);
+    std::string const jwt_expired = rouen::services::auth_service::sign_test_jwt(
+        eddsa_kp, "EdDSA", "kid-eddsa", expired_claims);
+    EXPECT_FALSE(auth.verify_jwt(jwt_expired).has_value());
+
+    // Reject wrong issuer
+    std::string const wrong_iss_claims = std::format(R"({{
+        "sub": "00u1a2b3c4",
+        "email": "jdoe@permian-energy.com",
+        "iss": "https://evil.example.com",
+        "exp": {}
+    }})", now_epoch + 3600);
+    std::string const jwt_wrong_iss = rouen::services::auth_service::sign_test_jwt(
+        eddsa_kp, "EdDSA", "kid-eddsa", wrong_iss_claims);
+    EXPECT_FALSE(auth.verify_jwt(jwt_wrong_iss).has_value());
+
+    // Reject unknown kid
+    std::string const jwt_unknown_kid = rouen::services::auth_service::sign_test_jwt(
+        eddsa_kp, "EdDSA", "kid-unknown", valid_claims);
+    EXPECT_FALSE(auth.verify_jwt(jwt_unknown_kid).has_value());
+
+    // 2. Verify adaptive_process_card strips spoofed "_operator" and injects verified operator identity
+    ASSERT_TRUE(auth.set_active_session_jwt(jwt_eddsa));
+
+    std::string const cmd =
+        "python3 -c \"\n"
+        "import json, sys\n"
+        "print(json.dumps({'type':'AdaptiveCard','body':[{'type':'TextBlock','text':'Ready'}]}), flush=True)\n"
+        "line = sys.stdin.readline()\n"
+        "msg = json.loads(line.strip())\n"
+        "op = msg.get('_operator', {})\n"
+        "email = op.get('email', 'none')\n"
+        "roles = ','.join(op.get('roles', []))\n"
+        "print(json.dumps({'type':'AdaptiveCard','body':[{'type':'TextBlock','text':f'Op:{email}|Roles:{roles}'}]}), flush=True)\n"
+        "\"";
+
+    rouen::cards::adaptive_process_card card{cmd};
+    (void)card.get_adaptive_card_json();
+    ASSERT_FALSE(card.bound_document().body.empty());
+
+    // Send action with a spoofed "_operator" field; it must be overwritten with verified Jane Doe
+    card.handle_action(R"({"verb":"set_choke","data":{"choke":48},"_operator":{"email":"attacker@evil.com","roles":["admin"]}})");
+
+    auto start = std::chrono::steady_clock::now();
+    while (card.bound_document().body[0].text == "Ready" &&
+           std::chrono::steady_clock::now() - start < std::chrono::seconds(3)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        (void)card.get_adaptive_card_json();
+    }
+
+    EXPECT_EQ(card.bound_document().body[0].text, "Op:jdoe@permian-energy.com|Roles:scada.operator,pad-permian-14");
+
+    auth.reset();
 }

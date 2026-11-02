@@ -18,6 +18,7 @@
 #include "../../fonts.hpp"
 #include "../../helpers/adaptive_cards/parser.hpp"
 #include "../../helpers/adaptive_cards/renderer.hpp"
+#include "../../helpers/auth_service.hpp"
 #include "../../helpers/fetch.hpp"
 #include "../../helpers/glaze_include.hpp"
 #include "../../helpers/imgui_include.hpp"
@@ -559,7 +560,13 @@ private:
                     http::fetch client(5);
                     std::string action_url = std::format("{}/api/cards/action", local_proxy_url_);
                     std::string body = build_action_request_json(target_card_uri_, payload);
-                    client.post(action_url, body, {{"Content-Type", "application/json"}});
+                    std::string const jwt = services::auth_service::instance().get_active_session_jwt();
+                    client.post(action_url, body, [&jwt](auto append_header) {
+                        append_header("Content-Type: application/json");
+                        if (!jwt.empty()) {
+                            append_header("X-Rouen-Operator-JWT: " + jwt);
+                        }
+                    });
                 } catch (const std::exception& ex) {
                     status_error_message_ = ex.what();
                 }

@@ -19,6 +19,7 @@
 #include "../../helpers/adaptive_cards/parser.hpp"
 #include "../../helpers/adaptive_cards/renderer.hpp"
 #include "../../helpers/adaptive_process_profiles.hpp"
+#include "../../helpers/auth_service.hpp"
 #include "../../helpers/piped_process.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../interface/card.hpp"
@@ -240,7 +241,8 @@ namespace rouen::cards {
 
         void post_to_process(std::string const& payload_json) {
             if (process_) {
-                static_cast<void>(process_->write_line(payload_json));
+                std::string const sanitized = services::auth_service::sanitize_and_inject_operator(payload_json);
+                static_cast<void>(process_->write_line(sanitized));
             }
         }
 

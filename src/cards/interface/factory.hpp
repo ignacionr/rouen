@@ -77,6 +77,7 @@
 #include "../productivity/js_card.hpp"
 #include "../production/adlib.hpp"
 #include "../system/about.hpp"
+#include "../system/auth_card.hpp"
 #include "../system/cast_control.hpp"
 #include "../system/dbrepair.hpp"
 #include "../system/display_card.hpp"
@@ -585,6 +586,10 @@ namespace rouen::cards {
                 // Register the Invoice card
                 instance.emplace("invoice", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<invoice_card>();
+                });
+
+                instance.emplace("auth", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<auth_card>();
                 });
 
                 initialized = true;

@@ -89,6 +89,7 @@
 #include "../helpers/universal_sync_service.hpp"
 #include "../helpers/sync_crypto_service.hpp"
 #include "../helpers/adaptive_process_profiles.hpp"
+#include "../helpers/auth_service.hpp"
 
 namespace {
     std::mutex s_sse_mutex;
@@ -451,6 +452,20 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
     } else if (mg_match(hm->uri, mg_str("/api/health"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
             response = R"({"status":"ok","message":"API server is running"})";
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/auth/status"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0 || mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_auth_status(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/auth/callback"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0 || mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_auth_callback(c, hm);
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
@@ -1002,6 +1017,31 @@ std::string api_server_host::handle_adaptive_process_profiles(struct mg_connecti
     return rouen::helpers::adaptive_process_profiles::instance().to_catalog_json();
 }
 
+std::string api_server_host::handle_auth_status(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    std::string body(hm->body.buf, hm->body.len);
+    if (!body.empty()) {
+        glz::json_t doc{};
+        if (!glz::read_json(doc, body) && doc.is_object()) {
+            if (doc.contains("lock") && doc["lock"].holds<bool>() && doc["lock"].get<bool>()) {
+                rouen::services::auth_service::instance().lock_or_handover_session();
+            } else if (doc.contains("token") && doc["token"].holds<std::string>()) {
+                (void)rouen::services::auth_service::instance().set_active_session_jwt(doc["token"].get<std::string>());
+            }
+        }
+    }
+    return rouen::services::auth_service::instance().to_status_json();
+}
+
+std::string api_server_host::handle_auth_callback(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    char token_buf[4096]{};
+    if (hm->query.len > 0 && mg_http_get_var(&hm->query, "id_token", token_buf, sizeof(token_buf)) > 0) {
+        if (rouen::services::auth_service::instance().set_active_session_jwt(token_buf)) {
+            return R"({"success":true,"message":"Operator OIDC session established"})";
+        }
+    }
+    return R"({"success":false,"error":"Missing or invalid OIDC token"})";
+}
+
 static std::string get_query_param(const struct mg_str* query, const char* var_name) {
     if (!query || query->len == 0 || !var_name) return "";
     char buf[512];
@@ -1270,6 +1310,17 @@ std::string api_server_host::handle_cards_action(struct mg_connection* /*c*/, st
             error_response response{"Card not found for action dispatch"};
             return glz::write_json(response).value_or(R"({"error":"Card not found"})");
         }
+
+        // Extract X-Rouen-Operator-JWT header if supplied over Mesh or REST API
+        std::optional<rouen::services::verified_operator_identity> header_op;
+        if (struct mg_str* jwt_hdr = mg_http_get_header(hm, "X-Rouen-Operator-JWT"); jwt_hdr && jwt_hdr->len > 0) {
+            std::string_view const jwt_sv(jwt_hdr->buf, jwt_hdr->len);
+            header_op = rouen::services::auth_service::instance().verify_jwt(jwt_sv);
+        }
+        rouen::services::auth_service::set_request_operator(header_op);
+        struct request_op_guard {
+            ~request_op_guard() { rouen::services::auth_service::set_request_operator(std::nullopt); }
+        } const op_guard{};
 
         target_card->handle_action(action_payload);
 

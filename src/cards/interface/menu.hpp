@@ -444,6 +444,7 @@ namespace rouen::cards {
                     {"Number Series: CPU Load", []() { "create_card"_sfn("number-series:cpu"); }}
                 }},
                 { "System", {
+                    {"Operator SSO Identity", []() { "create_card"_sfn("auth"); }},
                     {"Display Settings", []() { "create_card"_sfn("display"); }},
                     {"Expand to Full Width", []() {
                         auto expand_svc = registrar::get<std::function<void()>>("expand_to_full_width");
