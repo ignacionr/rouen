@@ -7,6 +7,7 @@
 #include "../src/cards/information/number_series.hpp"
 #include "../src/cards/interface/deck.hpp"
 #include "../src/helpers/adaptive_process_profiles.hpp"
+#include "../src/helpers/alarm_manager.hpp"
 #include "../src/helpers/auth_service.hpp"
 #include "../src/helpers/command_audit_log.hpp"
 
@@ -459,4 +460,97 @@ TEST(AdaptiveProcessCard, SboRbacEnforcementAndDualIdentityCommandAuditLog) {
 
     auth.reset();
     audit.clear_all();
+}
+
+TEST(AdaptiveProcessCard, Isa182AlarmLifecycleAndProcessAckForwarding) {
+    auto& alarms = rouen::helpers::alarm_manager::instance();
+    alarms.clear_all();
+
+    // 1. Direct state machine tests:
+    // Path A: NORMAL -> UNACK_ALM -> ACK_ALM -> NORMAL
+    std::vector<rouen::helpers::adaptive_cards::alarm_declaration> active_batch{
+        {.id = "pad14.well3h.h2s_high", .severity = "critical", .title = "Pad 14 H2S High", .value = "14.2 ppm", .latched = true},
+        {.id = "pad14.well3h.tbg_low", .severity = "high", .title = "Pad 14 Tubing Low", .value = "180 psi", .latched = true}
+    };
+    alarms.report_process_alarms("adaptive-process:test-pad14", active_batch);
+
+    auto a1 = alarms.get_alarm("pad14.well3h.h2s_high");
+    ASSERT_TRUE(a1.has_value());
+    EXPECT_EQ(a1->state, "UNACK_ALM");
+
+    // Operator acknowledges pad14.well3h.h2s_high while still active -> ACK_ALM
+    ASSERT_TRUE(alarms.acknowledge("pad14.well3h.h2s_high", "controller@permian-energy.com"));
+    a1 = alarms.get_alarm("pad14.well3h.h2s_high");
+    ASSERT_TRUE(a1.has_value());
+    EXPECT_EQ(a1->state, "ACK_ALM");
+    EXPECT_EQ(a1->acknowledged_by, "controller@permian-energy.com");
+
+    // Physical conditions clear for both alarms:
+    // - pad14.well3h.h2s_high was ACK_ALM -> transitions to NORMAL
+    // - pad14.well3h.tbg_low was UNACK_ALM (latched) -> transitions to UNACK_RTN
+    alarms.report_process_alarms("adaptive-process:test-pad14", {});
+    a1 = alarms.get_alarm("pad14.well3h.h2s_high");
+    ASSERT_TRUE(a1.has_value());
+    EXPECT_EQ(a1->state, "NORMAL");
+
+    auto a2 = alarms.get_alarm("pad14.well3h.tbg_low");
+    ASSERT_TRUE(a2.has_value());
+    EXPECT_EQ(a2->state, "UNACK_RTN");
+
+    // Acknowledging UNACK_RTN clears it to NORMAL
+    ASSERT_TRUE(alarms.acknowledge("pad14.well3h.tbg_low", "controller@permian-energy.com"));
+    a2 = alarms.get_alarm("pad14.well3h.tbg_low");
+    ASSERT_TRUE(a2.has_value());
+    EXPECT_EQ(a2->state, "NORMAL");
+
+    // Timed shelving test
+    alarms.report_process_alarms("adaptive-process:test-pad14", {active_batch[0]});
+    ASSERT_TRUE(alarms.shelve("pad14.well3h.h2s_high", 1, "Sensor calibration", "controller@permian-energy.com"));
+    a1 = alarms.get_alarm("pad14.well3h.h2s_high");
+    ASSERT_TRUE(a1.has_value());
+    EXPECT_EQ(a1->state, "SHELVED");
+    std::this_thread::sleep_for(std::chrono::milliseconds(1150));
+    alarms.check_expirations();
+    a1 = alarms.get_alarm("pad14.well3h.h2s_high");
+    ASSERT_TRUE(a1.has_value());
+    EXPECT_EQ(a1->state, "UNACK_ALM");
+
+    // 2. End-to-end adaptive_process_card "alarms" array ingestion & ack_alarm stdin forwarding
+    alarms.clear_all();
+    std::string const cmd =
+        "python3 -c \"import json, sys\n"
+        "sys.stdout.write(json.dumps({'type':'AdaptiveCard','alarms':[{'id':'sep1.lvl_hh','severity':'critical','title':'Separator 1 Level High-High','value':'94%','latched':True}],'body':[{'type':'TextBlock','text':'ALARM_ACTIVE'}]}) + '\\n')\n"
+        "sys.stdout.flush()\n"
+        "for line in sys.stdin:\n"
+        "    msg = json.loads(line)\n"
+        "    if msg.get('verb') == 'ack_alarm' and msg.get('alarm_id') == 'sep1.lvl_hh':\n"
+        "        sys.stdout.write(json.dumps({'type':'AdaptiveCard','alarms':[],'body':[{'type':'TextBlock','text':'ACK_RECEIVED:' + msg.get('alarm_id', '')}]}) + '\\n')\n"
+        "        sys.stdout.flush()\n"
+        "        break\n"
+        "\"";
+
+    rouen::cards::adaptive_process_card card{cmd};
+    (void)card.get_adaptive_card_json();
+    auto sep_alm = alarms.get_alarm("sep1.lvl_hh");
+    ASSERT_TRUE(sep_alm.has_value());
+    EXPECT_EQ(sep_alm->state, "UNACK_ALM");
+
+    // Acknowledge via alarm_manager -> forwards {"verb":"ack_alarm","alarm_id":"sep1.lvl_hh"} to child process stdin
+    ASSERT_TRUE(alarms.acknowledge("sep1.lvl_hh", "controller@permian-energy.com"));
+
+    auto start = std::chrono::steady_clock::now();
+    while (!card.bound_document().body.empty() &&
+           card.bound_document().body[0].text == "ALARM_ACTIVE" &&
+           std::chrono::steady_clock::now() - start < std::chrono::seconds(3)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        (void)card.get_adaptive_card_json();
+    }
+    ASSERT_FALSE(card.bound_document().body.empty());
+    EXPECT_EQ(card.bound_document().body[0].text, "ACK_RECEIVED:sep1.lvl_hh");
+
+    sep_alm = alarms.get_alarm("sep1.lvl_hh");
+    ASSERT_TRUE(sep_alm.has_value());
+    EXPECT_EQ(sep_alm->state, "NORMAL");
+
+    alarms.clear_all();
 }

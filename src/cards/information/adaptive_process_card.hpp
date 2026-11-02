@@ -19,6 +19,7 @@
 #include "../../helpers/adaptive_cards/parser.hpp"
 #include "../../helpers/adaptive_cards/renderer.hpp"
 #include "../../helpers/adaptive_process_profiles.hpp"
+#include "../../helpers/alarm_manager.hpp"
 #include "../../helpers/auth_service.hpp"
 #include "../../helpers/command_audit_log.hpp"
 #include "../../helpers/piped_process.hpp"
@@ -55,6 +56,7 @@ namespace rouen::cards {
         }
 
         ~adaptive_process_card() override {
+            helpers::alarm_manager::instance().unregister_process_callback(get_uri());
             process_.reset();
         }
 
@@ -231,6 +233,10 @@ namespace rouen::cards {
                 [this](int code) { on_process_exit(code); });
             if (!process_->spawn_succeeded()) {
                 error_ = std::format("Failed to start process: {}", process_->spawn_error());
+            } else {
+                helpers::alarm_manager::instance().register_process_callback(
+                    get_uri(),
+                    [this](std::string const& action_json) { post_to_process(action_json); });
             }
         }
 
@@ -377,6 +383,7 @@ namespace rouen::cards {
         void rebuild_from_json(std::string const& card_json) {
             try {
                 bound_ = parser_.parse(card_json);
+                helpers::alarm_manager::instance().report_process_alarms(get_uri(), bound_.alarms);
                 input_state_ = {};
                 error_.clear();
                 last_tick_time_ = std::chrono::steady_clock::now();

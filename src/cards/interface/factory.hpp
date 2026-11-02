@@ -77,6 +77,7 @@
 #include "../productivity/js_card.hpp"
 #include "../production/adlib.hpp"
 #include "../system/about.hpp"
+#include "../system/alarm_annunciator_card.hpp"
 #include "../system/auth_card.hpp"
 #include "../system/cast_control.hpp"
 #include "../system/dbrepair.hpp"
@@ -332,6 +333,10 @@ namespace rouen::cards {
 
                 instance.emplace("notifications", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<notifications_card>();
+                });
+
+                instance.emplace("alarms", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<alarm_annunciator_card>();
                 });
 
                 instance.emplace("camera", [](std::string_view locator, SDL_Renderer*) {

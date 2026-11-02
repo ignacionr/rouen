@@ -142,6 +142,14 @@ struct element {
     std::vector<std::array<double, 2>> xyPoints;
 };
 
+struct alarm_declaration {
+    std::string id;
+    std::string severity{"high"};
+    std::string title;
+    std::string value;
+    bool latched{true};
+};
+
 struct card_document {
     std::string type;
     std::string version;
@@ -149,6 +157,7 @@ struct card_document {
     std::string minHeight;
     std::string padding;
     int refreshIntervalMs{0};
+    std::vector<alarm_declaration> alarms;
     std::vector<element> body;
     std::vector<action> actions;
 };
@@ -514,6 +523,19 @@ struct glz::meta<rouen::helpers::adaptive_cards::show_card> {
 };
 
 template <>
+struct glz::meta<rouen::helpers::adaptive_cards::alarm_declaration> {
+    using T = rouen::helpers::adaptive_cards::alarm_declaration;
+    static constexpr auto values = glz::object(
+        "id", &T::id,
+        "severity", &T::severity,
+        "title", &T::title,
+        "value", &T::value,
+        "latched", &T::latched
+    );
+    static constexpr auto options = glz::opts{.error_on_unknown_keys = false};
+};
+
+template <>
 struct glz::meta<rouen::helpers::adaptive_cards::card_document> {
     using T = rouen::helpers::adaptive_cards::card_document;
     static constexpr auto values = glz::object(
@@ -523,6 +545,7 @@ struct glz::meta<rouen::helpers::adaptive_cards::card_document> {
         "minHeight", &T::minHeight,
         "padding", &T::padding,
         "refreshIntervalMs", &T::refreshIntervalMs,
+        "alarms", &T::alarms,
         "body", &T::body,
         "actions", &T::actions
     );

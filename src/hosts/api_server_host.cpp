@@ -89,6 +89,7 @@
 #include "../helpers/universal_sync_service.hpp"
 #include "../helpers/sync_crypto_service.hpp"
 #include "../helpers/adaptive_process_profiles.hpp"
+#include "../helpers/alarm_manager.hpp"
 #include "../helpers/auth_service.hpp"
 #include "../helpers/command_audit_log.hpp"
 
@@ -474,6 +475,35 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
     } else if (mg_match(hm->uri, mg_str("/api/audit-log"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
             response = std::format(R"({{"entries":{}}})", rouen::helpers::command_audit_log::instance().recent_entries_json(100));
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/alarms"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = rouen::helpers::alarm_manager::instance().to_json(true);
+        } else if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            std::string body_str(hm->body.buf, hm->body.len);
+            glz::json_t doc{};
+            std::string alarm_id;
+            std::string verb = "ack_alarm";
+            if (!glz::read_json(doc, body_str) && doc.is_object()) {
+                auto const& obj = doc.get<glz::json_t::object_t>();
+                if (auto it = obj.find("alarm_id"); it != obj.end() && it->second.is_string()) {
+                    alarm_id = it->second.get<std::string>();
+                }
+                if (auto it = obj.find("verb"); it != obj.end() && it->second.is_string()) {
+                    verb = it->second.get<std::string>();
+                }
+            }
+            auto const op = rouen::services::auth_service::current_effective_operator();
+            std::string const op_email = op.has_value() ? op->email : "api-operator";
+            if (verb == "shelve_alarm") {
+                rouen::helpers::alarm_manager::instance().shelve(alarm_id, 900, "Shelved via API", op_email);
+            } else {
+                rouen::helpers::alarm_manager::instance().acknowledge(alarm_id, op_email);
+            }
+            response = rouen::helpers::alarm_manager::instance().to_json(true);
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";

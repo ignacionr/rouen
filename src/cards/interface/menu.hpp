@@ -445,6 +445,7 @@ namespace rouen::cards {
                 }},
                 { "System", {
                     {"Operator SSO Identity", []() { "create_card"_sfn("auth"); }},
+                    {"ISA-18.2 Alarm Annunciator", []() { "create_card"_sfn("alarms"); }},
                     {"Display Settings", []() { "create_card"_sfn("display"); }},
                     {"Expand to Full Width", []() {
                         auto expand_svc = registrar::get<std::function<void()>>("expand_to_full_width");
