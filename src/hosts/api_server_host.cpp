@@ -88,6 +88,7 @@
 #include "../hosts/telegram_host.hpp"
 #include "../helpers/universal_sync_service.hpp"
 #include "../helpers/sync_crypto_service.hpp"
+#include "../helpers/adaptive_process_profiles.hpp"
 
 namespace {
     std::mutex s_sse_mutex;
@@ -450,6 +451,13 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
     } else if (mg_match(hm->uri, mg_str("/api/health"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
             response = R"({"status":"ok","message":"API server is running"})";
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/adaptive-process/profiles"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_adaptive_process_profiles(c, hm);
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
@@ -988,6 +996,10 @@ std::string api_server_host::handle_card_creation(struct mg_connection* /*c*/, s
         error_response response{std::string(e.what())};
         return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
     }
+}
+
+std::string api_server_host::handle_adaptive_process_profiles(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    return rouen::helpers::adaptive_process_profiles::instance().to_catalog_json();
 }
 
 static std::string get_query_param(const struct mg_str* query, const char* var_name) {

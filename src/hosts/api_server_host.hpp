@@ -29,6 +29,7 @@ public:
 
     static std::string handle_cards_adaptive(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_cards_action(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_adaptive_process_profiles(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_card_creation(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_card_delete(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_cards_get(struct mg_connection* c, struct mg_http_message* hm);

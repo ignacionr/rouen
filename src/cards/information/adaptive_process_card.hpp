@@ -18,6 +18,7 @@
 #include "../../fonts.hpp"
 #include "../../helpers/adaptive_cards/parser.hpp"
 #include "../../helpers/adaptive_cards/renderer.hpp"
+#include "../../helpers/adaptive_process_profiles.hpp"
 #include "../../helpers/piped_process.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../interface/card.hpp"
@@ -157,6 +158,10 @@ namespace rouen::cards {
             return bound_;
         }
 
+        [[nodiscard]] std::string const& last_error() const {
+            return error_;
+        }
+
         [[nodiscard]] bool has_pending_update() const {
             std::lock_guard<std::mutex> const lock(mutex_);
             return has_pending_update_;
@@ -209,8 +214,16 @@ namespace rouen::cards {
             if (command_line_.empty()) {
                 return;
             }
+            auto const resolution = helpers::adaptive_process_profiles::instance().resolve(command_line_);
+            if (!resolution.resolved_title.empty()) {
+                name(resolution.resolved_title);
+            }
+            if (!resolution.allowed) {
+                error_ = resolution.error_message;
+                return;
+            }
             process_ = std::make_unique<helpers::piped_process>(
-                command_line_,
+                resolution.resolved_command,
                 [this](std::string const& line) { on_stdout_line(line); },
                 [this](std::string const& line) { on_stderr_line(line); },
                 [this](int code) { on_process_exit(code); });

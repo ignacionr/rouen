@@ -5,6 +5,7 @@
 
 #include "../src/cards/information/adaptive_process_card.hpp"
 #include "../src/cards/interface/deck.hpp"
+#include "../src/helpers/adaptive_process_profiles.hpp"
 
 TEST(AdaptiveProcessCard, RefreshesUIOnSecondStdoutLineWithoutAction) {
     // Construct a command that prints two card JSON documents separated by a delay and newline
@@ -132,4 +133,82 @@ TEST(AdaptiveProcessCard, HeadlessDeckCreatesAndTicksCardWithoutImGuiContext) {
         }
     }
     EXPECT_TRUE(found);
+}
+
+TEST(AdaptiveProcessCard, AllowlistModeBlocksUnlistedCommandsAndAllowsRegisteredProfiles) {
+    auto& registry = rouen::helpers::adaptive_process_profiles::instance();
+    std::string const profiles_json = R"({
+        "allowArbitraryCommands": false,
+        "profiles": {
+            "well-3h-esp": {
+                "title": "Permian Pad 14 — Well 3H ESP",
+                "command": "python3 -c \"import json; print(json.dumps({'type':'AdaptiveCard','body':[{'type':'TextBlock','text':'Profile Well 3H Active'}]}), flush=True)\""
+            }
+        }
+    })";
+    ASSERT_TRUE(registry.load_from_json(profiles_json));
+    EXPECT_TRUE(registry.is_allowlist_only());
+
+    // 1. Unlisted raw command should be blocked before reaching piped_process
+    rouen::cards::adaptive_process_card blocked_card{"python3 -c \"print('should not run')\""};
+    EXPECT_NE(blocked_card.last_error().find("allowlist-only mode"), std::string::npos);
+
+    // 2. Registered profile alias should resolve and launch
+    rouen::cards::adaptive_process_card allowed_card{"well-3h-esp"};
+    std::string card_json = allowed_card.get_adaptive_card_json();
+    EXPECT_TRUE(allowed_card.last_error().empty()) << allowed_card.last_error();
+    ASSERT_FALSE(allowed_card.bound_document().body.empty());
+    EXPECT_EQ(allowed_card.bound_document().body[0].text, "Profile Well 3H Active");
+
+    // 3. Discovery catalog JSON includes the profile
+    std::string catalog_json = registry.to_catalog_json();
+    EXPECT_NE(catalog_json.find("well-3h-esp"), std::string::npos);
+    EXPECT_NE(catalog_json.find("Permian Pad 14"), std::string::npos);
+
+    registry.reset();
+}
+
+TEST(AdaptiveProcessCard, Sha256IntegrityCheckVerifiesAndBlocksTamperedScripts) {
+    auto& registry = rouen::helpers::adaptive_process_profiles::instance();
+    auto const temp_script = std::filesystem::temp_directory_path() / "rouen_test_esp_script.py";
+    {
+        std::ofstream ofs(temp_script, std::ios::binary | std::ios::trunc);
+        ofs << "import json\nprint(json.dumps({'type':'AdaptiveCard','body':[{'type':'TextBlock','text':'SHA256 Verified OK'}]}), flush=True)\n";
+    }
+
+    std::string const actual_sha256 = rouen::helpers::adaptive_process_profiles::compute_file_sha256(temp_script);
+    ASSERT_EQ(actual_sha256.size(), 64u);
+
+    std::string const profiles_json = std::format(R"({{
+        "allowArbitraryCommands": false,
+        "profiles": {{
+            "verified-esp": {{
+                "title": "Verified ESP Script",
+                "command": "python3 {}",
+                "scriptPath": "{}",
+                "sha256": "{}"
+            }},
+            "tampered-esp": {{
+                "title": "Tampered ESP Script",
+                "command": "python3 {}",
+                "scriptPath": "{}",
+                "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }}
+        }}
+    }})", temp_script.string(), temp_script.string(), actual_sha256, temp_script.string(), temp_script.string());
+
+    ASSERT_TRUE(registry.load_from_json(profiles_json));
+
+    rouen::cards::adaptive_process_card verified_card{"verified-esp"};
+    (void)verified_card.get_adaptive_card_json();
+    EXPECT_TRUE(verified_card.last_error().empty()) << verified_card.last_error();
+    ASSERT_FALSE(verified_card.bound_document().body.empty());
+    EXPECT_EQ(verified_card.bound_document().body[0].text, "SHA256 Verified OK");
+
+    rouen::cards::adaptive_process_card tampered_card{"tampered-esp"};
+    EXPECT_NE(tampered_card.last_error().find("SHA-256"), std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(temp_script, ec);
+    registry.reset();
 }
