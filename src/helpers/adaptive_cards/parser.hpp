@@ -2,7 +2,9 @@
 
 #include <array>
 #include <algorithm>
+#include <cstdint>
 #include <format>
+#include <map>
 #include <ranges>
 #include <stdexcept>
 #include <string>
@@ -150,6 +152,11 @@ struct alarm_declaration {
     bool latched{true};
 };
 
+struct telemetry_envelope {
+    int64_t timestamp_ms{0};
+    std::map<std::string, double> series;
+};
+
 struct card_document {
     std::string type;
     std::string version;
@@ -157,6 +164,7 @@ struct card_document {
     std::string minHeight;
     std::string padding;
     int refreshIntervalMs{0};
+    telemetry_envelope telemetry{};
     std::vector<alarm_declaration> alarms;
     std::vector<element> body;
     std::vector<action> actions;
@@ -536,6 +544,16 @@ struct glz::meta<rouen::helpers::adaptive_cards::alarm_declaration> {
 };
 
 template <>
+struct glz::meta<rouen::helpers::adaptive_cards::telemetry_envelope> {
+    using T = rouen::helpers::adaptive_cards::telemetry_envelope;
+    static constexpr auto values = glz::object(
+        "timestamp_ms", &T::timestamp_ms,
+        "series", &T::series
+    );
+    static constexpr auto options = glz::opts{.error_on_unknown_keys = false};
+};
+
+template <>
 struct glz::meta<rouen::helpers::adaptive_cards::card_document> {
     using T = rouen::helpers::adaptive_cards::card_document;
     static constexpr auto values = glz::object(
@@ -545,6 +563,7 @@ struct glz::meta<rouen::helpers::adaptive_cards::card_document> {
         "minHeight", &T::minHeight,
         "padding", &T::padding,
         "refreshIntervalMs", &T::refreshIntervalMs,
+        "telemetry", &T::telemetry,
         "alarms", &T::alarms,
         "body", &T::body,
         "actions", &T::actions

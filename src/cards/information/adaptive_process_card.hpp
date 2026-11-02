@@ -24,6 +24,7 @@
 #include "../../helpers/command_audit_log.hpp"
 #include "../../helpers/piped_process.hpp"
 #include "../../helpers/platform_utils.hpp"
+#include "../../helpers/telemetry_spool.hpp"
 #include "../interface/card.hpp"
 
 // A card whose content is an Adaptive Card produced by an external
@@ -384,6 +385,7 @@ namespace rouen::cards {
             try {
                 bound_ = parser_.parse(card_json);
                 helpers::alarm_manager::instance().report_process_alarms(get_uri(), bound_.alarms);
+                helpers::telemetry_spool::instance().enqueue_envelope(get_uri(), bound_.telemetry);
                 input_state_ = {};
                 error_.clear();
                 last_tick_time_ = std::chrono::steady_clock::now();

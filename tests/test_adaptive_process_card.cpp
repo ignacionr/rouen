@@ -10,6 +10,7 @@
 #include "../src/helpers/alarm_manager.hpp"
 #include "../src/helpers/auth_service.hpp"
 #include "../src/helpers/command_audit_log.hpp"
+#include "../src/helpers/telemetry_spool.hpp"
 
 TEST(AdaptiveProcessCard, RefreshesUIOnSecondStdoutLineWithoutAction) {
     // Construct a command that prints two card JSON documents separated by a delay and newline
@@ -553,4 +554,82 @@ TEST(AdaptiveProcessCard, Isa182AlarmLifecycleAndProcessAckForwarding) {
     EXPECT_EQ(sep_alm->state, "NORMAL");
 
     alarms.clear_all();
+}
+
+TEST(AdaptiveProcessCard, StoreAndForwardTelemetrySpoolRingBufferAndBackfillMerge) {
+    auto& spool = rouen::helpers::telemetry_spool::instance();
+    spool.clear_all();
+    spool.set_max_rows(3);
+
+    // 1. Ring buffer capacity & FIFO eviction test (max_rows = 3, insert 4 samples)
+    spool.enqueue_sample("adaptive-process:pad14", "pad14.well3h.tbg_psi", 1000, 470.0);
+    spool.enqueue_sample("adaptive-process:pad14", "pad14.well3h.tbg_psi", 2000, 475.0);
+    spool.enqueue_sample("adaptive-process:pad14", "pad14.well3h.tbg_psi", 3000, 480.0);
+    spool.enqueue_sample("adaptive-process:pad14", "pad14.well3h.tbg_psi", 4000, 485.0);
+
+    EXPECT_EQ(spool.pending_unsynced_count(), 3u);
+    auto batch = spool.drain_unsynced_batch(10);
+    ASSERT_EQ(batch.size(), 3u);
+    // Oldest sample (timestamp 1000) was evicted; remaining are 2000, 3000, 4000 in sequence order
+    EXPECT_EQ(batch[0].timestamp_ms, 2000);
+    EXPECT_DOUBLE_EQ(batch[0].value, 475.0);
+    EXPECT_EQ(batch[2].timestamp_ms, 4000);
+    EXPECT_DOUBLE_EQ(batch[2].value, 485.0);
+
+    // Acknowledge up to batch[1].seq_id -> only 1 unsynced sample remains
+    spool.acknowledge_up_to(batch[1].seq_id);
+    EXPECT_EQ(spool.pending_unsynced_count(), 1u);
+
+    // 2. End-to-end adaptive_process_card "telemetry" envelope ingestion & deduplicated backfill merge into series_repository
+    spool.clear_all();
+    spool.set_max_rows(100000);
+    rouen::models::series::series_repository repo{};
+    (void)repo.delete_series("pad14.well3h.oil_bopd");
+
+    std::string const cmd =
+        "python3 -c \"import json, sys\n"
+        "card = {\n"
+        "  'type': 'AdaptiveCard',\n"
+        "  'telemetry': {\n"
+        "    'timestamp_ms': 1793586000000,\n"
+        "    'series': {\n"
+        "      'pad14.well3h.oil_bopd': 1420.5\n"
+        "    }\n"
+        "  },\n"
+        "  'body': [{'type': 'TextBlock', 'text': 'Wellpad Telemetry Active'}]\n"
+        "}\n"
+        "sys.stdout.write(json.dumps(card) + '\\n')\n"
+        "sys.stdout.flush()\n"
+        "\"";
+
+    rouen::cards::adaptive_process_card card{cmd};
+    (void)card.get_adaptive_card_json();
+    ASSERT_FALSE(card.bound_document().body.empty());
+    EXPECT_EQ(spool.pending_unsynced_count(), 1u);
+
+    auto unsynced = spool.drain_unsynced_batch(10);
+    ASSERT_EQ(unsynced.size(), 1u);
+    EXPECT_EQ(unsynced[0].series_name, "pad14.well3h.oil_bopd");
+    EXPECT_DOUBLE_EQ(unsynced[0].value, 1420.5);
+
+    // Ingest backfill batch twice with a second point to verify deduplicated merge into series_repository
+    std::vector<rouen::helpers::telemetry_sample> backfill = unsynced;
+    backfill.push_back(rouen::helpers::telemetry_sample{
+        .seq_id = unsynced[0].seq_id + 1,
+        .source_uri = "adaptive-process:pad14",
+        .series_name = "pad14.well3h.oil_bopd",
+        .timestamp_ms = 1793586002000LL,
+        .value = 1428.0
+    });
+    spool.ingest_backfill_batch(backfill);
+    spool.ingest_backfill_batch(backfill); // Duplicate replay must not duplicate points
+
+    auto merged = repo.get_series_by_name("pad14.well3h.oil_bopd");
+    ASSERT_TRUE(merged.has_value());
+    ASSERT_EQ(merged->points.size(), 2u);
+    EXPECT_FLOAT_EQ(merged->points[0].value, 1420.5f);
+    EXPECT_FLOAT_EQ(merged->points[1].value, 1428.0f);
+
+    (void)repo.delete_series("pad14.well3h.oil_bopd");
+    spool.clear_all();
 }

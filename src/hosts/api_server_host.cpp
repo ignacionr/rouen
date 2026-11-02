@@ -92,6 +92,7 @@
 #include "../helpers/alarm_manager.hpp"
 #include "../helpers/auth_service.hpp"
 #include "../helpers/command_audit_log.hpp"
+#include "../helpers/telemetry_spool.hpp"
 
 namespace {
     std::mutex s_sse_mutex;
@@ -504,6 +505,38 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
                 rouen::helpers::alarm_manager::instance().acknowledge(alarm_id, op_email);
             }
             response = rouen::helpers::alarm_manager::instance().to_json(true);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/telemetry/backfill"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            auto const batch = rouen::helpers::telemetry_spool::instance().drain_unsynced_batch(500);
+            std::string batch_json = "[]";
+            (void)glz::write_json(batch, batch_json);
+            response = std::format(
+                R"({{"pending_unsynced":{},"samples":{}}})",
+                rouen::helpers::telemetry_spool::instance().pending_unsynced_count(),
+                batch_json);
+        } else if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            std::string body_str(hm->body.buf, hm->body.len);
+            std::vector<rouen::helpers::telemetry_sample> batch;
+            if (!glz::read_json(batch, body_str) && !batch.empty()) {
+                rouen::helpers::telemetry_spool::instance().ingest_backfill_batch(batch);
+                response = std::format(R"({{"status":"ok","ingested":{}}})", batch.size());
+            } else {
+                glz::json_t doc{};
+                if (!glz::read_json(doc, body_str) && doc.is_object()) {
+                    auto const& obj = doc.get<glz::json_t::object_t>();
+                    if (auto it = obj.find("ack_seq_id"); it != obj.end() && it->second.is_number()) {
+                        auto const ack_id = static_cast<long long>(it->second.get<double>());
+                        rouen::helpers::telemetry_spool::instance().acknowledge_up_to(ack_id);
+                    }
+                }
+                response = std::format(
+                    R"({{"status":"ok","pending_unsynced":{}}})",
+                    rouen::helpers::telemetry_spool::instance().pending_unsynced_count());
+            }
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
